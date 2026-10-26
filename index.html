@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ORÉA École</title>
+<meta name="theme-color" content="#111211">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><img src="icon-192.png" alt=""><b id="hs">ORÉA École</b></header>
+<main id="main"></main>
+<nav id="nav" hidden>
+  <button data-t="eleves">Élèves</button>
+  <button data-t="caisse">Caisse</button>
+  <button data-t="reglages">Réglages</button>
+</nav>
+<dialog id="dlg"></dialog>
+<div id="toast" hidden></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
