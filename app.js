@@ -13,7 +13,7 @@ const sum=a=>a.reduce((t,p)=>t+Number(p.amount_cdf),0);
 const out=async()=>{await db.auth.signOut();location.reload()};
 
 function ask(title,fields,ok){
-  const d=show(`<form method=dialog><h3>${title}</h3>${fields.map(f=>`<label>${f.l}${f.o?`<select name=${f.n}>${f.o.map(o=>`<option value="${o[0]}" ${o[0]===f.v?'selected':''}>${o[1]}</option>`).join('')}</select>`:`<input name=${f.n} type=${f.t||'text'} step=any ${f.r===false?'':'required'}>`}</label>`).join('')}<div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Valider</button></div></form>`);
+  const d=show(`<form method=dialog><h3>${title}</h3>${fields.map(f=>`<label>${f.l}${f.o?`<select name=${f.n}>${f.o.map(o=>`<option value="${o[0]}" ${o[0]===f.v?'selected':''}>${o[1]}</option>`).join('')}</select>`:`<input name=${f.n} type=${f.t||'text'} step=any value="${esc(f.v)}" ${f.r===false?'':'required'}>`}</label>`).join('')}<div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Valider</button></div></form>`);
   d.querySelector('form').onsubmit=async e=>{if(e.submitter.value!=='ok')return;const v=Object.fromEntries(new FormData(e.target));try{await ok(v)}catch(x){toast(x.message||'Erreur')}};
 }
 
@@ -22,11 +22,18 @@ async function boot(){
   $('#dlg').close?.();
   const{data:{session}}=await db.auth.getSession();
   if(!session)return authView();
+  const{data:adm}=await db.rpc('is_platform_admin');
+  if(adm===true){$('#hs').textContent='Administration';return adminView()}
   const{data:p}=await db.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
   if(!p)return setupView();
   S.me=p;
   const{data:s}=await db.from('schools').select('*').eq('id',p.school_id).single();
   S.school=s;$('#hs').textContent=s.name;
+  if(s.sub_until){
+    const left=Math.ceil((new Date(s.sub_until)-Date.now())/864e5);
+    if(left<=0)return lockView();
+    if(left<=7&&dir())toast('Abonnement : il reste '+left+' jour(s). Contacte l’administrateur.');
+  }
   await autoRate();await load();render();
 }
 async function load(){
@@ -80,7 +87,7 @@ function vEleves(){
     const l=S.stu.filter(s=>s.class_id===S.cls).sort(sorts[S.sort]);
     h+=l.length?l.map(s=>`<div class=card onclick="menu('${s.id}')"><b>${esc(s.name)}</b><span class="${s.balance_cdf>0?'due':'ok'}">${s.balance_cdf>0?'Doit '+fmt(s.balance_cdf):'✓ Soldé'}</span></div>`).join(''):'<p class=empty>Aucun élève dans cette classe.</p>';
   }
-  if(dir())h+=`<div class=row><button class=ghost onclick=addClass()>+ Classe</button>${cl.length?'<button onclick=addStudent()>+ Élève</button>':''}</div>`;
+  if(dir())h+=`<div class=row><button class=ghost onclick=addClass()>+ Classe</button>${cl.length?'<button onclick=addStudent()>+ Élève</button><button class=ghost onclick=bulkAdd()>+ Liste</button>':''}</div>`;
   $('#main').innerHTML=h;
   if($('#cs')){$('#so').value=S.sort;$('#cs').onchange=e=>{S.cls=e.target.value;vEleves()};$('#so').onchange=e=>{S.sort=e.target.value;vEleves()}}
 }
@@ -96,8 +103,60 @@ function addStudent(){
 }
 function menu(id){
   const s=S.stu.find(x=>x.id===id);
-  const d=show(`<h3>${esc(s.name)}</h3><p>${s.balance_cdf>0?'Reste dû : '+fmt(s.balance_cdf):'Soldé'}</p><div class=col><button id=m1>Encaisser un paiement</button><button class=ghost id=m2>Historique et reçus</button><button class=ghost id=m3>Fermer</button></div>`);
+  const d=show(`<h3>${esc(s.name)}</h3><p>${s.balance_cdf>0?'Reste dû : '+fmt(s.balance_cdf):'Soldé'}</p><div class=col><button id=m1>Encaisser un paiement</button><button class=ghost id=m2>Historique et reçus</button>${dir()?'<button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>':''}<button class=ghost id=m3>Fermer</button></div>`);
   d.querySelector('#m1').onclick=()=>pay(id);d.querySelector('#m2').onclick=()=>hist(id);d.querySelector('#m3').onclick=()=>d.close();
+  if(dir()){d.querySelector('#m4').onclick=()=>editStudent(id);d.querySelector('#m5').onclick=()=>{d.close();delStudent(id)}}
+}
+function editStudent(id){
+  const s=S.stu.find(x=>x.id===id);
+  ask('Modifier l’élève',[{n:'name',l:'Nom complet',v:s.name},{n:'phone',l:'WhatsApp du parent',t:'tel',r:false,v:s.parent_phone},{n:'cls',l:'Classe',o:S.classes.map(c=>[c.id,esc(c.name)]),v:s.class_id}],async v=>{
+    const{data,error}=await db.from('students').update({name:v.name.trim(),parent_phone:v.phone.trim()||null,class_id:v.cls}).eq('id',id).select();
+    if(error)throw error;if(!data.length)throw Error('Modification refusée');
+    S.cls=v.cls;await load();render();toast('Élève modifié')});
+}
+async function delStudent(id){
+  const s=S.stu.find(x=>x.id===id);
+  if(!confirm('Supprimer '+s.name+' ?'))return;
+  const{data,error}=await db.from('students').delete().eq('id',id).select();
+  if(error)return toast(error.code==='23503'?'Impossible : cet élève a des paiements.':error.message);
+  if(!data.length)return toast('Suppression refusée');
+  await load();render();toast('Élève supprimé');
+}
+const parseList=t=>{const seen=new Set();return t.split('\n').map(l=>l.replace(/^\s*\d+\s*[.)\-–]\s*/,'').trim()).filter(Boolean).map(l=>{const[n,p]=l.split(/[;\t]/);return{name:n.trim().replace(/\s+/g,' '),phone:(p||'').trim()||null}}).filter(r=>r.name&&!seen.has(r.name.toLowerCase())&&seen.add(r.name.toLowerCase()))};
+function bulkAdd(){
+  const d=show(`<form method=dialog><h3>Ajouter une liste d’élèves</h3><label>Classe<select name=cls>${S.classes.map(c=>`<option value="${c.id}" ${c.id===S.cls?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label><label>Un nom par ligne (téléphone facultatif après un « ; »)<textarea name=txt rows=10 style="width:100%" required></textarea></label><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Enregistrer</button></div></form>`);
+  d.querySelector('form').onsubmit=async e=>{
+    if(e.submitter.value!=='ok')return;
+    const f=e.target,cls=f.cls.value;
+    const have=new Set(S.stu.filter(s=>s.class_id===cls).map(s=>s.name.toLowerCase()));
+    const all=parseList(f.txt.value),rows=all.filter(r=>!have.has(r.name.toLowerCase()));
+    if(!rows.length)return toast('Aucun nouveau nom à ajouter');
+    const{error}=await db.from('students').insert(rows.map(r=>({school_id:S.school.id,class_id:cls,name:r.name,parent_phone:r.phone})));
+    if(error)return toast(error.message);
+    S.cls=cls;await load();render();
+    toast(rows.length+' élève(s) ajouté(s)'+(all.length>rows.length?' · '+(all.length-rows.length)+' déjà présent(s) ignoré(s)':''));
+  };
+}
+
+/* ---------- Abonnement et administrateur ---------- */
+const ADMIN_WA=''; // ton numéro WhatsApp avec indicatif, sans + (ex : 243812345678)
+function lockView(){
+  $('#nav').hidden=true;
+  $('#main').innerHTML=`<div class=auth><h2>Abonnement expiré</h2><p>L’accès de ${esc(S.school.name)} est suspendu depuis le ${new Date(S.school.sub_until).toLocaleDateString('fr-FR')}. Contacte l’administrateur d’ORÉA École pour le réactiver.</p>${ADMIN_WA?`<a class=btn style="text-align:center;text-decoration:none" href="https://wa.me/${ADMIN_WA}">Contacter l’administrateur</a>`:''}<button class=ghost onclick=out()>Déconnexion</button></div>`;
+}
+async function adminView(){
+  $('#nav').hidden=true;
+  const{data,error}=await db.rpc('admin_list_schools');
+  if(error)return toast(error.message);
+  const now=Date.now(),act=data.filter(s=>new Date(s.sub_until)>now).length;
+  $('#main').innerHTML=`<h3>Espace administrateur</h3><div class=card><span>Écoles actives / total</span><b>${act} / ${data.length}</b></div>`+(data.length?data.map(s=>{
+    const d=new Date(s.sub_until),left=Math.ceil((d-now)/864e5),ok=left>0;
+    return `<div class="card col"><b>${esc(s.name)}</b><span>${esc(s.director_name||'—')} · ${esc(s.director_email||'')}</span><small>${s.students} élèves · ${s.members} compte(s) · code ${esc(s.code)}</small><span class="${ok&&left>7?'ok':'due'}">${ok?'Actif jusqu’au '+d.toLocaleDateString('fr-FR')+' ('+left+' j)':'⛔ Expiré le '+d.toLocaleDateString('fr-FR')}</span><div class=row>${[1,2,3,6].map(n=>`<button class=ghost onclick="ext('${s.id}',${n})">+${n} mois</button>`).join('')}</div></div>`}).join(''):'<p class=empty>Aucune école pour le moment.</p>')+'<button class=ghost onclick=out()>Déconnexion</button>';
+}
+async function ext(id,n){
+  if(!confirm('Prolonger de '+n+' mois ?'))return;
+  const{error}=await db.rpc('admin_extend',{sid:id,n});
+  error?toast(error.message):(toast('Abonnement prolongé'),adminView());
 }
 function pay(id){
   const s=S.stu.find(x=>x.id===id);
