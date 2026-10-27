@@ -2,7 +2,7 @@ const tfetch=(u,o={})=>{const c=new AbortController(),t=setTimeout(()=>c.abort()
 const db=supabase.createClient(OREA_CONFIG.SUPABASE_URL,OREA_CONFIG.SUPABASE_ANON_KEY,{global:{fetch:tfetch}});
 const $=s=>document.querySelector(s);
 const CUR=['CDF','USD','EUR'],SYM={CDF:'FC',USD:'$',EUR:'€'};
-const S={me:null,school:null,classes:[],stu:[],cls:null,sort:'alpha',tab:'accueil',cur:localStorage.cur||'CDF',year:null,q:'',ft:'all',offline:false};
+const S={me:null,school:null,classes:[],stu:[],cls:null,sort:'alpha',tab:'accueil',cur:localStorage.cur||'CDF',year:null,q:'',ft:'all',offline:false,fees:[],fpaid:{},terms:{}};
 document.documentElement.dataset.theme=localStorage.theme||'dark';
 const dir=()=>S.me.role==='directeur';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -10,7 +10,10 @@ const nf=(n,d=2)=>new Intl.NumberFormat('fr-FR',{maximumFractionDigits:d}).forma
 const fmt=n=>nf(n/(S.school.rates[S.cur]||1),S.cur==='CDF'?0:2)+' '+SYM[S.cur];
 const isNet=e=>!!e&&(e.name==='AuthRetryableFetchError'||e.status===0||/fetch|network|abort|load failed|timed? ?out/i.test(e.message||''));
 const toast=m=>{m=/failed to fetch|networkerror|network request|abort|load failed/i.test(m)?'Pas de connexion internet.':m;const t=$('#toast');t.textContent=m;t.hidden=false;setTimeout(()=>t.hidden=true,4000)};
-const show=h=>{const d=$('#dlg');d.innerHTML=h;if(!d.open)d.showModal();return d};
+let dlgPushed=false,ignorePop=false;
+const show=h=>{const d=$('#dlg');d.innerHTML=h;if(!d.open){d.showModal();if(!dlgPushed){history.pushState({dlg:1},'');dlgPushed=true}}return d};
+$('#dlg').addEventListener('close',()=>setTimeout(()=>{const d=$('#dlg');if(!d.open&&dlgPushed){dlgPushed=false;ignorePop=true;history.back()}},0));
+window.addEventListener('popstate',()=>{if(ignorePop){ignorePop=false;return}const d=$('#dlg');if(d.open){dlgPushed=false;d.close();return}if(S.me&&S.tab!=='accueil'){S.tab='accueil';render()}});
 const sum=a=>a.reduce((t,p)=>t+Number(p.amount_cdf),0);
 const out=async()=>{const n=S.me?qget().length:0;if(n&&!confirm(n+' élément(s) pas encore envoyé(s) seront perdus. Se déconnecter quand même ?'))return;if(S.me)localStorage.removeItem('orea_q_'+S.me.id);localStorage.removeItem('orea_snap');await db.auth.signOut();location.reload()};
 
@@ -38,7 +41,9 @@ function newYear(){
     if(v.cp==='0'){setTimeout(()=>addClass(y),60);return}
     const rows=yc().map(c=>({school_id:S.school.id,name:c.name,year:y,fee_t1:c.fee_t1,fee_t2:c.fee_t2,fee_t3:c.fee_t3,fee_currency:c.fee_currency}));
     if(!rows.length)throw Error('Aucune classe à copier');
-    const{error}=await db.from('classes').insert(rows);if(error)throw error;
+    const{data:nc,error}=await db.from('classes').insert(rows).select();if(error)throw error;
+    const fo=S.fees.filter(f=>cy(f)===S.year);
+    if(fo.length&&nc){const nm=Object.fromEntries(S.classes.map(c=>[c.id,c.name])),fr=fo.map(f=>{const cn=f.class_id?nc.find(c=>c.name===nm[f.class_id]):null;return f.class_id&&!cn?null:{school_id:S.school.id,year:y,name:f.name,amount:f.amount,currency:f.currency,class_id:cn?cn.id:null}}).filter(Boolean);if(fr.length){const{error:e2}=await db.from('extra_fees').insert(fr);if(e2)toast(e2.message)}}
     S.year=y;S.cls=null;localStorage['orea_year_'+S.school.id]=y;await load();render();toast('Année '+y+' créée. Utilise « Passage de classe ».');
   });
 }
@@ -66,9 +71,9 @@ function promote(){
 }
 
 /* ---------- Hors connexion : copie locale et file d'attente ---------- */
-function saveSnap(){try{localStorage.orea_snap=JSON.stringify({uid:S.me.id,me:S.me,school:S.school,classes:S.classes,stu:S.stu,at:Date.now()})}catch{}}
+function saveSnap(){try{localStorage.orea_snap=JSON.stringify({uid:S.me.id,me:S.me,school:S.school,classes:S.classes,stu:S.stu,fees:S.fees,fpaid:S.fpaid,terms:S.terms,at:Date.now()})}catch{}}
 function readSnap(){try{return JSON.parse(localStorage.orea_snap||'null')}catch{return null}}
-function goOffline(sn){S.me=sn.me;S.school=sn.school;S.classes=sn.classes;S.stu=sn.stu;S.offline=true;$('#hs').textContent=sn.school.name;render();toast('Mode hors connexion : tu peux encaisser et faire l’appel.')}
+function goOffline(sn){S.me=sn.me;S.school=sn.school;S.classes=sn.classes;S.stu=sn.stu;S.fees=sn.fees||[];S.fpaid=sn.fpaid||{};S.terms=sn.terms||{};S.offline=true;$('#hs').textContent=sn.school.name;render();toast('Mode hors connexion : tu peux encaisser et faire l’appel.')}
 function netView(){$('#nav').hidden=true;$('#main').innerHTML='<div class=auth><h2>Pas de connexion</h2><p>Connecte-toi à internet une première fois pour charger tes données.</p><button onclick=boot()>Réessayer</button></div>'}
 const qkey=()=>'orea_q_'+(S.me&&S.me.id);
 function qget(){if(!S.me)return[];try{return JSON.parse(localStorage[qkey()]||'[]')}catch{return[]}}
@@ -91,20 +96,22 @@ function applyLocal(sid,term,cdf){
   s.last_pay=new Date().toISOString();
 }
 const cdfOf=x=>x.amount*(S.school.rates[x.currency]||1);
-function overlayQ(){qget().filter(x=>x.k==='pay').forEach(x=>applyLocal(x.student_id,x.term,cdfOf(x)))}
-function qToday(){const t0=new Date();t0.setHours(0,0,0,0);return qget().filter(x=>x.k==='pay'&&new Date(x.at)>=t0).reduce((t,x)=>t+cdfOf(x),0)}
+function overlayQ(){qget().forEach(x=>{if(x.k==='pay')applyLocal(x.student_id,x.term,cdfOf(x));else if(x.k==='fpay')applyLocalFee(x)})}
+function qToday(){const t0=new Date();t0.setHours(0,0,0,0);return qget().filter(x=>(x.k==='pay'||x.k==='fpay')&&new Date(x.at)>=t0).reduce((t,x)=>t+cdfOf(x),0)}
 function payOffline(row){
-  const at=new Date().toISOString();
-  qadd({k:'pay',...row,at});
-  applyLocal(row.student_id,row.term,cdfOf(row));saveSnap();render();
+  const at=new Date().toISOString(),isF=!!row.fee_id;
+  qadd({k:isF?'fpay':'pay',...row,at});
+  if(isF)applyLocalFee(row);else applyLocal(row.student_id,row.term,cdfOf(row));
+  saveSnap();render();
   toast('Enregistré hors connexion. Envoi automatique dès que le réseau revient.');
   receipt({...row,created_at:at,collector_id:S.me.id,receipt_no:null},row.student_id);
 }
 async function qsend(it){
   if(it.k==='att'){const{k,qid,at,err,...row}=it;return db.from('attendance').upsert(row,{onConflict:'student_id,day'})}
   const{k,qid,at,err,...row}=it;
-  let r=await db.from('payments').insert({...row,created_at:at});
-  if(r.error&&r.error.code==='42501')r=await db.from('payments').insert(row);
+  const tb=k==='fpay'?'fee_payments':'payments';
+  let r=await db.from(tb).insert({...row,created_at:at});
+  if(r.error&&r.error.code==='42501')r=await db.from(tb).insert(row);
   if(r.error&&r.error.code==='23505'){if(/pkey/.test(r.error.message||''))return{};return{error:{message:'Référence Mobile Money déjà utilisée'}}}
   return r;
 }
@@ -126,7 +133,7 @@ async function qsync(){
 }
 function qview(){
   const a=qget(),sn=id=>(S.stu.find(x=>x.id===id)||{}).name||'?';
-  const d=show(`<h3>En attente d’envoi</h3>${a.length?a.map(x=>`<div class="card col"><b>${x.k==='pay'?'Paiement · '+esc(sn(x.student_id))+' · '+nf(x.amount)+' '+x.currency+' (T'+x.term+')':'Présence · '+esc(sn(x.student_id))+' · '+x.status}</b><small>${new Date(x.at).toLocaleString('fr-FR')}</small>${x.err?`<span class=due>⚠ ${esc(x.err)}</span><div class=row><button class=ghost data-r="${x.qid}">Réessayer</button><button class=ghost data-d="${x.qid}">Supprimer</button></div>`:''}</div>`).join(''):'<p class=empty>Rien en attente.</p>'}<div class=col><button id=qs>Envoyer maintenant</button><button class=ghost id=qc>Fermer</button></div>`);
+  const d=show(`<h3>En attente d’envoi</h3>${a.length?a.map(x=>`<div class="card col"><b>${x.k==='pay'?'Paiement · '+esc(sn(x.student_id))+' · '+nf(x.amount)+' '+x.currency+' (T'+x.term+')':x.k==='fpay'?'Frais · '+esc(sn(x.student_id))+' · '+esc(x.fee_name||'')+' · '+nf(x.amount)+' '+x.currency:'Présence · '+esc(sn(x.student_id))+' · '+x.status}</b><small>${new Date(x.at).toLocaleString('fr-FR')}</small>${x.err?`<span class=due>⚠ ${esc(x.err)}</span><div class=row><button class=ghost data-r="${x.qid}">Réessayer</button><button class=ghost data-d="${x.qid}">Supprimer</button></div>`:''}</div>`).join(''):'<p class=empty>Rien en attente.</p>'}<div class=col><button id=qs>Envoyer maintenant</button><button class=ghost id=qc>Fermer</button></div>`);
   d.querySelector('#qc').onclick=()=>d.close();
   d.querySelector('#qs').onclick=async()=>{d.close();await qsync()};
   d.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{qset(qget().map(x=>x.qid===b.dataset.r?{...x,err:undefined}:x));d.close();qsync()});
@@ -162,10 +169,137 @@ async function boot(){
   }
   await autoRate();await qsync();await load();render();
 }
+/* ---------- Autres frais, trimestres, statistiques ---------- */
+const rateOf=cur=>S.school.rates[cur]||1;
+const fees4=s=>{const c=S.classes.find(x=>x.id===s.class_id);if(!c)return[];return S.fees.filter(f=>cy(f)===cy(c)&&(!f.class_id||f.class_id===c.id))};
+const feeRem=(s,f)=>Math.max(0,Number(f.amount)-(S.fpaid[s.id+':'+f.id]||0));
+const feeRemCdf=(s,f)=>feeRem(s,f)*rateOf(f.currency);
+async function pageAll(mk){let all=[],i=0;for(;;){const{data,error}=await mk().order('id').range(i,i+999);if(error)return{error};all=all.concat(data);if(data.length<1000)break;i+=1000}return{data:all}}
+function augment(){
+  const memo={};
+  S.stu.forEach(s=>{
+    const fs=memo[s.class_id]||(memo[s.class_id]=fees4(s));let due=0,exp=0;
+    fs.forEach(f=>{exp+=Number(f.amount)*rateOf(f.currency);due+=feeRemCdf(s,f)});
+    s.fee_due_cdf=due;s.fee_exp_cdf=exp;
+    s.balance_cdf=Number(s.balance_cdf||0)+due;
+    s.paid_cdf=Number(s.paid_cdf||0)+(exp-due);
+  });
+}
+function applyLocalFee(x){
+  const s=S.stu.find(i=>i.id===x.student_id),f=S.fees.find(i=>i.id===x.fee_id);if(!s||!f)return;
+  const before=feeRemCdf(s,f),k=s.id+':'+f.id;
+  S.fpaid[k]=(S.fpaid[k]||0)+x.amount*rateOf(x.currency)/rateOf(f.currency);
+  const d=before-feeRemCdf(s,f);
+  s.balance_cdf=Math.max(0,s.balance_cdf-d);s.fee_due_cdf-=d;s.paid_cdf+=d;
+}
+const hasTerms=()=>{const t=S.terms[S.year];return !!(t&&(t.t1||t.t2||t.t3))};
+function curTerm(year){const t=S.terms[year];if(!t||!(t.t1||t.t2||t.t3))return null;const now=tdy();let k=0;[t.t1,t.t2,t.t3].forEach((d,i)=>{if(d&&d<=now)k=i+1});return k}
+function status(s){
+  if(s.balance_cdf<=0)return'paid';
+  const c=S.classes.find(x=>x.id===s.class_id),k=c?curTerm(cy(c)):null;
+  if(k===null)return'due';
+  return trims(s).slice(0,k).some(t=>t[1]>0)?'late':'ok';
+}
+function stTag(s){
+  const st=status(s);
+  if(st==='paid')return'<span class=ok>✓ Soldé</span>';
+  if(st==='ok')return`<span class=ok>✅ À jour<br><small>reste ${fmt(s.balance_cdf)}</small></span>`;
+  if(st==='late')return`<span class=due>🔴 En retard<br><small>Doit ${fmt(s.balance_cdf)}</small></span>`;
+  return`<span class=due>Doit ${fmt(s.balance_cdf)}</span>`;
+}
+function lateCard(){
+  if(!hasTerms())return'';
+  const n=ys().filter(s=>status(s)==='late').length;
+  return`<div class=card onclick="S.ft='late';S.q='';goTab('eleves')"><span>🔴 Élèves en retard</span><b class="${n?'due':'ok'}">${n}</b></div>`;
+}
+const short=cdf=>{const v=cdf/rateOf(S.cur);return v>=1e6?nf(v/1e6,1)+' M':v>=1e3?nf(Math.round(v/1e3),0)+' k':nf(v,0)};
+function classBars(){
+  const r=yc().map(c=>{const l=S.stu.filter(s=>s.class_id===c.id),exp=l.reduce((t,s)=>t+Number(s.due1_cdf||0)+Number(s.due2_cdf||0)+Number(s.due3_cdf||0)+Number(s.fee_exp_cdf||0),0),due=l.reduce((t,s)=>t+Number(s.balance_cdf||0),0);return{n:c.name,p:exp>0?Math.max(0,Math.min(100,Math.round(100*(1-due/exp)))):null}}).filter(x=>x.p!==null);
+  if(!r.length)return'';
+  return`<div class="card col"><b>Recouvrement par classe</b>${r.map(x=>`<div><div class=row style="justify-content:space-between;margin:2px 0"><small>${esc(x.n)}</small><small><b>${x.p} %</b></small></div><div class=pbar><i style="width:${x.p}%;background:var(${x.p>=80?'--ok':x.p>=50?'--gold':'--bad'})"></i></div></div>`).join('')}</div>`;
+}
+async function monthChart(){
+  const now=new Date(),m0=new Date(now.getFullYear(),now.getMonth()-5,1);
+  const q=n=>pageAll(()=>db.from(n).select('created_at,amount_cdf').gte('created_at',m0.toISOString()));
+  const[a,b]=await Promise.all([q('payments'),q('fee_payments')]);
+  if(a.error)return;
+  const rows=a.data.concat(b.error?[]:b.data),ms=[];
+  for(let i=0;i<6;i++){const d=new Date(m0.getFullYear(),m0.getMonth()+i,1);ms.push({k:d.getFullYear()*12+d.getMonth(),l:d.toLocaleDateString('fr-FR',{month:'short'}).replace('.',''),v:0})}
+  rows.forEach(r=>{const d=new Date(r.created_at),m=ms.find(x=>x.k===d.getFullYear()*12+d.getMonth());if(m)m.v+=Number(r.amount_cdf)});
+  const el=$('#ch');if(!el||S.tab!=='accueil')return;
+  const mx=Math.max(...ms.map(x=>x.v),1);
+  el.innerHTML=`<div class="card col"><b>Encaissements par mois</b><div class=bars>${ms.map(x=>`<div class=bcol><small>${x.v?short(x.v):''}</small><div class=bbar style="height:${Math.max(3,Math.round(x.v/mx*90))}px"></div><small>${x.l}</small></div>`).join('')}</div></div>`;
+}
+async function todayPay(t0){
+  const q=n=>db.from(n).select('amount_cdf,collector_id').gte('created_at',t0.toISOString());
+  const[a,b]=await Promise.all([q('payments'),q('fee_payments')]);
+  return{data:a.data?[...a.data,...(b.data||[])]:null};
+}
+async function todayFull(t0){
+  const q=n=>db.from(n).select('*').gte('created_at',t0.toISOString());
+  const[a,b]=await Promise.all([q('payments'),q('fee_payments')]);
+  return{data:a.data?[...a.data,...(b.data||[])]:null,error:a.error};
+}
+function goTab(t){
+  if(t===S.tab)return;
+  if(t==='accueil'&&history.state&&history.state.t){history.back();return}
+  if(S.tab==='accueil'&&t!=='accueil'&&!(history.state&&history.state.t))history.pushState({t:1},'');
+  S.tab=t;render();
+}
+const SK='<div class=sk></div>'.repeat(4);
+const ICON={
+  accueil:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/>',
+  eleves:'<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c0 1.5 3 3 6 3s6-1.5 6-3v-5"/>',
+  presences:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M9 16l2 2 4-4"/>',
+  caisse:'<rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20M16 15h2"/>',
+  reglages:'<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'
+};
+const svgI=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
+function addFee(){
+  if(!yc().length)return toast('Crée d’abord une classe.');
+  ask('Nouveau frais · '+S.year,[{n:'name',l:'Nom (ex : Inscription, Uniforme)'},{n:'amount',l:'Montant',t:'number'},{n:'cur',l:'Devise',o:CUR.map(c=>[c,c]),v:S.cur},{n:'cls',l:'Classe concernée',o:[['','Toutes les classes'],...yc().map(c=>[c.id,esc(c.name)])]}],async v=>{
+    const{error}=await db.from('extra_fees').insert({school_id:S.school.id,year:S.year,name:v.name.trim(),amount:+v.amount,currency:v.cur,class_id:v.cls||null});
+    if(error)throw error;await load();render();toast('Frais ajouté');
+  });
+}
+function editFee(id){
+  const f=S.fees.find(x=>x.id===id),cn=f.class_id?(S.classes.find(c=>c.id===f.class_id)||{}).name:'Toutes les classes';
+  const d=show(`<h3>${esc(f.name)}</h3><p>${nf(f.amount)} ${f.currency} · ${esc(cn||'')}</p><div class=col><button id=e1>Modifier le nom ou le montant</button><button class=ghost id=e2>Supprimer</button><button class=ghost id=e3>Fermer</button></div>`);
+  d.querySelector('#e3').onclick=()=>d.close();
+  d.querySelector('#e1').onclick=()=>ask('Modifier le frais',[{n:'name',l:'Nom',v:f.name},{n:'amount',l:'Montant ('+f.currency+')',t:'number',v:f.amount}],async v=>{
+    const{data,error}=await db.from('extra_fees').update({name:v.name.trim(),amount:+v.amount}).eq('id',id).select();
+    if(error)throw error;if(!data.length)throw Error('Modification refusée');await load();render();toast('Frais modifié');
+  });
+  d.querySelector('#e2').onclick=async()=>{
+    if(!confirm('Supprimer ce frais ?'))return;
+    const{data,error}=await db.from('extra_fees').delete().eq('id',id).select();d.close();
+    if(error)return toast(error.code==='23503'?'Impossible : des paiements existent pour ce frais.':error.message);
+    if(!data.length)return toast('Suppression refusée');await load();render();toast('Frais supprimé');
+  };
+}
+function setTerms(){
+  const t=S.terms[S.year]||{};
+  ask('Trimestres · '+S.year,[{n:'t1',l:'Début du 1er trimestre',t:'date',v:t.t1||'',r:false},{n:'t2',l:'Début du 2e trimestre',t:'date',v:t.t2||'',r:false},{n:'t3',l:'Début du 3e trimestre',t:'date',v:t.t3||'',r:false}],async v=>{
+    const a=[v.t1,v.t2,v.t3].filter(Boolean);
+    if(a.some((d,i)=>i&&d<a[i-1]))throw Error('Les dates doivent se suivre dans l’ordre');
+    const{data,error}=await db.from('terms').upsert({school_id:S.school.id,year:S.year,t1:v.t1||null,t2:v.t2||null,t3:v.t3||null},{onConflict:'school_id,year'}).select();
+    if(error)throw error;if(!data.length)throw Error('Modification refusée');await load();render();toast('Dates enregistrées');
+  });
+}
+const fdate=d=>d?new Date(d+'T00:00').toLocaleDateString('fr-FR'):'—';
+
 async function load(){
-  const[a,b]=await Promise.all([db.from('classes').select('*').order('name'),db.from('student_balance').select('*')]);
+  const[a,b,c,t]=await Promise.all([db.from('classes').select('*').order('name'),pageAll(()=>db.from('student_balance').select('*')),db.from('extra_fees').select('*').order('name'),db.from('terms').select('*')]);
   if(a.error||b.error)return toast((a.error||b.error).message);
-  S.classes=a.data;S.stu=b.data;S.offline=false;overlayQ();saveSnap();
+  const fees=c.error?[]:c.data,fpaid={},terms={};
+  (t.error?[]:t.data).forEach(r=>terms[r.year]={t1:r.t1,t2:r.t2,t3:r.t3});
+  if(fees.length){
+    const r=await pageAll(()=>db.from('fee_payments').select('student_id,fee_id,fee_paid'));
+    if(r.error)return toast(r.error.message);
+    r.data.forEach(x=>{const k=x.student_id+':'+x.fee_id;fpaid[k]=(fpaid[k]||0)+Number(x.fee_paid)});
+  }
+  S.classes=a.data;S.stu=b.data;S.fees=fees;S.fpaid=fpaid;S.terms=terms;
+  augment();S.offline=false;overlayQ();saveSnap();
 }
 async function autoRate(){
   const s=S.school;
@@ -196,10 +330,10 @@ function setupView(){
 /* ---------- Écrans ---------- */
 function render(){
   $('#nav').hidden=false;
-  const R=S.me.role,tabs=[['accueil','🏠 Accueil'],['eleves','👨‍🎓 Élèves'],['presences','📅 Présences'],...(R!=='enseignant'?[['caisse','💰 Caisse']]:[]),['reglages','⚙️ Réglages']];
+  const R=S.me.role,tabs=[['accueil','Accueil'],['eleves','Élèves'],['presences','Présences'],...(R!=='enseignant'?[['caisse','Caisse']]:[]),['reglages','Réglages']];
   if(!tabs.some(x=>x[0]===S.tab))S.tab='accueil';
-  $('#nav').innerHTML=tabs.map(x=>`<button data-t=${x[0]}>${x[1]}</button>`).join('');
-  document.querySelectorAll('#nav button').forEach(b=>{b.classList.toggle('on',b.dataset.t===S.tab);b.onclick=()=>{S.tab=b.dataset.t;render()}});
+  $('#nav').innerHTML=tabs.map(x=>`<button data-t=${x[0]}>${svgI(x[0])}<span>${x[1]}</span></button>`).join('');
+  document.querySelectorAll('#nav button').forEach(b=>{b.classList.toggle('on',b.dataset.t===S.tab);b.onclick=()=>goTab(b.dataset.t)});
   ({accueil:vAccueil,eleves:vEleves,presences:vPresences,caisse:vCaisse,reglages:vReglages})[S.tab]();qui();
 }
 const sorts={
@@ -209,10 +343,11 @@ const sorts={
 };
 function vEleves(){
   const cl=yc();let h=ybar();
-  if(!cl.length)h+='<p class=empty>Aucune classe pour le moment.</p>';
+  if(!cl.length)h+='<p class=empty data-ic="🏫">Aucune classe pour le moment.</p>';
   else{
     if(!cl.some(c=>c.id===S.cls))S.cls=cl[0].id;
-    const FT=[['all','Tous'],['due','À payer'],['paid','Soldés'],['nophone','Sans n°']];
+    if(S.ft==='late'&&!hasTerms())S.ft='all';
+    const FT=[['all','Tous'],...(hasTerms()?[['late','En retard']]:[]),['due','À payer'],['paid','Soldés'],['nophone','Sans n°']];
     h+=`<input id=q type=search placeholder="🔍 Rechercher un élève (toutes les classes)" value="${esc(S.q)}"><div class=bar><select id=cs>${cl.map(c=>`<option value="${c.id}" ${c.id===S.cls?'selected':''}>${esc(c.name)}</option>`).join('')}</select><select id=so><option value=alpha>Alphabétique A → Z</option><option value=solde>Plus grand solde dû</option><option value=retard>Retard de paiement</option></select></div><div class=chips>${FT.map(f=>`<button class="chip ${S.ft===f[0]?'on':''}" data-f=${f[0]}>${f[1]}</button>`).join('')}</div><div id=lst></div>`;
   }
   if(dir())h+=`<div class=row><button class=ghost onclick=addClass()>+ Classe</button>${cl.length?'<button onclick=addStudent()>+ Élève</button><button class=ghost onclick=bulkAdd()>+ Liste</button>':''}</div>`;
@@ -231,11 +366,12 @@ function drawList(){
   let l=q?ys():ys().filter(s=>s.class_id===S.cls);
   if(q)l=l.filter(s=>nrm(s.name).includes(q)||(qd&&String(s.parent_phone||'').replace(/\D/g,'').includes(qd)));
   if(S.ft==='due')l=l.filter(s=>s.balance_cdf>0);
+  else if(S.ft==='late')l=l.filter(s=>status(s)==='late');
   else if(S.ft==='paid')l=l.filter(s=>s.balance_cdf<=0);
   else if(S.ft==='nophone')l=l.filter(s=>!s.parent_phone);
   l.sort(sorts[S.sort]);
   const tot=l.reduce((t,s)=>t+Number(s.balance_cdf||0),0);
-  $('#lst').innerHTML=l.length?`<small>${l.length} élève(s) · reste dû ${fmt(tot)}</small>`+l.map(s=>`<div class=card onclick="menu('${s.id}')"><span><b>${esc(s.name)}</b>${q?'<br><small>'+esc(cn[s.class_id]||'')+'</small>':''}</span><span class="${s.balance_cdf>0?'due':'ok'}">${s.balance_cdf>0?'Doit '+fmt(s.balance_cdf):'✓ Soldé'}</span></div>`).join(''):`<p class=empty>${q||S.ft!=='all'?'Aucun élève trouvé.':'Aucun élève dans cette classe.'}</p>`;
+  $('#lst').innerHTML=l.length?`<small>${l.length} élève(s) · reste dû ${fmt(tot)}</small>`+l.map(s=>`<div class=card onclick="menu('${s.id}')"><span><b>${esc(s.name)}</b>${q?'<br><small>'+esc(cn[s.class_id]||'')+'</small>':''}</span>${stTag(s)}</div>`).join(''):`<p class=empty>${q||S.ft!=='all'?'Aucun élève trouvé.':'Aucun élève dans cette classe.'}</p>`;
 }
 function addClass(yr){
   ask('Nouvelle classe',[{n:'name',l:'Nom (ex : 3e A)'},{n:'year',l:'Année scolaire (ex : 2026-2027)',v:yr||S.year||''},{n:'t1',l:'Frais 1er trimestre',t:'number'},{n:'t2',l:'Frais 2e trimestre',t:'number'},{n:'t3',l:'Frais 3e trimestre',t:'number'},{n:'cur',l:'Devise des frais',o:CUR.map(c=>[c,c]),v:S.cur}],async v=>{
@@ -249,7 +385,7 @@ function addStudent(){
 }
 function menu(id){
   const s=S.stu.find(x=>x.id===id),R=S.me.role;
-  const d=show(`<h3>${esc(s.name)}</h3><p>${s.balance_cdf>0?'Reste dû : '+fmt(s.balance_cdf):'Soldé'}</p><p><small>${trims(s).map(t=>'T'+t[0]+' : '+(t[2]>0?(t[1]>0?'reste '+fmt(t[1]):'✓'):'—')).join(' · ')}</small></p><div class=col>${R!=='enseignant'?'<button id=m1>Encaisser un paiement</button><button class=ghost id=m2>Historique et reçus</button>':''}${R!=='percepteur'?'<button class=ghost id=m7>Sanctions</button>':''}${dir()?'<button class=ghost id=m6>Message WhatsApp au parent</button><button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>':''}<button class=ghost id=m3>Fermer</button></div>`);
+  const d=show(`<h3>${esc(s.name)}</h3><p>${stTag(s)}</p><p><small>${trims(s).map(t=>'T'+t[0]+' : '+(t[2]>0?(t[1]>0?'reste '+fmt(t[1]):'✓'):'—')).join(' · ')}</small></p>${fees4(s).length?'<p><small>'+fees4(s).map(f=>esc(f.name)+' : '+(feeRem(s,f)>0?'reste '+fmt(feeRemCdf(s,f)):'✓')).join(' · ')+'</small></p>':''}<div class=col>${R!=='enseignant'?'<button id=m1>Encaisser un paiement</button><button class=ghost id=m2>Historique et reçus</button>':''}${R!=='percepteur'?'<button class=ghost id=m7>Sanctions</button>':''}${dir()?'<button class=ghost id=m6>Message WhatsApp au parent</button><button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>':''}<button class=ghost id=m3>Fermer</button></div>`);
   const b=(k,f)=>{const e=d.querySelector('#'+k);if(e)e.onclick=f};
   b('m1',()=>pay(id));b('m2',()=>hist(id));b('m3',()=>d.close());b('m4',()=>editStudent(id));b('m5',()=>{d.close();delStudent(id)});b('m6',()=>wa(id));b('m7',()=>sanc(id));
 }
@@ -263,7 +399,7 @@ function waLink(phone,msg){
   return 'https://wa.me/'+n+'?text='+encodeURIComponent(msg);
 }
 const logMsg=(sid,kind,body)=>db.from('messages_log').insert({school_id:S.school.id,student_id:sid,kind,body}).then(()=>{},()=>{});
-const feeMsg=s=>{const hi=`Bonjour, ici ${S.school.name}. `,rest=trims(s).filter(t=>t[1]>0).map(t=>'T'+t[0]+' : '+fmt(t[1])).join(', ');return s.balance_cdf>0?`${hi}Concernant ${s.name} : il reste ${fmt(s.balance_cdf)} à payer (${rest}). Merci de régulariser dès que possible.`:`${hi}Les frais de ${s.name} sont entièrement soldés. Merci !`};
+const feeMsg=s=>{const hi=`Bonjour, ici ${S.school.name}. `,rest=trims(s).filter(t=>t[1]>0).map(t=>'T'+t[0]+' : '+fmt(t[1])).concat(fees4(s).filter(f=>feeRem(s,f)>0).map(f=>f.name+' : '+fmt(feeRemCdf(s,f)))).join(', ');return s.balance_cdf>0?`${hi}Concernant ${s.name} : il reste ${fmt(s.balance_cdf)} à payer (${rest}). Merci de régulariser dès que possible.`:`${hi}Les frais de ${s.name} sont entièrement soldés. Merci !`};
 async function wa(id){
   const s=S.stu.find(x=>x.id===id);
   if(!s.parent_phone){toast('Ajoute d’abord le numéro du parent (Modifier l’élève).');return}
@@ -340,27 +476,38 @@ async function ext(id,n){
 }
 function pay(id){
   const s=S.stu.find(x=>x.id===id);
-  const dt=(trims(s).find(x=>x[1]>0)||[1])[0];
-  ask('Encaisser — '+esc(s.name),[{n:'term',l:'Trimestre payé',o:[['1','1er trimestre'],['2','2e trimestre'],['3','3e trimestre']],v:String(dt)},{n:'amount',l:'Montant',t:'number'},{n:'currency',l:'Devise',o:CUR.map(c=>[c,c]),v:S.cur},{n:'method',l:'Mode de paiement',o:[['especes','Espèces'],['mobile_money','Mobile Money']]},{n:'reference',l:'Référence Mobile Money (obligatoire si Mobile Money)',r:false}],async v=>{
+  const dt=(trims(s).find(x=>x[1]>0)||[0])[0],fs=fees4(s).filter(f=>feeRem(s,f)>0);
+  const opts=[['t1','1er trimestre'],['t2','2e trimestre'],['t3','3e trimestre'],...fs.map(f=>['f'+f.id,esc(f.name)+' · reste '+fmt(feeRemCdf(s,f))])];
+  const def=dt?'t'+dt:fs.length?'f'+fs[0].id:'t1';
+  ask('Encaisser — '+esc(s.name),[{n:'target',l:'Paiement pour',o:opts,v:def},{n:'amount',l:'Montant',t:'number'},{n:'currency',l:'Devise',o:CUR.map(c=>[c,c]),v:S.cur},{n:'method',l:'Mode de paiement',o:[['especes','Espèces'],['mobile_money','Mobile Money']]},{n:'reference',l:'Référence Mobile Money (obligatoire si Mobile Money)',r:false}],async v=>{
     const mm=v.method==='mobile_money';
     if(mm&&!v.reference.trim())throw Error('Référence Mobile Money obligatoire');
-    const row={id:crypto.randomUUID(),student_id:id,term:+v.term,amount:+v.amount,currency:v.currency,method:v.method,reference:mm?v.reference.trim():null};
+    const isF=v.target[0]==='f',fid=v.target.slice(1);
+    const base={id:crypto.randomUUID(),student_id:id,amount:+v.amount,currency:v.currency,method:v.method,reference:mm?v.reference.trim():null};
+    const row=isF?{...base,fee_id:fid,fee_name:(S.fees.find(f=>f.id===fid)||{}).name}:{...base,term:+fid};
     if(!navigator.onLine)return payOffline(row);
-    const{data,error}=await db.from('payments').insert(row).select().single();
+    const{data,error}=await db.from(isF?'fee_payments':'payments').insert(row).select().single();
     if(isNet(error))return payOffline(row);
     if(error)throw error.code==='23505'?Error('Cette référence existe déjà'):error;
     await load();render();receipt(data,id);
   });
 }
 async function hist(id){
-  const{data,error}=await db.from('payments').select('*').eq('student_id',id).order('created_at',{ascending:false});
-  if(error)return toast(error.message);
-  const ids=data.map(p=>p.id);
+  const[{data:d1,error:e1},{data:d2}]=await Promise.all([db.from('payments').select('*').eq('student_id',id),db.from('fee_payments').select('*').eq('student_id',id)]);
+  if(e1)return toast(e1.message);
+  const data=[...d1.map(p=>({...p,_f:0})),...(d2||[]).map(p=>({...p,_f:1}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  const ids=d1.map(p=>p.id);
   const{data:pend=[]}=ids.length?await db.from('change_requests').select('payment_id').eq('status','en_attente').in('payment_id',ids):{data:[]};
   const pe=new Set(pend.map(r=>r.payment_id));
-  const d=show(`<h3>Reçus</h3>${data.length?data.map((p,i)=>`<div class="card col"><span>${rno(p)} · ${new Date(p.created_at).toLocaleDateString('fr-FR')} · T${p.term} · ${nf(p.amount)} ${p.currency}</span><div class=row><button class=ghost data-i=${i}>Reçu</button>${pe.has(p.id)?'<small>⏳ demande en attente</small>':`<button class=ghost data-c=${i}>${dir()?'Corriger':'Demander une correction'}</button>`}</div></div>`).join(''):'<p class=empty>Aucun paiement.</p>'}<button class=ghost id=hc>Fermer</button>`);
+  const d=show(`<h3>Reçus</h3>${data.length?data.map((p,i)=>`<div class="card col"><span>${rno(p)} · ${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f?esc(p.fee_name||'Frais'):'T'+p.term} · ${nf(p.amount)} ${p.currency}</span><div class=row><button class=ghost data-i=${i}>Reçu</button>${p._f?(dir()?`<button class=ghost data-x=${i}>Supprimer</button>`:''):pe.has(p.id)?'<small>⏳ demande en attente</small>':`<button class=ghost data-c=${i}>${dir()?'Corriger':'Demander une correction'}</button>`}</div></div>`).join(''):'<p class=empty data-ic="🧾">Aucun paiement.</p>'}<button class=ghost id=hc>Fermer</button>`);
   d.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>receipt(data[b.dataset.i],id));
   d.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>fixPay(data[b.dataset.c],id));
+  d.querySelectorAll('[data-x]').forEach(b=>b.onclick=async()=>{
+    const p=data[b.dataset.x];if(!confirm('Supprimer ce paiement de frais ?'))return;
+    const{data:r,error}=await db.from('fee_payments').delete().eq('id',p.id).select();
+    if(error||!r.length)return toast(error?error.message:'Suppression refusée');
+    d.close();await load();render();toast('Paiement supprimé');
+  });
   d.querySelector('#hc').onclick=()=>d.close();
 }
 function fixPay(p,sid){
@@ -384,11 +531,12 @@ async function decide(id,ok){
 }
 async function journal(){
   const[{data:a=[]},{data:pr=[]}]=await Promise.all([db.from('audit_log').select('*').order('created_at',{ascending:false}).limit(60),db.from('profiles').select('id,full_name')]);
-  const nm=Object.fromEntries(pr.map(p=>[p.id,p.full_name])),T={payments:'Paiement',students:'Élève',classes:'Classe'};
+  const nm=Object.fromEntries(pr.map(p=>[p.id,p.full_name])),T={payments:'Paiement',fee_payments:'Paiement de frais',students:'Élève',classes:'Classe'};
   const line=r=>{const o=r.old_row||{},n=r.new_row||{};
+    if(r.tbl==='fee_payments')return 'supprimé ('+nf(o.amount)+' '+o.currency+', '+(o.fee_name||'frais')+')';
     if(r.tbl==='payments')return r.op==='DELETE'?`supprimé (${nf(o.amount)} ${o.currency}, T${o.term})`:`modifié : ${nf(o.amount)} → ${nf(n.amount)} ${n.currency}, T${o.term} → T${n.term}`;
     return r.op==='DELETE'?`supprimé : ${o.name}`:`modifié : ${n.name}`};
-  const d=show(`<h3>Journal d’activité</h3>${a.length?a.map(r=>`<div class="card col"><b>${T[r.tbl]||r.tbl} ${esc(line(r))}</b><small>${new Date(r.created_at).toLocaleString('fr-FR')} · ${esc(nm[r.user_id]||'?')}</small></div>`).join(''):'<p class=empty>Aucune activité.</p>'}<button class=ghost id=jc>Fermer</button>`);
+  const d=show(`<h3>Journal d’activité</h3>${a.length?a.map(r=>`<div class="card col"><b>${T[r.tbl]||r.tbl} ${esc(line(r))}</b><small>${new Date(r.created_at).toLocaleString('fr-FR')} · ${esc(nm[r.user_id]||'?')}</small></div>`).join(''):'<p class=empty data-ic="📋">Aucune activité.</p>'}<button class=ghost id=jc>Fermer</button>`);
   d.querySelector('#jc').onclick=()=>d.close();
 }
 async function receipt(p,sid){
@@ -399,11 +547,11 @@ async function receipt(p,sid){
   if(im)x.drawImage(im,210,10,220,220);
   x.fillStyle='#111211';x.textAlign='center';x.font='bold 28px sans-serif';x.fillText(S.school.name,320,270);
   x.font='20px sans-serif';x.fillText(p.receipt_no?'REÇU DE PAIEMENT N° '+rno(p):'REÇU PROVISOIRE (n° attribué à l’envoi)',320,305);
-  const L=[['Élève',s.name],['Classe',c?c.name:''],['Montant payé',nf(p.amount)+' '+p.currency+' (T'+(p.term||1)+')'],['Mode',p.method==='especes'?'Espèces':'Mobile Money']];
+  const L=[['Élève',s.name],['Classe',c?c.name:''],[p.fee_id?'Frais : '+(p.fee_name||''):'Montant payé',nf(p.amount)+' '+p.currency+(p.fee_id?'':' (T'+(p.term||1)+')')],['Mode',p.method==='especes'?'Espèces':'Mobile Money']];
   if(p.reference)L.push(['Référence',p.reference]);
   L.push(['Date',new Date(p.created_at).toLocaleString('fr-FR')]);
   if(p.collector_id===S.me.id)L.push(['Perçu par',S.me.full_name]);
-  const tt=trims(s)[(p.term||1)-1];L.push(['Reste T'+(p.term||1),tt&&tt[1]>0?fmt(tt[1]):'Soldé']);
+  if(p.fee_id){const f=S.fees.find(z=>z.id===p.fee_id);L.push(['Reste '+(p.fee_name||'frais'),f&&feeRem(s,f)>0?fmt(feeRemCdf(s,f)):'Soldé'])}else{const tt=trims(s)[(p.term||1)-1];L.push(['Reste T'+(p.term||1),tt&&tt[1]>0?fmt(tt[1]):'Soldé'])}
   L.push(['Solde actuel',s.balance_cdf>0?fmt(s.balance_cdf):'Soldé']);
   L.forEach((r,i)=>{const y=370+i*55;x.strokeStyle='#ddd';x.beginPath();x.moveTo(40,y+16);x.lineTo(600,y+16);x.stroke();
     x.textAlign='left';x.fillStyle='#6b6a60';x.font='18px sans-serif';x.fillText(r[0],40,y);
@@ -412,7 +560,7 @@ async function receipt(p,sid){
   const nm=p.receipt_no?rno(p):'provisoire-'+p.id.slice(0,6),fn='recu-'+nm+'.png';
   const blob=await new Promise(r=>cv.toBlob(r,'image/png')),url=URL.createObjectURL(blob);
   const file=new File([blob],fn,{type:'image/png'});
-  const txt='Reçu '+(p.receipt_no?rno(p):'provisoire')+' — '+S.school.name+'\n'+s.name+' : '+nf(p.amount)+' '+p.currency+' (T'+(p.term||1)+')';
+  const txt='Reçu '+(p.receipt_no?rno(p):'provisoire')+' — '+S.school.name+'\n'+s.name+' : '+nf(p.amount)+' '+p.currency+(p.fee_id?' ('+(p.fee_name||'frais')+')':' (T'+(p.term||1)+')');
   const can=!!(navigator.canShare&&navigator.canShare({files:[file]}));
   const d=show(`<h3>Reçu ${p.receipt_no?rno(p):'provisoire'}</h3><div class=col><button id=rw>📤 Envoyer le reçu sur WhatsApp</button><a class="btn ghost" download="${fn}" href="${url}">Télécharger PNG</a><button class=ghost id=rc>Fermer</button></div><img src="${url}" alt="Reçu">`);
   d.querySelector('#rc').onclick=()=>d.close();
@@ -426,27 +574,32 @@ async function receipt(p,sid){
 /* ---------- Accueil ---------- */
 const tdy=()=>new Date().toLocaleDateString('sv-SE');
 async function vAccueil(){
+  $('#main').innerHTML=SK;
   const t0=new Date();t0.setHours(0,0,0,0);const R=S.me.role;
   const[pp,aa,rq,ml]=await Promise.all([
-    R==='enseignant'?{data:[]}:db.from('payments').select('amount_cdf,collector_id').gte('created_at',t0.toISOString()),
+    R==='enseignant'?{data:[]}:todayPay(t0),
     db.from('attendance').select('status').eq('day',tdy()),
     R==='directeur'?db.from('change_requests').select('id').eq('status','en_attente'):{data:[]},
     R==='directeur'?db.from('messages_log').select('*').order('created_at',{ascending:false}).limit(5):{data:[]}]);
   const st=ys(),sm=k=>st.reduce((a,s)=>a+Number(s[k]||0),0),A=aa.data||[],cnt=k=>A.filter(a=>a.status===k).length;
   const tod=sum((pp.data||[]).filter(p=>R==='directeur'||p.collector_id===S.me.id))+qToday(),pend=(rq.data||[]).length;
-  const exp=sm('due1_cdf')+sm('due2_cdf')+sm('due3_cdf'),due=sm('balance_cdf');
+  const exp=sm('due1_cdf')+sm('due2_cdf')+sm('due3_cdf')+sm('fee_exp_cdf'),due=sm('balance_cdf');
   let h=ybar()+`<h3>Bonjour ${esc(S.me.full_name)}</h3>`;
   const left=S.school.sub_until?Math.ceil((new Date(S.school.sub_until)-Date.now())/864e5):99;
   if(R==='directeur'&&left<=14)h+=`<div class="card col"><b class=due>⚠ Abonnement : ${left} jour(s) restant(s)</b><small>Contacte l’administrateur pour prolonger.</small></div>`;
-  if(pend)h+=`<div class="card" onclick="S.tab='caisse';render()"><span>Demandes à approuver</span><b class=due>${pend}</b></div>`;
+  if(pend)h+=`<div class="card" onclick="goTab('caisse')"><span>Demandes à approuver</span><b class=due>${pend}</b></div>`;
   if(R!=='enseignant'){
+    h+=lateCard();
     h+=`<div class=card><span>Encaissé aujourd’hui ${R==='directeur'?'(école)':'(ma caisse)'}</span><b>${fmt(tod)}</b></div><div class=card><span>Total encaissé</span><b>${fmt(sm('paid_cdf'))}</b></div><div class=card><span>Reste à encaisser</span><b class=due>${fmt(due)}</b></div><div class=card><span>Taux de recouvrement</span><b>${exp>0?Math.round(100*(1-due/exp)):0} %</b></div>`;
     h+='<h3>Par trimestre</h3>'+[1,2,3].map(i=>`<div class=card><span>T${i}</span><b>${fmt(sm('p'+i+'_cdf'))} / ${fmt(sm('due'+i+'_cdf'))}</b></div>`).join('');
+    h+=classBars()+(R==='directeur'?'<div id=ch></div>':'');
   }
-  h+=`<h3>Présences du jour</h3><div class=card><span>Présents · Absents · Retards</span><b>${cnt('present')} · ${cnt('absent')} · ${cnt('retard')}</b></div><div class=card><span>Élèves inscrits</span><b>${st.length}</b></div><div class=row><button onclick="S.tab='presences';render()">Faire l’appel</button>${R==='directeur'?'<button class=ghost onclick=reminders()>Rappels d’impayés</button>':''}</div>`;
+  h+=`<h3>Présences du jour</h3><div class=card><span>Présents · Absents · Retards</span><b>${cnt('present')} · ${cnt('absent')} · ${cnt('retard')}</b></div><div class=card><span>Élèves inscrits</span><b>${st.length}</b></div><div class=row><button onclick="goTab('presences')">Faire l’appel</button>${R==='directeur'?'<button class=ghost onclick=reminders()>Rappels d’impayés</button>':''}</div>`;
   const ms=ml.data||[],K={frais:'Frais',absence:'Absence',sanction:'Sanction',libre:'Message'};
   if(R==='directeur')h+='<h3>Derniers messages</h3>'+(ms.length?ms.map(m=>{const s=st.find(x=>x.id===m.student_id);return `<div class="card col"><b>${esc(s?s.name:'')} · ${K[m.kind]||m.kind}</b><small>${new Date(m.created_at).toLocaleString('fr-FR')}</small></div>`}).join(''):'<p class=empty>Aucun message envoyé.</p>');
+  if(S.tab!=='accueil')return;
   $('#main').innerHTML=h;
+  if(R==='directeur')monthChart();
 }
 function reminders(){
   const l=ys().filter(s=>s.balance_cdf>0&&s.parent_phone).sort((a,b)=>b.balance_cdf-a.balance_cdf),no=ys().filter(s=>s.balance_cdf>0&&!s.parent_phone).length;
@@ -460,16 +613,18 @@ async function vPresences(){
   if(!yc().length){$('#main').innerHTML=ybar()+'<p class=empty>Crée d’abord une classe dans Élèves.</p>';return}
   if(!yc().some(c=>c.id===S.cls))S.cls=yc()[0].id;
   S.day=S.day||tdy();
+  $('#main').innerHTML=SK;
   const{data}=await db.from('attendance').select('student_id,status').eq('day',S.day);
   if(data){S.att=Object.fromEntries(data.map(a=>[a.student_id,a.status]));S.attDay=S.day}else if(S.attDay!==S.day)S.att={};
   qget().filter(x=>x.k==='att'&&x.day===S.day).forEach(x=>S.att[x.student_id]=x.status);
+  if(S.tab!=='presences')return;
   drawAtt();
 }
 function drawAtt(){
   const l=S.stu.filter(s=>s.class_id===S.cls).sort(sorts.alpha),A=S.att||{};
   const n=k=>l.filter(s=>A[s.id]===k).length,un=l.filter(s=>!A[s.id]).length,B=[['present','Présent'],['absent','Absent'],['retard','Retard']];
   let h=ybar()+`<div class=bar><select id=cs>${yc().map(c=>`<option value="${c.id}" ${c.id===S.cls?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id=dy type=date value="${S.day}" max="${tdy()}"></div><div class=card><small>Présents ${n('present')} · Absents ${n('absent')} · Retards ${n('retard')} · Non marqués ${un}</small></div>`;
-  h+=l.length?(un?'<button class=ghost onclick=allPresent()>Tout le monde présent</button>':'')+l.map(s=>`<div class="card col"><b>${esc(s.name)}</b><div class=row>${B.map(b=>`<button class="${A[s.id]===b[0]?'':'ghost'}" onclick="mark('${s.id}','${b[0]}')">${A[s.id]===b[0]?'✓ ':''}${b[1]}</button>`).join('')}</div></div>`).join(''):'<p class=empty>Aucun élève dans cette classe.</p>';
+  h+=l.length?(un?'<button class=ghost onclick=allPresent()>Tout le monde présent</button>':'')+l.map(s=>`<div class="card col"><b>${esc(s.name)}</b><div class=row>${B.map(b=>`<button class="${A[s.id]===b[0]?'':'ghost'}" onclick="mark('${s.id}','${b[0]}')">${A[s.id]===b[0]?'✓ ':''}${b[1]}</button>`).join('')}</div></div>`).join(''):'<p class=empty data-ic="🎓">Aucun élève dans cette classe.</p>';
   h+='<button class=ghost onclick=icsRappel()>Ajouter un rappel d’appel à l’agenda</button>';
   $('#main').innerHTML=h;
   $('#cs').onchange=e=>{S.cls=e.target.value;drawAtt()};
@@ -525,8 +680,9 @@ async function team(){
 
 /* ---------- Caisse ---------- */
 async function vCaisse(){
+  $('#main').innerHTML=SK;
   const t0=new Date();t0.setHours(0,0,0,0);
-  const{data:ps0,error:pe0}=await db.from('payments').select('*').gte('created_at',t0.toISOString());
+  const{data:ps0,error:pe0}=await todayFull(t0);
   if(pe0||!ps0){$('#main').innerHTML='<p class=empty>La caisse demande une connexion internet. Les paiements saisis hors connexion partiront automatiquement.</p>';return}
   const ps=ps0;
   const mine=ps.filter(p=>p.collector_id===S.me.id);
@@ -541,13 +697,14 @@ async function vCaisse(){
   const st={en_attente:'⏳ En attente',approuvee:'✓ Approuvée',refusee:'✗ Refusée'};
   const reqHtml=rq.length?'<h3>Demandes de correction</h3>'+rq.map(r=>`<div class="card col"><b>${esc(r.info||'Paiement supprimé')}</b><span>${r.kind==='delete_payment'?'Suppression':'Correction → '+nf(r.new_amount)+' · T'+r.new_term}${nm[r.requested_by]?' · '+esc(nm[r.requested_by]):''}</span><small>${st[r.status]}${r.reason?' · '+esc(r.reason):''}</small>${dir()&&r.status==='en_attente'?`<div class=row><button onclick="decide('${r.id}',true)">Approuver</button><button class=ghost onclick="decide('${r.id}',false)">Refuser</button></div>`:''}</div>`).join(''):'';
   h+=reqHtml+'<h3>Clôtures</h3>'+(cl.length?cl.map(k=>{const e=k.declared_cash-k.expected_cash,bad=Math.abs(e)>0.5;
-    return `<div class="card col"><b>${k.day} · ${esc(nm[k.collector_id]||'')}</b><span>Attendu ${fmt(k.expected_cash)} · Compté ${fmt(k.declared_cash)}</span><span class="${bad?'due':'ok'}">${bad?'⚠ Écart : '+fmt(e):'✓ Aucun écart'}</span><small>${k.status==='controlee'?'Contrôlée':'À contrôler'}${k.note?' · '+esc(k.note):''}</small>${dir()&&k.status==='enregistree'?`<button class=ghost onclick="ctl('${k.id}')">Marquer comme contrôlée</button>`:''}</div>`}).join(''):'<p class=empty>Aucune clôture.</p>');
+    return `<div class="card col"><b>${k.day} · ${esc(nm[k.collector_id]||'')}</b><span>Attendu ${fmt(k.expected_cash)} · Compté ${fmt(k.declared_cash)}</span><span class="${bad?'due':'ok'}">${bad?'⚠ Écart : '+fmt(e):'✓ Aucun écart'}</span><small>${k.status==='controlee'?'Contrôlée':'À contrôler'}${k.note?' · '+esc(k.note):''}</small>${dir()&&k.status==='enregistree'?`<button class=ghost onclick="ctl('${k.id}')">Marquer comme contrôlée</button>`:''}</div>`}).join(''):'<p class=empty data-ic="💰">Aucune clôture.</p>');
+  if(S.tab!=='caisse')return;
   $('#main').innerHTML=h;
 }
 function closeDay(){
   ask('Clôture de caisse',[{n:'cash',l:'Espèces comptées (en '+S.cur+')',t:'number'},{n:'note',l:'Remarque (facultatif)',r:false}],async v=>{
     const t0=new Date();t0.setHours(0,0,0,0);
-    const{data:ps}=await db.from('payments').select('*').gte('created_at',t0.toISOString());
+    const{data:ps}=await todayFull(t0);if(!ps)throw Error('Connexion requise pour clôturer la journée');
     const mine=ps.filter(p=>p.collector_id===S.me.id);
     const{error}=await db.from('closures').insert({day:new Date().toLocaleDateString('sv-SE'),expected_cash:sum(mine.filter(p=>p.method==='especes')),declared_cash:+v.cash*S.school.rates[S.cur],mobile_total:sum(mine.filter(p=>p.method==='mobile_money')),note:v.note.trim()||null});
     if(error)throw error.code==='23505'?Error('Journée déjà clôturée'):error;
@@ -565,6 +722,11 @@ function vReglages(){
   let h=`<div class=card><span>Devise d’affichage</span><select id=cu style=width:auto;margin:0>${CUR.map(c=>`<option ${c===S.cur?'selected':''}>${c}</option>`).join('')}</select></div><div class=card><span>Thème</span><button class=ghost style=width:auto id=th>Clair / Sombre</button></div>`;
   if(dir())h+=`<div class="card col"><b>Taux de change (1 unité en FC)</b><label>USD<input id=r1 type=number step=any value="${sc.rates.USD}"></label><label>EUR<input id=r2 type=number step=any value="${sc.rates.EUR}"></label><label><input id=au type=checkbox style=width:auto ${sc.auto_rates?'checked':''}> Mise à jour automatique (désactive pour garder ton taux)</label><button id=sr>Enregistrer les taux</button><small>Code d’invitation des percepteurs : <b>${sc.code}</b></small></div>`;
   if(dir())h+=`<div class="card col"><b>Frais par trimestre</b>${yc().length?yc().map(c=>`<button class=ghost onclick="editFees('${c.id}')">${esc(c.name)} · ${nf(c.fee)} ${c.fee_currency}</button>`).join(''):'<small>Aucune classe.</small>'}<small>Touche une classe pour modifier T1, T2 et T3.</small></div>`;
+  if(dir()){
+    const yf=S.fees.filter(f=>cy(f)===S.year),tm=S.terms[S.year]||{};
+    h+=`<div class="card col"><b>Autres frais · ${esc(S.year||'—')}</b>${yf.length?yf.map(f=>`<button class=ghost onclick="editFee('${f.id}')">${esc(f.name)} · ${nf(f.amount)} ${f.currency} · ${f.class_id?esc((S.classes.find(c=>c.id===f.class_id)||{}).name||''):'Toutes'}</button>`).join(''):'<small>Aucun frais supplémentaire.</small>'}<button class=ghost onclick=addFee()>+ Frais (inscription, uniforme, examen…)</button></div>`;
+    h+=`<div class="card col"><b>Dates des trimestres</b><small>${hasTerms()?'T1 dès le '+fdate(tm.t1)+' · T2 dès le '+fdate(tm.t2)+' · T3 dès le '+fdate(tm.t3):'Non réglées : le statut « en retard » est désactivé.'}</small><button class=ghost onclick=setTerms()>Régler les dates · ${esc(S.year||'—')}</button></div>`;
+  }
   if(dir())h+=`<div class="card col"><b>Années scolaires</b><small>Année affichée : ${esc(S.year||'—')}</small>${ybar()}<div class=row><button class=ghost onclick=newYear()>+ Nouvelle année</button><button class=ghost onclick=promote()>Passage de classe</button></div></div>`;
   if(dir())h+='<button class=ghost onclick=team()>Équipe</button><button class=ghost onclick=journal()>Journal d’activité</button>';
   h+=`<details><summary>Guide rapide</summary><p><b>Encaisser</b> : Élèves → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu sur WhatsApp.<br><b>Clôture</b> : Caisse → Clôturer ma journée (le directeur contrôle les écarts).<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel ; tout s’envoie tout seul au retour d’internet (bandeau en haut).<br><b>Correction</b> : Élève → Historique et reçus → Corriger. Le directeur corrige directement ; le percepteur envoie une demande que le directeur approuve dans Caisse.</p></details><button class=ghost id=lo>Déconnexion</button>`;

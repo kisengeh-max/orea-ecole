@@ -36,3 +36,16 @@ a.btn{display:flex;align-items:center;justify-content:center;text-decoration:non
 a.btn.ghost{background:none;color:var(--gold);border:1px solid var(--gold)}
 input[type=search]{margin-top:0}
 dialog{max-height:90vh;overflow:auto}
+nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:12px;padding:8px 2px}
+nav svg{width:23px;height:23px}
+main>*{animation:fi .2s ease}
+@keyframes fi{from{opacity:0;transform:translateY(5px)}}
+.sk{height:62px;border-radius:14px;margin:8px 0;background:linear-gradient(90deg,var(--card),var(--line),var(--card));background-size:200% 100%;animation:sk 1.2s linear infinite}
+@keyframes sk{to{background-position:-200% 0}}
+.empty::before{content:'🗂️';display:block;font-size:44px;margin-bottom:6px}
+.empty[data-ic]::before{content:attr(data-ic)}
+.bars{display:flex;align-items:flex-end;gap:6px;height:150px}
+.bcol{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px}
+.bbar{width:100%;background:var(--gold);border-radius:6px 6px 0 0}
+.pbar{height:10px;background:var(--line);border-radius:6px;overflow:hidden}
+.pbar>i{display:block;height:100%;border-radius:6px}
