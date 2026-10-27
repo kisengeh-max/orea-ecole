@@ -18,18 +18,13 @@ const sum=a=>a.reduce((t,p)=>t+Number(p.amount_cdf),0);
 const out=async()=>{const n=S.me?qget().length:0;if(n&&!confirm(n+' élément(s) pas encore envoyé(s) seront perdus. Se déconnecter quand même ?'))return;if(S.me)localStorage.removeItem('orea_q_'+S.me.id);localStorage.removeItem('orea_snap');await db.auth.signOut();location.reload()};
 
 let defPrompt=null;
-window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();defPrompt=e;installCard()});
-window.addEventListener('appinstalled',()=>{defPrompt=null;installCard()});
-function installCard(){
-  let el=$('#ib');
-  if(!defPrompt){if(el)el.hidden=true;return}
-  if(!el){
-    el=document.createElement('div');el.id='ib';
-    el.innerHTML='<span>📲 Installer l’application</span><button id=ibb class="ghost" style="width:auto;min-height:36px;padding:4px 12px">Installer</button>';
-    $('header').after(el);
-    el.querySelector('#ibb').onclick=async()=>{if(!defPrompt)return;defPrompt.prompt();const{outcome}=await defPrompt.userChoice;if(outcome==='accepted')defPrompt=null;installCard()};
-  }
-  el.hidden=false;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();defPrompt=e});
+window.addEventListener('appinstalled',()=>{defPrompt=null;const b=$('#ibc');if(b)b.remove()});
+const isInstalled=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+const installCard=()=>isInstalled()?'':`<div class=card><span>Application</span><button id=ibc class=ghost style=width:auto onclick=installApp()>📲 Installer</button></div>`;
+async function installApp(){
+  if(defPrompt){defPrompt.prompt();const{outcome}=await defPrompt.userChoice;if(outcome==='accepted')defPrompt=null;return}
+  show('<h3>Installer ORÉA École</h3><p>Dans Chrome, touche le menu <b>⋮</b> en haut à droite, puis <b>Ajouter à l’écran d’accueil</b> (ou <b>Installer l’application</b>).</p><form method=dialog><button>OK</button></form>');
 }
 
 function ask(title,fields,ok){
@@ -88,7 +83,7 @@ function promote(){
 /* ---------- Hors connexion : copie locale et file d'attente ---------- */
 function saveSnap(){try{localStorage.orea_snap=JSON.stringify({uid:S.me.id,me:S.me,school:S.school,classes:S.classes,stu:S.stu,fees:S.fees,fpaid:S.fpaid,terms:S.terms,at:Date.now()})}catch{}}
 function readSnap(){try{return JSON.parse(localStorage.orea_snap||'null')}catch{return null}}
-function goOffline(sn){S.me=sn.me;S.school=sn.school;S.classes=sn.classes;S.stu=sn.stu;S.fees=sn.fees||[];S.fpaid=sn.fpaid||{};S.terms=sn.terms||{};S.offline=true;$('#hs').textContent=sn.school.name;render();installCard();toast('Mode hors connexion : tu peux encaisser et faire l’appel.')}
+function goOffline(sn){S.me=sn.me;S.school=sn.school;S.classes=sn.classes;S.stu=sn.stu;S.fees=sn.fees||[];S.fpaid=sn.fpaid||{};S.terms=sn.terms||{};S.offline=true;$('#hs').textContent=sn.school.name;render();toast('Mode hors connexion : tu peux encaisser et faire l’appel.')}
 function netView(){$('#nav').hidden=true;$('#main').innerHTML='<div class=auth><h2>Pas de connexion</h2><p>Connecte-toi à internet une première fois pour charger tes données.</p><button onclick=boot()>Réessayer</button></div>'}
 const qkey=()=>'orea_q_'+(S.me&&S.me.id);
 function qget(){if(!S.me)return[];try{return JSON.parse(localStorage[qkey()]||'[]')}catch{return[]}}
@@ -168,7 +163,7 @@ async function boot(){
   if(!navigator.onLine&&snap&&snap.uid===session.user.id)return goOffline(snap);
   const{data:adm,error:ea}=await db.rpc('is_platform_admin');
   if(isNet(ea))return snap&&snap.uid===session.user.id?goOffline(snap):netView();
-  if(adm===true){$('#hs').textContent='Administration';installCard();return adminView()}
+  if(adm===true){$('#hs').textContent='Administration';return adminView()}
   const{data:p,error:ep}=await db.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
   if(isNet(ep))return snap&&snap.uid===session.user.id?goOffline(snap):netView();
   if(!p)return setupView();
@@ -182,7 +177,7 @@ async function boot(){
     if(left<=0)return lockView();
     if(left<=7&&dir())toast('Abonnement : il reste '+left+' jour(s). Contacte l’administrateur.');
   }
-  installCard();await autoRate();await qsync();await load();render();
+  await autoRate();await qsync();await load();render();
 }
 
 /* ---------- Autres frais, trimestres, statistiques ---------- */
@@ -503,7 +498,7 @@ async function adminView(){
       :`Bonjour, ici l’administrateur d’ORÉA École. L’abonnement de ${s.name} est arrivé à échéance le ${d?d.toLocaleDateString('fr-FR'):'—'}. Merci de nous contacter pour réactiver l’accès.`;
     const waUrl=s.phone?waLink(s.phone,waMsg):null;
     return `<div class="card col"><b>${esc(s.name)}</b><span>${esc(s.director_name||'—')} · ${esc(s.director_email||'')}</span><small>${s.students} élèves · ${s.members} compte(s) · code ${esc(s.code)}</small><span class="${ok&&left>7?'ok':'due'}">${ok?'Actif jusqu’au '+d.toLocaleDateString('fr-FR')+' ('+left+' j)':'⛔ Expiré '+(d?'le '+d.toLocaleDateString('fr-FR'):'')}</span><div class=row>${waUrl?`<a class="btn ghost" style="width:auto;text-decoration:none" href="${waUrl}" target="_blank">💬 Relance WhatsApp</a>`:`<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}')">📞 Ajouter WhatsApp</button>`}${s.phone?`<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}','${esc(s.phone)}')">✏</button>`:''}</div><div class=row>${[1,2,3,6].map(n=>`<button class=ghost onclick="extModal('${s.id}','${esc(s.name)}',${n})">+${n} m</button>`).join('')}</div></div>`;
-  }).join(''):'<p class=empty>Aucune école pour le moment.</p>')+'<button class=ghost onclick=out()>Déconnexion</button>';
+  }).join(''):'<p class=empty>Aucune école pour le moment.</p>')+installCard()+'<button class=ghost onclick=out()>Déconnexion</button>';
   $('#main').innerHTML=h;
 }
 
@@ -792,7 +787,7 @@ async function ctl(id){
 /* ---------- Réglages ---------- */
 function vReglages(){
   const sc=S.school;
-  let h=`<div class=card><span>Devise d’affichage</span><select id=cu style=width:auto;margin:0>${CUR.map(c=>`<option ${c===S.cur?'selected':''}>${c}</option>`).join('')}</select></div><div class=card><span>Thème</span><button class=ghost style=width:auto id=th>Clair / Sombre</button></div>`;
+  let h=`<div class=card><span>Devise d’affichage</span><select id=cu style=width:auto;margin:0>${CUR.map(c=>`<option ${c===S.cur?'selected':''}>${c}</option>`).join('')}</select></div><div class=card><span>Thème</span><button class=ghost style=width:auto id=th>Clair / Sombre</button></div>`+installCard();
   if(dir())h+=`<div class="card col"><b>Taux de change (1 unité en FC)</b><label>USD<input id=r1 type=number step=any value="${sc.rates.USD}"></label><label>EUR<input id=r2 type=number step=any value="${sc.rates.EUR}"></label><label><input id=au type=checkbox style=width:auto ${sc.auto_rates?'checked':''}> Mise à jour automatique (désactive pour garder ton taux)</label><button id=sr>Enregistrer les taux</button><small>Code d’invitation des percepteurs : <b>${sc.code}</b></small></div>`;
   if(dir())h+=`<div class="card col"><b>Frais par trimestre</b>${yc().length?yc().map(c=>`<button class=ghost onclick="editFees('${c.id}')">${esc(c.name)} · ${nf(c.fee)} ${c.fee_currency}</button>`).join(''):'<small>Aucune classe.</small>'}<small>Touche une classe pour modifier T1, T2 et T3.</small></div>`;
   if(dir()){
