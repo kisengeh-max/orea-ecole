@@ -17,6 +17,21 @@ window.addEventListener('popstate',()=>{if(ignorePop){ignorePop=false;return}con
 const sum=a=>a.reduce((t,p)=>t+Number(p.amount_cdf),0);
 const out=async()=>{const n=S.me?qget().length:0;if(n&&!confirm(n+' élément(s) pas encore envoyé(s) seront perdus. Se déconnecter quand même ?'))return;if(S.me)localStorage.removeItem('orea_q_'+S.me.id);localStorage.removeItem('orea_snap');await db.auth.signOut();location.reload()};
 
+let defPrompt=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();defPrompt=e;installCard()});
+window.addEventListener('appinstalled',()=>{defPrompt=null;installCard()});
+function installCard(){
+  let el=$('#ib');
+  if(!defPrompt){if(el)el.hidden=true;return}
+  if(!el){
+    el=document.createElement('div');el.id='ib';
+    el.innerHTML='<span>📲 Installer l’application</span><button id=ibb class="ghost" style="width:auto;min-height:36px;padding:4px 12px">Installer</button>';
+    $('header').after(el);
+    el.querySelector('#ibb').onclick=async()=>{if(!defPrompt)return;defPrompt.prompt();const{outcome}=await defPrompt.userChoice;if(outcome==='accepted')defPrompt=null;installCard()};
+  }
+  el.hidden=false;
+}
+
 function ask(title,fields,ok){
   const d=show(`<form method=dialog><h3>${title}</h3>${fields.map(f=>`<label>${f.l}${f.o?`<select name=${f.n}>${f.o.map(o=>`<option value="${o[0]}" ${o[0]===f.v?'selected':''}>${o[1]}</option>`).join('')}</select>`:`<input name=${f.n} type=${f.t||'text'} step=any value="${esc(f.v)}" ${f.r===false?'':'required'}>`}</label>`).join('')}<div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Valider</button></div></form>`);
   d.querySelector('form').onsubmit=async e=>{if(e.submitter.value!=='ok')return;const v=Object.fromEntries(new FormData(e.target));try{await ok(v)}catch(x){toast(x.message||'Erreur')}};
@@ -73,7 +88,7 @@ function promote(){
 /* ---------- Hors connexion : copie locale et file d'attente ---------- */
 function saveSnap(){try{localStorage.orea_snap=JSON.stringify({uid:S.me.id,me:S.me,school:S.school,classes:S.classes,stu:S.stu,fees:S.fees,fpaid:S.fpaid,terms:S.terms,at:Date.now()})}catch{}}
 function readSnap(){try{return JSON.parse(localStorage.orea_snap||'null')}catch{return null}}
-function goOffline(sn){S.me=sn.me;S.school=sn.school;S.classes=sn.classes;S.stu=sn.stu;S.fees=sn.fees||[];S.fpaid=sn.fpaid||{};S.terms=sn.terms||{};S.offline=true;$('#hs').textContent=sn.school.name;render();toast('Mode hors connexion : tu peux encaisser et faire l’appel.')}
+function goOffline(sn){S.me=sn.me;S.school=sn.school;S.classes=sn.classes;S.stu=sn.stu;S.fees=sn.fees||[];S.fpaid=sn.fpaid||{};S.terms=sn.terms||{};S.offline=true;$('#hs').textContent=sn.school.name;render();installCard();toast('Mode hors connexion : tu peux encaisser et faire l’appel.')}
 function netView(){$('#nav').hidden=true;$('#main').innerHTML='<div class=auth><h2>Pas de connexion</h2><p>Connecte-toi à internet une première fois pour charger tes données.</p><button onclick=boot()>Réessayer</button></div>'}
 const qkey=()=>'orea_q_'+(S.me&&S.me.id);
 function qget(){if(!S.me)return[];try{return JSON.parse(localStorage[qkey()]||'[]')}catch{return[]}}
@@ -153,7 +168,7 @@ async function boot(){
   if(!navigator.onLine&&snap&&snap.uid===session.user.id)return goOffline(snap);
   const{data:adm,error:ea}=await db.rpc('is_platform_admin');
   if(isNet(ea))return snap&&snap.uid===session.user.id?goOffline(snap):netView();
-  if(adm===true){$('#hs').textContent='Administration';return adminView()}
+  if(adm===true){$('#hs').textContent='Administration';installCard();return adminView()}
   const{data:p,error:ep}=await db.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
   if(isNet(ep))return snap&&snap.uid===session.user.id?goOffline(snap):netView();
   if(!p)return setupView();
@@ -167,8 +182,9 @@ async function boot(){
     if(left<=0)return lockView();
     if(left<=7&&dir())toast('Abonnement : il reste '+left+' jour(s). Contacte l’administrateur.');
   }
-  await autoRate();await qsync();await load();render();
+  installCard();await autoRate();await qsync();await load();render();
 }
+
 /* ---------- Autres frais, trimestres, statistiques ---------- */
 const rateOf=cur=>S.school.rates[cur]||1;
 const fees4=s=>{const c=S.classes.find(x=>x.id===s.class_id);if(!c)return[];return S.fees.filter(f=>cy(f)===cy(c)&&(!f.class_id||f.class_id===c.id))};
@@ -389,6 +405,7 @@ function menu(id){
   const b=(k,f)=>{const e=d.querySelector('#'+k);if(e)e.onclick=f};
   b('m1',()=>pay(id));b('m2',()=>hist(id));b('m3',()=>d.close());b('m4',()=>editStudent(id));b('m5',()=>{d.close();delStudent(id)});b('m6',()=>wa(id));b('m7',()=>sanc(id));
 }
+
 /* ---------- Trimestres et WhatsApp ---------- */
 const COUNTRY='243'; // indicatif pays utilisé quand le numéro commence par 0 (243 = RDC)
 const trims=s=>[1,2,3].map(i=>{const due=Number(s['due'+i+'_cdf']||0),paid=Number(s['p'+i+'_cdf']||0);return[i,Math.max(0,due-paid),due,paid]});
@@ -455,25 +472,82 @@ function bulkAdd(){
 }
 
 /* ---------- Abonnement et administrateur ---------- */
-const ADMIN_WA=''; // ton numéro WhatsApp avec indicatif, sans + (ex : 243812345678)
+const ADMIN_WA='243825556492'; // Numéro WhatsApp de l'administrateur
 function lockView(){
   $('#nav').hidden=true;
-  $('#main').innerHTML=`<div class=auth><h2>Abonnement expiré</h2><p>L’accès de ${esc(S.school.name)} est suspendu depuis le ${new Date(S.school.sub_until).toLocaleDateString('fr-FR')}. Contacte l’administrateur d’ORÉA École pour le réactiver.</p>${ADMIN_WA?`<a class=btn style="text-align:center;text-decoration:none" href="https://wa.me/${ADMIN_WA}">Contacter l’administrateur</a>`:''}<button class=ghost onclick=out()>Déconnexion</button></div>`;
+  $('#main').innerHTML=`<div class=auth><h2>Abonnement expiré</h2><p>L’accès de ${esc(S.school.name)} est suspendu depuis le ${new Date(S.school.sub_until).toLocaleDateString('fr-FR')}. Contacte l’administrateur d’ORÉA École pour le réactiver.</p>${ADMIN_WA?`<a class=btn style="text-align:center;text-decoration:none" href="https://wa.me/${ADMIN_WA}?text=${encodeURIComponent('Bonjour, je souhaite renouveler l’abonnement de '+S.school.name)}">Contacter l’administrateur</a>`:''}<button class=ghost onclick=out()>Déconnexion</button></div>`;
 }
+
 async function adminView(){
   $('#nav').hidden=true;
-  const{data,error}=await db.rpc('admin_list_schools');
+  const[{data,error},{data:pays=[]}]=await Promise.all([
+    db.rpc('admin_list_schools'),
+    db.from('sub_payments').select('amount,currency,created_at')
+  ]);
   if(error)return toast(error.message);
   const now=Date.now(),act=data.filter(s=>new Date(s.sub_until)>now).length;
-  $('#main').innerHTML=`<h3>Espace administrateur</h3><div class=card><span>Écoles actives / total</span><b>${act} / ${data.length}</b></div>`+(data.length?data.map(s=>{
-    const d=new Date(s.sub_until),left=Math.ceil((d-now)/864e5),ok=left>0;
-    return `<div class="card col"><b>${esc(s.name)}</b><span>${esc(s.director_name||'—')} · ${esc(s.director_email||'')}</span><small>${s.students} élèves · ${s.members} compte(s) · code ${esc(s.code)}</small><span class="${ok&&left>7?'ok':'due'}">${ok?'Actif jusqu’au '+d.toLocaleDateString('fr-FR')+' ('+left+' j)':'⛔ Expiré le '+d.toLocaleDateString('fr-FR')}</span><div class=row>${[1,2,3,6].map(n=>`<button class=ghost onclick="ext('${s.id}',${n})">+${n} mois</button>`).join('')}</div></div>`}).join(''):'<p class=empty>Aucune école pour le moment.</p>')+'<button class=ghost onclick=out()>Déconnexion</button>';
+  const m0=new Date(new Date().getFullYear(),new Date().getMonth(),1);
+  const thisMonth=pays.filter(p=>new Date(p.created_at)>=m0);
+  const totCur=list=>{
+    const m={};
+    list.forEach(p=>{m[p.currency]=(m[p.currency]||0)+Number(p.amount)});
+    return Object.entries(m).filter(x=>x[1]>0).map(x=>nf(x[1])+' '+SYM[x[0]]).join(' · ')||'0 FC';
+  };
+  let h=`<h3>Espace administrateur</h3><div class=card><span>Écoles actives / total</span><b>${act} / ${data.length}</b></div><div class=card><span>Revenus ce mois</span><b>${totCur(thisMonth)}</b></div><div class=row><button onclick=adminHistory()>Historique des encaissements</button></div>`;
+  h+='<h3>Écoles</h3>'+(data.length?data.map(s=>{
+    const d=s.sub_until?new Date(s.sub_until):null;
+    const left=d?Math.ceil((d-now)/864e5):-999;
+    const ok=left>0;
+    const waMsg=ok
+      ?`Bonjour, ici l’administrateur d’ORÉA École. L’abonnement de ${s.name} arrive à échéance dans ${left} jour(s) (le ${d.toLocaleDateString('fr-FR')}). Pensez à prévoir le renouvellement.`
+      :`Bonjour, ici l’administrateur d’ORÉA École. L’abonnement de ${s.name} est arrivé à échéance le ${d?d.toLocaleDateString('fr-FR'):'—'}. Merci de nous contacter pour réactiver l’accès.`;
+    const waUrl=s.phone?waLink(s.phone,waMsg):null;
+    return `<div class="card col"><b>${esc(s.name)}</b><span>${esc(s.director_name||'—')} · ${esc(s.director_email||'')}</span><small>${s.students} élèves · ${s.members} compte(s) · code ${esc(s.code)}</small><span class="${ok&&left>7?'ok':'due'}">${ok?'Actif jusqu’au '+d.toLocaleDateString('fr-FR')+' ('+left+' j)':'⛔ Expiré '+(d?'le '+d.toLocaleDateString('fr-FR'):'')}</span><div class=row>${waUrl?`<a class="btn ghost" style="width:auto;text-decoration:none" href="${waUrl}" target="_blank">💬 Relance WhatsApp</a>`:`<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}')">📞 Ajouter WhatsApp</button>`}${s.phone?`<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}','${esc(s.phone)}')">✏</button>`:''}</div><div class=row>${[1,2,3,6].map(n=>`<button class=ghost onclick="extModal('${s.id}','${esc(s.name)}',${n})">+${n} m</button>`).join('')}</div></div>`;
+  }).join(''):'<p class=empty>Aucune école pour le moment.</p>')+'<button class=ghost onclick=out()>Déconnexion</button>';
+  $('#main').innerHTML=h;
 }
-async function ext(id,n){
-  if(!confirm('Prolonger de '+n+' mois ?'))return;
-  const{error}=await db.rpc('admin_extend',{sid:id,n});
-  error?toast(error.message):(toast('Abonnement prolongé'),adminView());
+
+function extModal(sid,sname,n){
+  ask('Prolonger '+sname+' (+'+n+' mois)',[
+    {n:'amount',l:'Montant perçu en liquide (0 si offert)',t:'number',v:'0'},
+    {n:'cur',l:'Devise',o:CUR.map(c=>[c,c]),v:'USD'},
+    {n:'note',l:'Remarque (facultatif)',r:false}
+  ],async v=>{
+    const{error}=await db.rpc('admin_extend',{
+      sid,
+      n:+n,
+      pay_amount:+v.amount||0,
+      pay_cur:v.cur,
+      pay_note:v.note.trim()||null
+    });
+    if(error)return toast(error.message);
+    toast('Abonnement prolongé de '+n+' mois');
+    adminView();
+  });
 }
+
+function setSchoolPhone(sid,curr=''){
+  ask('Numéro WhatsApp du directeur',[{n:'phone',l:'Numéro (ex : 0825556492)',t:'tel',v:curr}],async v=>{
+    const{error}=await db.rpc('admin_set_school_phone',{sid,p:v.phone.trim()||null});
+    if(error)return toast(error.message);
+    toast('Numéro enregistré');
+    adminView();
+  });
+}
+
+async function adminHistory(){
+  const[{data:p=[],error},{data:sc=[]}]=await Promise.all([
+    db.from('sub_payments').select('*').order('created_at',{ascending:false}).limit(100),
+    db.from('schools').select('id,name')
+  ]);
+  if(error)return toast(error.message);
+  const nm=Object.fromEntries(sc.map(s=>[s.id,s.name]));
+  const totUSD=p.filter(x=>x.currency==='USD').reduce((t,x)=>t+Number(x.amount),0);
+  const totCDF=p.filter(x=>x.currency==='CDF').reduce((t,x)=>t+Number(x.amount),0);
+  const d=show(`<h3>Comptabilité abonnements</h3><div class=card><span>Total encaissé</span><b>${nf(totUSD)} $ · ${nf(totCDF)} FC</b></div>${p.length?p.map(x=>`<div class="card col"><b>${esc(nm[x.school_id]||'École')} · +${x.months} mois</b><span>${nf(x.amount)} ${x.currency}${x.note?' ('+esc(x.note)+')':''}</span><small>${new Date(x.created_at).toLocaleString('fr-FR')}</small></div>`).join(''):'<p class=empty>Aucun encaissement enregistré.</p>'}<button class=ghost id=ahc>Fermer</button>`);
+  d.querySelector('#ahc').onclick=()=>d.close();
+}
+
 function pay(id){
   const s=S.stu.find(x=>x.id===id);
   const dt=(trims(s).find(x=>x[1]>0)||[0])[0],fs=fees4(s).filter(f=>feeRem(s,f)>0);
@@ -569,7 +643,6 @@ async function receipt(p,sid){
     else{const a=document.createElement('a');a.href=url;a.download=fn;a.click();const u=waLink(s.parent_phone,txt);if(u)window.open(u,'_blank');else toast('Image téléchargée : ajoute-la dans WhatsApp.')}
   };
 }
-
 
 /* ---------- Accueil ---------- */
 const tdy=()=>new Date().toLocaleDateString('sv-SE');
