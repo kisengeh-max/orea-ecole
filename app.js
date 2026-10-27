@@ -92,8 +92,8 @@ function vEleves(){
   if($('#cs')){$('#so').value=S.sort;$('#cs').onchange=e=>{S.cls=e.target.value;vEleves()};$('#so').onchange=e=>{S.sort=e.target.value;vEleves()}}
 }
 function addClass(){
-  ask('Nouvelle classe',[{n:'name',l:'Nom (ex : 3e A)'},{n:'year',l:'Année scolaire (ex : 2026-2027)'},{n:'fee',l:'Frais officiels',t:'number'},{n:'cur',l:'Devise des frais',o:CUR.map(c=>[c,c]),v:S.cur}],async v=>{
-    const{error}=await db.from('classes').insert({school_id:S.school.id,name:v.name.trim(),year:v.year.trim(),fee:+v.fee,fee_currency:v.cur});
+  ask('Nouvelle classe',[{n:'name',l:'Nom (ex : 3e A)'},{n:'year',l:'Année scolaire (ex : 2026-2027)'},{n:'t1',l:'Frais 1er trimestre',t:'number'},{n:'t2',l:'Frais 2e trimestre',t:'number'},{n:'t3',l:'Frais 3e trimestre',t:'number'},{n:'cur',l:'Devise des frais',o:CUR.map(c=>[c,c]),v:S.cur}],async v=>{
+    const{error}=await db.from('classes').insert({school_id:S.school.id,name:v.name.trim(),year:v.year.trim(),fee_t1:+v.t1,fee_t2:+v.t2,fee_t3:+v.t3,fee_currency:v.cur});
     if(error)throw error;await load();render()});
 }
 function addStudent(){
@@ -103,9 +103,34 @@ function addStudent(){
 }
 function menu(id){
   const s=S.stu.find(x=>x.id===id);
-  const d=show(`<h3>${esc(s.name)}</h3><p>${s.balance_cdf>0?'Reste dû : '+fmt(s.balance_cdf):'Soldé'}</p><div class=col><button id=m1>Encaisser un paiement</button><button class=ghost id=m2>Historique et reçus</button>${dir()?'<button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>':''}<button class=ghost id=m3>Fermer</button></div>`);
+  const d=show(`<h3>${esc(s.name)}</h3><p>${s.balance_cdf>0?'Reste dû : '+fmt(s.balance_cdf):'Soldé'}</p><p><small>${trims(s).map(t=>'T'+t[0]+' : '+(t[2]>0?(t[1]>0?'reste '+fmt(t[1]):'✓'):'—')).join(' · ')}</small></p><div class=col><button id=m1>Encaisser un paiement</button><button class=ghost id=m2>Historique et reçus</button>${dir()?'<button class=ghost id=m6>Message WhatsApp au parent</button><button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>':''}<button class=ghost id=m3>Fermer</button></div>`);
   d.querySelector('#m1').onclick=()=>pay(id);d.querySelector('#m2').onclick=()=>hist(id);d.querySelector('#m3').onclick=()=>d.close();
-  if(dir()){d.querySelector('#m4').onclick=()=>editStudent(id);d.querySelector('#m5').onclick=()=>{d.close();delStudent(id)}}
+  if(dir()){d.querySelector('#m4').onclick=()=>editStudent(id);d.querySelector('#m5').onclick=()=>{d.close();delStudent(id)};d.querySelector('#m6').onclick=()=>wa(id)}
+}
+/* ---------- Trimestres et WhatsApp ---------- */
+const COUNTRY='243'; // indicatif pays utilisé quand le numéro commence par 0 (243 = RDC)
+const trims=s=>{let p=Number(s.paid_cdf||0)+Number(s.discount_cdf||0);return[1,2,3].map(i=>{const f=Number(s['t'+i+'_cdf']||0),u=Math.min(Math.max(p,0),f);p-=u;return[i,f-u,f]})};
+function waLink(phone,msg){
+  let n=String(phone||'').replace(/[^\d]/g,'');
+  if(!n)return null;
+  if(n.startsWith('00'))n=n.slice(2);else if(n.startsWith('0'))n=COUNTRY+n.slice(1);
+  return 'https://wa.me/'+n+'?text='+encodeURIComponent(msg);
+}
+function wa(id){
+  const s=S.stu.find(x=>x.id===id);
+  if(!s.parent_phone){toast('Ajoute d’abord le numéro du parent (Modifier l’élève).');return}
+  const rest=trims(s).filter(t=>t[1]>0).map(t=>'T'+t[0]+' : '+fmt(t[1])).join(', ');
+  const m1=s.balance_cdf>0?`Bonjour, ici ${S.school.name}. Concernant ${s.name} : il reste ${fmt(s.balance_cdf)} à payer (${rest}). Merci de régulariser dès que possible.`:`Bonjour, ici ${S.school.name}. Les frais de ${s.name} sont entièrement soldés. Merci !`;
+  const d=show(`<h3>Message à ${esc(s.name)}</h3><label>Message<textarea id=wm rows=6 style="width:100%">${esc(m1)}</textarea></label><div class=col><button id=ws>Ouvrir WhatsApp</button><button class=ghost id=wc>Annuler</button></div>`);
+  d.querySelector('#wc').onclick=()=>d.close();
+  d.querySelector('#ws').onclick=()=>{const u=waLink(s.parent_phone,d.querySelector('#wm').value);if(!u)return toast('Numéro invalide');window.open(u,'_blank');d.close()};
+}
+function editFees(id){
+  const c=S.classes.find(x=>x.id===id);
+  ask('Frais — '+esc(c.name),[{n:'t1',l:'1er trimestre',t:'number',v:c.fee_t1},{n:'t2',l:'2e trimestre',t:'number',v:c.fee_t2},{n:'t3',l:'3e trimestre',t:'number',v:c.fee_t3},{n:'cur',l:'Devise',o:CUR.map(x=>[x,x]),v:c.fee_currency}],async v=>{
+    const{data,error}=await db.from('classes').update({fee_t1:+v.t1,fee_t2:+v.t2,fee_t3:+v.t3,fee_currency:v.cur}).eq('id',id).select();
+    if(error)throw error;if(!data.length)throw Error('Modification refusée');
+    await load();render();toast('Frais enregistrés')});
 }
 function editStudent(id){
   const s=S.stu.find(x=>x.id===id);
@@ -232,6 +257,7 @@ function vReglages(){
   const sc=S.school;
   let h=`<div class=card><span>Devise d’affichage</span><select id=cu style=width:auto;margin:0>${CUR.map(c=>`<option ${c===S.cur?'selected':''}>${c}</option>`).join('')}</select></div><div class=card><span>Thème</span><button class=ghost style=width:auto id=th>Clair / Sombre</button></div>`;
   if(dir())h+=`<div class="card col"><b>Taux de change (1 unité en FC)</b><label>USD<input id=r1 type=number step=any value="${sc.rates.USD}"></label><label>EUR<input id=r2 type=number step=any value="${sc.rates.EUR}"></label><label><input id=au type=checkbox style=width:auto ${sc.auto_rates?'checked':''}> Mise à jour automatique (désactive pour garder ton taux)</label><button id=sr>Enregistrer les taux</button><small>Code d’invitation des percepteurs : <b>${sc.code}</b></small></div>`;
+  if(dir())h+=`<div class="card col"><b>Frais par trimestre</b>${S.classes.length?S.classes.map(c=>`<button class=ghost onclick="editFees('${c.id}')">${esc(c.name)} · ${nf(c.fee)} ${c.fee_currency}</button>`).join(''):'<small>Aucune classe.</small>'}<small>Touche une classe pour modifier T1, T2 et T3.</small></div>`;
   h+=`<details><summary>Guide rapide</summary><p><b>Encaisser</b> : Élèves → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Télécharger PNG.<br><b>Clôture</b> : Caisse → Clôturer ma journée (le directeur contrôle les écarts).<br><b>Correction</b> : demande au directeur ; un paiement ne se supprime jamais.</p></details><button class=ghost id=lo>Déconnexion</button>`;
   $('#main').innerHTML=h;
   $('#lo').onclick=out;
