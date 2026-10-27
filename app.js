@@ -175,7 +175,6 @@ async function boot(){
   if(s.sub_until){
     const left=Math.ceil((new Date(s.sub_until)-Date.now())/864e5);
     if(left<=0)return lockView();
-    if(left<=7&&dir())toast('Abonnement : il reste '+left+' jour(s). Contacte l’administrateur.');
   }
   await autoRate();await qsync();await load();render();
 }
@@ -340,7 +339,7 @@ function setupView(){
 
 /* ---------- Écrans ---------- */
 function render(){
-  $('#nav').hidden=false;
+  $('#nav').hidden=false;subBanner();
   const R=S.me.role,tabs=[['accueil','Accueil'],['eleves','Élèves'],['presences','Présences'],...(R!=='enseignant'?[['caisse','Caisse']]:[]),['reglages','Réglages']];
   if(!tabs.some(x=>x[0]===S.tab))S.tab='accueil';
   $('#nav').innerHTML=tabs.map(x=>`<button data-t=${x[0]}>${svgI(x[0])}<span>${x[1]}</span></button>`).join('');
@@ -469,7 +468,7 @@ function bulkAdd(){
 /* ---------- Abonnement et administrateur ---------- */
 const ADMIN_WA='243825556492'; // Numéro WhatsApp de l'administrateur
 function lockView(){
-  $('#nav').hidden=true;
+  $('#nav').hidden=true;$('#exb').hidden=true;
   $('#main').innerHTML=`<div class=auth><h2>Abonnement expiré</h2><p>L’accès de ${esc(S.school.name)} est suspendu depuis le ${new Date(S.school.sub_until).toLocaleDateString('fr-FR')}. Contacte l’administrateur d’ORÉA École pour le réactiver.</p>${ADMIN_WA?`<a class=btn style="text-align:center;text-decoration:none" href="https://wa.me/${ADMIN_WA}?text=${encodeURIComponent('Bonjour, je souhaite renouveler l’abonnement de '+S.school.name)}">Contacter l’administrateur</a>`:''}<button class=ghost onclick=out()>Déconnexion</button></div>`;
 }
 
@@ -611,20 +610,22 @@ async function journal(){
 async function receipt(p,sid){
   const s=S.stu.find(x=>x.id===sid),c=S.classes.find(x=>x.id===s.class_id);
   const cv=document.createElement('canvas');cv.width=640;cv.height=900;const x=cv.getContext('2d');
-  x.fillStyle='#fff';x.fillRect(0,0,640,900);
+  x.fillStyle='#fffdf6';x.fillRect(0,0,640,900);const gg=x.createLinearGradient(0,0,640,900);gg.addColorStop(0,'#e9cf86');gg.addColorStop(.5,'#b08a30');gg.addColorStop(1,'#8a6a1f');x.strokeStyle=gg;x.lineWidth=4;x.strokeRect(14,14,612,872);x.lineWidth=1;x.strokeRect(24,24,592,852);
   const im=await new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.onerror=()=>r(null);i.src='logo-light.png'});
-  if(im)x.drawImage(im,210,10,220,220);
-  x.fillStyle='#111211';x.textAlign='center';x.font='bold 28px sans-serif';x.fillText(S.school.name,320,270);
-  x.font='20px sans-serif';x.fillText(p.receipt_no?'REÇU DE PAIEMENT N° '+rno(p):'REÇU PROVISOIRE (n° attribué à l’envoi)',320,305);
+  if(im)x.drawImage(im,225,36,190,190);
+  x.fillStyle='#111211';x.textAlign='center';x.font='bold 28px Georgia,serif';x.fillText(S.school.name,320,270);
+  x.font='20px Georgia,serif';x.fillText(p.receipt_no?'REÇU DE PAIEMENT N° '+rno(p):'REÇU PROVISOIRE (n° attribué à l’envoi)',320,305);
   const L=[['Élève',s.name],['Classe',c?c.name:''],[p.fee_id?'Frais : '+(p.fee_name||''):'Montant payé',nf(p.amount)+' '+p.currency+(p.fee_id?'':' (T'+(p.term||1)+')')],['Mode',p.method==='especes'?'Espèces':'Mobile Money']];
   if(p.reference)L.push(['Référence',p.reference]);
   L.push(['Date',new Date(p.created_at).toLocaleString('fr-FR')]);
   if(p.collector_id===S.me.id)L.push(['Perçu par',S.me.full_name]);
   if(p.fee_id){const f=S.fees.find(z=>z.id===p.fee_id);L.push(['Reste '+(p.fee_name||'frais'),f&&feeRem(s,f)>0?fmt(feeRemCdf(s,f)):'Soldé'])}else{const tt=trims(s)[(p.term||1)-1];L.push(['Reste T'+(p.term||1),tt&&tt[1]>0?fmt(tt[1]):'Soldé'])}
   L.push(['Solde actuel',s.balance_cdf>0?fmt(s.balance_cdf):'Soldé']);
+  x.fillStyle=gg;x.fillRect(220,322,200,2);
   L.forEach((r,i)=>{const y=370+i*55;x.strokeStyle='#ddd';x.beginPath();x.moveTo(40,y+16);x.lineTo(600,y+16);x.stroke();
     x.textAlign='left';x.fillStyle='#6b6a60';x.font='18px sans-serif';x.fillText(r[0],40,y);
     x.textAlign='right';x.fillStyle='#111211';x.font='bold 20px sans-serif';x.fillText(r[1],600,y)});
+  x.save();x.translate(515,125);x.rotate(-.2);x.globalAlpha=.85;x.strokeStyle=x.fillStyle='#9a7a2c';x.lineWidth=3;x.font='bold 26px Georgia,serif';x.textAlign='center';const sw=x.measureText(p.receipt_no?'PAYÉ':'PROVISOIRE').width;x.strokeRect(-sw/2-12,-28,sw+24,40);x.fillText(p.receipt_no?'PAYÉ':'PROVISOIRE',0,0);x.restore();
   x.textAlign='center';x.fillStyle='#6b6a60';x.font='16px sans-serif';x.fillText('Merci — ORÉA École',320,870);
   const nm=p.receipt_no?rno(p):'provisoire-'+p.id.slice(0,6),fn='recu-'+nm+'.png';
   const blob=await new Promise(r=>cv.toBlob(r,'image/png')),url=URL.createObjectURL(blob);
@@ -654,11 +655,13 @@ async function vAccueil(){
   const exp=sm('due1_cdf')+sm('due2_cdf')+sm('due3_cdf')+sm('fee_exp_cdf'),due=sm('balance_cdf');
   let h=ybar()+`<h3>Bonjour ${esc(S.me.full_name)}</h3>`;
   const left=S.school.sub_until?Math.ceil((new Date(S.school.sub_until)-Date.now())/864e5):99;
-  if(R==='directeur'&&left<=14)h+=`<div class="card col"><b class=due>⚠ Abonnement : ${left} jour(s) restant(s)</b><small>Contacte l’administrateur pour prolonger.</small></div>`;
+  if(R==='directeur'&&left>7&&left<=14)h+=`<div class="card col"><b class=due>⚠ Abonnement : ${left} jours restants</b><small>Pense à renouveler avant l’expiration.</small>${subWa(left)?`<a class=btn href="${subWa(left)}" target=_blank rel=noopener>Contacter l’administrateur</a>`:''}</div>`;
+  if(R==='directeur')h+=bkCard();
   if(pend)h+=`<div class="card" onclick="goTab('caisse')"><span>Demandes à approuver</span><b class=due>${pend}</b></div>`;
   if(R!=='enseignant'){
     h+=lateCard();
-    h+=`<div class=card><span>Encaissé aujourd’hui ${R==='directeur'?'(école)':'(ma caisse)'}</span><b>${fmt(tod)}</b></div><div class=card><span>Total encaissé</span><b>${fmt(sm('paid_cdf'))}</b></div><div class=card><span>Reste à encaisser</span><b class=due>${fmt(due)}</b></div><div class=card><span>Taux de recouvrement</span><b>${exp>0?Math.round(100*(1-due/exp)):0} %</b></div>`;
+    const pct=exp>0?Math.max(0,Math.min(100,Math.round(100*(1-due/exp)))):0;
+    h+=`<div class="card hero"><small>Encaissé aujourd’hui ${R==='directeur'?'(école)':'(ma caisse)'}</small><span class=big>${fmt(tod)}</span></div><div class=card><span>Total encaissé</span><b>${fmt(sm('paid_cdf'))}</b></div><div class=card><span>Reste à encaisser</span><b class=due>${fmt(due)}</b></div><div class=card><span>Taux de recouvrement</span><div class=ring style="--p:${pct}"><b>${pct} %</b></div></div>`;
     h+='<h3>Par trimestre</h3>'+[1,2,3].map(i=>`<div class=card><span>T${i}</span><b>${fmt(sm('p'+i+'_cdf'))} / ${fmt(sm('due'+i+'_cdf'))}</b></div>`).join('');
     h+=classBars()+(R==='directeur'?'<div id=ch></div>':'');
   }
@@ -796,6 +799,7 @@ function vReglages(){
     h+=`<div class="card col"><b>Dates des trimestres</b><small>${hasTerms()?'T1 dès le '+fdate(tm.t1)+' · T2 dès le '+fdate(tm.t2)+' · T3 dès le '+fdate(tm.t3):'Non réglées : le statut « en retard » est désactivé.'}</small><button class=ghost onclick=setTerms()>Régler les dates · ${esc(S.year||'—')}</button></div>`;
   }
   if(dir())h+=`<div class="card col"><b>Années scolaires</b><small>Année affichée : ${esc(S.year||'—')}</small>${ybar()}<div class=row><button class=ghost onclick=newYear()>+ Nouvelle année</button><button class=ghost onclick=promote()>Passage de classe</button></div></div>`;
+  if(dir())h+=`<div class="card col"><b>Exports et sauvegarde</b><small>${bkTxt()}</small><button class=ghost onclick=exportMenu()>📤 Exporter (CSV / PDF)</button><button onclick="exRun(this,backupAll)">💾 Sauvegarde complète</button></div>`;
   if(dir())h+='<button class=ghost onclick=team()>Équipe</button><button class=ghost onclick=journal()>Journal d’activité</button>';
   h+=`<details><summary>Guide rapide</summary><p><b>Encaisser</b> : Élèves → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu sur WhatsApp.<br><b>Clôture</b> : Caisse → Clôturer ma journée (le directeur contrôle les écarts).<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel ; tout s’envoie tout seul au retour d’internet (bandeau en haut).<br><b>Correction</b> : Élève → Historique et reçus → Corriger. Le directeur corrige directement ; le percepteur envoie une demande que le directeur approuve dans Caisse.</p></details><button class=ghost id=lo>Déconnexion</button>`;
   $('#main').innerHTML=h;
@@ -808,6 +812,117 @@ function vReglages(){
     if(error)return toast(error.message);S.school=data;await load();toast('Taux enregistrés');
   };
 }
+
+/* ---------- Paquet D : bannière, accueil animé, exports, sauvegarde ---------- */
+document.querySelector('header').insertAdjacentHTML('afterend','<div id=exb hidden></div>');
+(function(){if(sessionStorage.orea_sp||matchMedia('(prefers-reduced-motion: reduce)').matches)return;sessionStorage.orea_sp=1;
+  document.body.insertAdjacentHTML('beforeend','<div id=sp><div><img class=ld src=logo-dark.png alt=""><img class=ll src=logo-light.png alt=""><i></i></div></div>');
+  setTimeout(()=>{const e=$('#sp');if(e){e.classList.add('out');setTimeout(()=>e.remove(),500)}},1300)})();
+const subLeft=()=>S.school&&S.school.sub_until?Math.ceil((new Date(S.school.sub_until)-Date.now())/864e5):99;
+const subWa=n=>ADMIN_WA?`https://wa.me/${ADMIN_WA}?text=${encodeURIComponent('Bonjour, je souhaite renouveler l’abonnement de '+S.school.name+' (il reste '+n+' jour'+(n>1?'s':'')+').')}`:'';
+function subBanner(){
+  const b=$('#exb'),n=subLeft();
+  if(!b)return;
+  if(!S.me||!dir()||n>7||n<=0){b.hidden=true;return}
+  b.innerHTML=`<span>⏳ Abonnement : il reste <b>${n} jour${n>1?'s':''}</b></span>${subWa(n)?`<a href="${subWa(n)}" target=_blank rel=noopener>Renouveler</a>`:''}`;b.hidden=false;
+}
+const bkAge=()=>{const t=+localStorage['orea_bk_'+S.school.id]||0;return t?Math.floor((Date.now()-t)/864e5):null};
+function bkCard(){
+  const a=bkAge();if(a!==null&&a<30)return'';
+  return`<div class="card col"><b class=due>💾 Sauvegarde conseillée</b><small>${a===null?'Aucune sauvegarde faite.':'Dernière sauvegarde il y a '+a+' jours.'}</small><button class=ghost onclick="goTab('reglages')">Ouvrir Réglages</button></div>`;
+}
+const dl=(blob,name)=>{const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),5000)};
+const fnm=(k,e)=>k+'-'+S.school.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()+'-'+tdy()+'.'+e;
+const csvCell=v=>{if(typeof v==='number')return String(v).replace('.',',');v=v==null?'':String(v);if(/^[=+\-@]/.test(v))v="'"+v;return/[;"\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+const toCsv=(h,r)=>'\ufeff'+[h,...r].map(x=>x.map(csvCell).join(';')).join('\r\n');
+const WIN={'€':128,'…':133,'‘':145,'’':146,'“':147,'”':148,'–':150,'—':151,'œ':156,'Œ':140};
+const wenc=s=>String(s??'').replace(/[\u202f\u00a0\u2009]/g,' ').replace(/[\s\S]/g,c=>{const k=c.charCodeAt(0);return WIN[c]?String.fromCharCode(WIN[c]):k<32?' ':k<256?c:'?'}).replace(/[\\()]/g,'\\$&');
+function mkPdf(o){
+  const W=842,H=595,M=28,LH=13,FS=8,tw=o.w.reduce((a,b)=>a+b,0),cw=o.w.map(x=>x*(W-2*M)/tw),rt=o.r||[];
+  const tx=v=>typeof v==='number'?nf(v,v%1?2:0):String(v??''),wd=s=>[...s].reduce((t,c)=>t+(c>='0'&&c<='9'?4.45:' ,.'.includes(c)?2.3:4.6),0);
+  const items=o.rows.map(c=>({c})).concat(o.tot?[{c:o.tot,b:1}]:[]);
+  const first=Math.floor((H-2*M-48-2*LH)/LH),other=Math.floor((H-2*M-2*LH)/LH),pages=[];
+  let i=0;do{const n=pages.length?other:first;pages.push(items.slice(i,i+n));i+=n}while(i<items.length);
+  const out=[];let off=0;const put=s=>{out.push(s);off+=s.length};const xr=[];
+  const obj=(n,b)=>{xr[n]=off;put(n+' 0 obj\n'+b+'\nendobj\n')};
+  put('%PDF-1.4\n');
+  obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
+  const kids=pages.map((_,k)=>5+2*k);
+  obj(2,'<< /Type /Pages /Kids ['+kids.map(k=>k+' 0 R').join(' ')+'] /Count '+pages.length+' >>');
+  obj(3,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  obj(4,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  const T=(f,x,y,s)=>`BT /${f} ${FS} Tf ${x.toFixed(1)} ${y.toFixed(1)} Td (${wenc(s)}) Tj ET\n`;
+  pages.forEach((pg,k)=>{
+    let s='',y=H-M,x;
+    if(!k){s+=`0.60 0.48 0.17 rg BT /F2 16 Tf ${M} ${y-14} Td (${wenc(o.title)}) Tj ET\n0.4 g BT /F1 9 Tf ${M} ${y-30} Td (${wenc(o.sub)}) Tj ET\n`;y-=48}
+    y-=10;
+    s+=`0.847 0.718 0.416 rg ${M} ${y-3} ${W-2*M} ${LH} re f\n0.07 g\n`;
+    x=M;o.head.forEach((h,j)=>{s+=T('F2',rt.includes(j)?x+cw[j]-3-wd(h):x+3,y,h);x+=cw[j]});
+    y-=LH;
+    pg.forEach((it,r)=>{
+      if(r%2&&!it.b)s+=`0.97 0.95 0.90 rg ${M} ${y-3} ${W-2*M} ${LH} re f\n`;
+      if(it.b)s+=`0.847 0.718 0.416 rg ${M} ${y+LH-3} ${W-2*M} 0.8 re f\n`;
+      s+='0.07 g\n';x=M;
+      it.c.forEach((v,j)=>{let t=tx(v);const m=Math.floor((cw[j]-6)/4.3);if(t.length>m)t=t.slice(0,Math.max(1,m-1))+'…';s+=T(it.b?'F2':'F1',rt.includes(j)?x+cw[j]-3-wd(t):x+3,y,t);x+=cw[j]});
+      y-=LH});
+    s+=`0.5 g BT /F1 7 Tf ${M} 16 Td (${wenc('ORÉA École · page '+(k+1)+'/'+pages.length)}) Tj ET\n`;
+    obj(5+2*k,`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${6+2*k} 0 R >>`);
+    obj(6+2*k,`<< /Length ${s.length} >>\nstream\n${s}endstream`);
+  });
+  const n=5+2*pages.length,xo=off;
+  put('xref\n0 '+n+'\n0000000000 65535 f \n');
+  for(let k=1;k<n;k++)put(String(xr[k]).padStart(10,'0')+' 00000 n \n');
+  put(`trailer\n<< /Size ${n} /Root 1 0 R >>\nstartxref\n${xo}\n%%EOF`);
+  const str=out.join(''),u=new Uint8Array(str.length);for(let k=0;k<str.length;k++)u[k]=str.charCodeAt(k)&255;
+  return u;
+}
+async function ex(n){const r=await pageAll(()=>db.from(n).select('*'));if(r.error)throw new Error(r.error.message);return r.data}
+const cnm=id=>(S.classes.find(c=>c.id===id)||{}).name||'';
+const stamp=()=>'Année '+(S.year||'—')+' · édité le '+new Date().toLocaleDateString('fr-FR');
+function exStu(){
+  const l=ys().slice().sort(sorts.alpha),du=s=>Number(s.due1_cdf||0)+Number(s.due2_cdf||0)+Number(s.due3_cdf||0)+Number(s.fee_exp_cdf||0);
+  const rows=l.map(s=>[s.name,cnm(s.class_id),s.parent_phone||'',Math.round(du(s)),Math.round(Number(s.paid_cdf||0)),Math.round(Number(s.balance_cdf||0))]);
+  const a=k=>rows.reduce((t,r)=>t+r[k],0);
+  return{name:'eleves',title:'Élèves et soldes — '+S.school.name,sub:stamp()+' · '+rows.length+' élèves · montants en FC',head:['Élève','Classe','Téléphone parent','Total dû (FC)','Payé (FC)','Reste (FC)'],rows,w:[34,16,20,13,13,13],r:[3,4,5],tot:['Total','','',a(3),a(4),a(5)]};
+}
+async function exPay(){
+  const[p,f,pr]=await Promise.all([ex('payments'),ex('fee_payments'),db.from('profiles').select('id,full_name')]);
+  const pn=Object.fromEntries((pr.data||[]).map(x=>[x.id,x.full_name])),ids=new Map(ys().map(s=>[s.id,s]));
+  const l=p.concat(f).filter(x=>ids.has(x.student_id)).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  const rows=l.map(x=>[new Date(x.created_at).toLocaleString('fr-FR'),x.receipt_no?rno(x):'',ids.get(x.student_id).name,cnm(ids.get(x.student_id).class_id),x.fee_id?(x.fee_name||'Frais'):'Scolarité T'+(x.term||1),Number(x.amount),x.currency,Math.round(Number(x.amount_cdf||0)),x.method==='especes'?'Espèces':'Mobile Money',x.reference||'',pn[x.collector_id]||'']);
+  return{name:'paiements',title:'Paiements — '+S.school.name,sub:stamp()+' · '+rows.length+' paiements',head:['Date','Reçu','Élève','Classe','Objet','Montant','Devise','Montant (FC)','Mode','Référence','Perçu par'],rows,w:[22,10,26,13,19,12,8,14,14,14,20],r:[5,7],tot:['Total encaissé','','','','','','',rows.reduce((t,r)=>t+r[7],0),'','','']};
+}
+async function exClo(){
+  const[c,pr]=await Promise.all([ex('closures'),db.from('profiles').select('id,full_name')]);
+  const pn=Object.fromEntries((pr.data||[]).map(x=>[x.id,x.full_name]));
+  const rows=c.sort((a,b)=>String(b.day).localeCompare(String(a.day))).map(k=>[k.day,pn[k.collector_id]||'',Math.round(Number(k.expected_cash)),Math.round(Number(k.declared_cash)),Math.round(Number(k.declared_cash)-Number(k.expected_cash)),Math.round(Number(k.mobile_total||0)),k.status==='controlee'?'Contrôlée':'À contrôler',k.note||'']);
+  const a=j=>rows.reduce((t,r)=>t+r[j],0);
+  return{name:'caisse',title:'Clôtures de caisse — '+S.school.name,sub:'Édité le '+new Date().toLocaleDateString('fr-FR')+' · '+rows.length+' clôtures · montants en FC',head:['Jour','Percepteur','Attendu','Compté','Écart','Mobile Money','Statut','Remarque'],rows,w:[14,26,14,14,14,15,14,30],r:[2,3,4,5],tot:['Total','',a(2),a(3),a(4),a(5),'','']};
+}
+async function exportDo(k,f){
+  const r=await({stu:exStu,pay:exPay,clo:exClo}[k])();
+  if(f==='csv')dl(new Blob([toCsv(r.head,r.rows)],{type:'text/csv;charset=utf-8'}),fnm(r.name,'csv'));
+  else dl(new Blob([mkPdf(r)],{type:'application/pdf'}),fnm(r.name,'pdf'));
+  toast('Fichier enregistré dans Téléchargements');
+}
+async function exRun(b,fn){const t=b.textContent;b.disabled=true;b.textContent='Préparation…';try{await fn()}catch(e){toast(e.message||'Export impossible')}finally{b.disabled=false;b.textContent=t}}
+function exportMenu(){
+  const d=show(`<h3>Exporter</h3><div class=col><small>${esc(stamp())}</small>${[['stu','Élèves et soldes'],['pay','Paiements'],['clo','Clôtures de caisse']].map(([k,l])=>`<div class="card col"><b>${l}</b><div class=row><button class=ghost data-x="${k}:csv">CSV (Excel)</button><button class=ghost data-x="${k}:pdf">PDF</button></div></div>`).join('')}<button class=ghost id=xc>Fermer</button></div>`);
+  d.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>exRun(b,()=>exportDo(...b.dataset.x.split(':'))));
+  d.querySelector('#xc').onclick=()=>d.close();
+}
+async function backupAll(){
+  const T=['classes','students','payments','fee_payments','closures','extra_fees','attendance','sanctions','messages_log','change_requests','audit_log'],o={},er={};
+  await Promise.all(T.map(async n=>{let r=await pageAll(()=>db.from(n).select('*'));if(r.error)r=await db.from(n).select('*');if(r.error)er[n]=r.error.message;else o[n]=r.data}));
+  const[t,pr]=await Promise.all([db.from('terms').select('*'),db.from('profiles').select('id,full_name,role,active')]);
+  if(!t.error)o.terms=t.data;if(!pr.error)o.profiles=pr.data;
+  if(!Object.keys(o).length)throw new Error('Pas de connexion internet.');
+  const sc=S.school,b={app:'ORÉA École',format:1,date:new Date().toISOString(),ecole:{id:sc.id,name:sc.name,rates:sc.rates},donnees:o};
+  if(Object.keys(er).length)b.erreurs=er;
+  dl(new Blob([JSON.stringify(b)],{type:'application/json'}),fnm('sauvegarde','json'));
+  localStorage['orea_bk_'+sc.id]=Date.now();toast('Sauvegarde enregistrée dans Téléchargements');vReglages();
+}
+const bkTxt=()=>{const a=bkAge();return a===null?'Aucune sauvegarde faite. Fais-en une chaque mois.':'Dernière sauvegarde : '+(a===0?'aujourd’hui':'il y a '+a+' jour'+(a>1?'s':''))+'.'};
 
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
 window.addEventListener('online',()=>{S.offline?boot():qsync()});
