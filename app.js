@@ -52,7 +52,7 @@ function newYear(){
     const rows=yc().map(c=>({school_id:S.school.id,name:c.name,year:y,fee_t1:c.fee_t1,fee_t2:c.fee_t2,fee_t3:c.fee_t3,fee_currency:c.fee_currency}));
     if(!rows.length)throw Error('Aucune classe à copier');
     const{data:nc,error}=await db.from('classes').insert(rows).select();if(error)throw error;
-    const fo=S.fees.filter(f=>cy(f)===S.year);
+    const fo=S.fees.filter(f=>cy(f)===S.year&&!f.student_id);
     if(fo.length&&nc){const nm=Object.fromEntries(S.classes.map(c=>[c.id,c.name])),fr=fo.map(f=>{const cn=f.class_id?nc.find(c=>c.name===nm[f.class_id]):null;return f.class_id&&!cn?null:{school_id:S.school.id,year:y,name:f.name,amount:f.amount,currency:f.currency,class_id:cn?cn.id:null}}).filter(Boolean);if(fr.length){const{error:e2}=await db.from('extra_fees').insert(fr);if(e2)toast(e2.message)}}
     S.year=y;S.cls=null;localStorage['orea_year_'+S.school.id]=y;await load();render();toast('Année '+y+' créée. Utilise « Passage de classe ».');
   });
@@ -63,20 +63,24 @@ function promote(){
   const src=yc();if(!src.length)return toast('Aucune classe à faire passer.');
   let tg=oth[0];
   const guess=(n,tc)=>{const m=n.match(/\d+/);if(!m)return'';const g=n.replace(/\d+/,+m[0]+1).toLowerCase(),c=tc.find(x=>x.name.toLowerCase()===g);return c?c.id:''};
-  const d=show(`<form method=dialog><h3>Passage de classe</h3><small>De ${esc(S.year)} vers :</small><select id=py>${oth.map(y=>`<option value="${esc(y)}">${esc(y)}</option>`).join('')}</select><div id=pm></div><small>Les élèves gardent leur ancien dossier (paiements) dans l’année précédente. Les remises et les impayés ne sont pas reportés.</small><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Faire passer</button></div></form>`);
+  const d=show(`<form method=dialog><h3>Passage de classe</h3><small>De ${esc(S.year)} vers :</small><select id=py>${oth.map(y=>`<option value="${esc(y)}">${esc(y)}</option>`).join('')}</select><div id=pm></div><small>Les élèves gardent leur ancien dossier (paiements) dans l’année précédente. Les remises ne sont pas reportées.</small><label><input type=checkbox name=pc checked style=width:auto> Reporter les impayés de ${esc(S.year)} (frais « Arriérés »)</label><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Faire passer</button></div></form>`);
   const draw=()=>{const tc=S.classes.filter(c=>cy(c)===tg);d.querySelector('#pm').innerHTML=src.map(c=>{const n=S.stu.filter(s=>s.class_id===c.id).length,g=guess(c.name,tc);return `<label>${esc(c.name)} (${n} élève${n>1?'s':''}) →<select name="m_${c.id}"><option value="">— Ne pas passer —</option>${tc.map(t=>`<option value="${t.id}" ${t.id===g?'selected':''}>${esc(t.name)}</option>`).join('')}</select></label>`}).join('')};
   draw();
   d.querySelector('#py').onchange=e=>{tg=e.target.value;draw()};
   d.querySelector('form').onsubmit=async e=>{
     if(e.submitter.value!=='ok')return;
     e.preventDefault();
-    const f=e.target,rows=[];
-    for(const c of src){const dest=f.elements['m_'+c.id].value;if(!dest)continue;const have=new Set(S.stu.filter(s=>s.class_id===dest).map(s=>s.name.toLowerCase()));S.stu.filter(s=>s.class_id===c.id).forEach(s=>{if(!have.has(s.name.toLowerCase()))rows.push({school_id:S.school.id,class_id:dest,name:s.name,parent_phone:s.parent_phone})})}
+    const f=e.target,rows=[],bal={},carry=f.elements.pc.checked;
+    for(const c of src){const dest=f.elements['m_'+c.id].value;if(!dest)continue;const have=new Set(S.stu.filter(s=>s.class_id===dest).map(s=>s.name.toLowerCase()));S.stu.filter(s=>s.class_id===c.id).forEach(s=>{if(!have.has(s.name.toLowerCase())){rows.push({school_id:S.school.id,class_id:dest,name:s.name,parent_phone:s.parent_phone});if(carry&&s.balance_cdf>0)bal[dest+'|'+s.name.toLowerCase()]=Math.round(s.balance_cdf)}})}
     if(!rows.length)return toast('Aucun élève à faire passer');
-    if(!confirm(rows.length+' élève(s) seront inscrits en '+tg+'. Continuer ?'))return;
-    e.submitter.disabled=true;
-    for(let i=0;i<rows.length;i+=300){const{error}=await db.from('students').insert(rows.slice(i,i+300));if(error){e.submitter.disabled=false;return toast(error.message)}}
-    d.close();S.year=tg;localStorage['orea_year_'+S.school.id]=tg;S.cls=null;await load();render();toast(rows.length+' élève(s) inscrit(s) en '+tg);
+    const nb=Object.keys(bal).length;
+    if(!confirm(rows.length+' élève(s) seront inscrits en '+tg+(nb?' ; '+nb+' impayé(s) seront reportés (arriérés)':'')+'. Continuer ?'))return;
+    e.submitter.disabled=true;const ns=[];
+    for(let i=0;i<rows.length;i+=300){const{data,error}=await db.from('students').insert(rows.slice(i,i+300)).select('id,class_id,name');if(error){e.submitter.disabled=false;return toast(error.message)}ns.push(...data)}
+    let rep=0;
+    if(nb){const fr=ns.filter(n=>bal[n.class_id+'|'+n.name.toLowerCase()]).map(n=>({school_id:S.school.id,year:tg,name:'Arriérés '+S.year,amount:bal[n.class_id+'|'+n.name.toLowerCase()],currency:'CDF',class_id:n.class_id,student_id:n.id}));
+      for(let i=0;i<fr.length;i+=300){const{error}=await db.from('extra_fees').insert(fr.slice(i,i+300));if(error){toast('Élèves inscrits, mais report impossible : '+error.message);break}rep+=Math.min(300,fr.length-i)}}
+    d.close();S.year=tg;localStorage['orea_year_'+S.school.id]=tg;S.cls=null;await load();render();toast(rows.length+' élève(s) inscrit(s) en '+tg+(rep?' · '+rep+' impayé(s) reporté(s)':''));
   };
 }
 
@@ -181,14 +185,14 @@ async function boot(){
 
 /* ---------- Autres frais, trimestres, statistiques ---------- */
 const rateOf=cur=>S.school.rates[cur]||1;
-const fees4=s=>{const c=S.classes.find(x=>x.id===s.class_id);if(!c)return[];return S.fees.filter(f=>cy(f)===cy(c)&&(!f.class_id||f.class_id===c.id))};
+const fees4=s=>{const c=S.classes.find(x=>x.id===s.class_id);if(!c)return[];return S.fees.filter(f=>cy(f)===cy(c)&&(!f.class_id||f.class_id===c.id)&&(!f.student_id||f.student_id===s.id))};
 const feeRem=(s,f)=>Math.max(0,Number(f.amount)-(S.fpaid[s.id+':'+f.id]||0));
 const feeRemCdf=(s,f)=>feeRem(s,f)*rateOf(f.currency);
 async function pageAll(mk){let all=[],i=0;for(;;){const{data,error}=await mk().order('id').range(i,i+999);if(error)return{error};all=all.concat(data);if(data.length<1000)break;i+=1000}return{data:all}}
 function augment(){
   const memo={};
   S.stu.forEach(s=>{
-    const fs=memo[s.class_id]||(memo[s.class_id]=fees4(s));let due=0,exp=0;
+    const fs=fees4(s);let due=0,exp=0;
     fs.forEach(f=>{exp+=Number(f.amount)*rateOf(f.currency);due+=feeRemCdf(s,f)});
     s.fee_due_cdf=due;s.fee_exp_cdf=exp;
     s.balance_cdf=Number(s.balance_cdf||0)+due;
@@ -665,20 +669,13 @@ async function vAccueil(){
     h+='<h3>Par trimestre</h3>'+[1,2,3].map(i=>`<div class=card><span>T${i}</span><b>${fmt(sm('p'+i+'_cdf'))} / ${fmt(sm('due'+i+'_cdf'))}</b></div>`).join('');
     h+=classBars()+(R==='directeur'?'<div id=ch></div>':'');
   }
-  h+=`<h3>Présences du jour</h3><div class=card><span>Présents · Absents · Retards</span><b>${cnt('present')} · ${cnt('absent')} · ${cnt('retard')}</b></div><div class=card><span>Élèves inscrits</span><b>${st.length}</b></div><div class=row><button onclick="goTab('presences')">Faire l’appel</button>${R==='directeur'?'<button class=ghost onclick=reminders()>Rappels d’impayés</button>':''}</div>`;
+  h+=`<h3>Présences du jour</h3><div class=card><span>Présents · Absents · Retards</span><b>${cnt('present')} · ${cnt('absent')} · ${cnt('retard')}</b></div><div class=card><span>Élèves inscrits</span><b>${st.length}</b></div><div class=row><button onclick="goTab('presences')">Faire l’appel</button>${R==='directeur'?'<button class=ghost onclick=reminders()>Relance des parents</button>':''}</div>`;
   const ms=ml.data||[],K={frais:'Frais',absence:'Absence',sanction:'Sanction',libre:'Message'};
   if(R==='directeur')h+='<h3>Derniers messages</h3>'+(ms.length?ms.map(m=>{const s=st.find(x=>x.id===m.student_id);return `<div class="card col"><b>${esc(s?s.name:'')} · ${K[m.kind]||m.kind}</b><small>${new Date(m.created_at).toLocaleString('fr-FR')}</small></div>`}).join(''):'<p class=empty>Aucun message envoyé.</p>');
   if(S.tab!=='accueil')return;
   $('#main').innerHTML=h;
   if(R==='directeur')monthChart();
 }
-function reminders(){
-  const l=ys().filter(s=>s.balance_cdf>0&&s.parent_phone).sort((a,b)=>b.balance_cdf-a.balance_cdf),no=ys().filter(s=>s.balance_cdf>0&&!s.parent_phone).length;
-  const d=show(`<h3>Rappels d’impayés</h3>${l.length?l.map(s=>`<div class=card><span>${esc(s.name)}<br><small>${fmt(s.balance_cdf)}</small></span><button class=ghost style=width:auto data-w=${s.id}>WhatsApp</button></div>`).join(''):'<p class=empty>Aucun impayé avec numéro.</p>'}${no?`<small>${no} élève(s) sans numéro ignoré(s).</small>`:''}<button class=ghost id=rc2>Fermer</button>`);
-  d.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{const s=S.stu.find(x=>x.id===b.dataset.w),m=feeMsg(s),u=waLink(s.parent_phone,m);if(u){window.open(u,'_blank');logMsg(s.id,'frais',m);b.textContent='✓ Envoyé';b.disabled=true}});
-  d.querySelector('#rc2').onclick=()=>d.close();
-}
-
 /* ---------- Présences ---------- */
 async function vPresences(){
   if(!yc().length){$('#main').innerHTML=ybar()+'<p class=empty>Crée d’abord une classe dans Élèves.</p>';return}
@@ -794,12 +791,12 @@ function vReglages(){
   if(dir())h+=`<div class="card col"><b>Taux de change (1 unité en FC)</b><label>USD<input id=r1 type=number step=any value="${sc.rates.USD}"></label><label>EUR<input id=r2 type=number step=any value="${sc.rates.EUR}"></label><label><input id=au type=checkbox style=width:auto ${sc.auto_rates?'checked':''}> Mise à jour automatique (désactive pour garder ton taux)</label><button id=sr>Enregistrer les taux</button><small>Code d’invitation des percepteurs : <b>${sc.code}</b></small></div>`;
   if(dir())h+=`<div class="card col"><b>Frais par trimestre</b>${yc().length?yc().map(c=>`<button class=ghost onclick="editFees('${c.id}')">${esc(c.name)} · ${nf(c.fee)} ${c.fee_currency}</button>`).join(''):'<small>Aucune classe.</small>'}<small>Touche une classe pour modifier T1, T2 et T3.</small></div>`;
   if(dir()){
-    const yf=S.fees.filter(f=>cy(f)===S.year),tm=S.terms[S.year]||{};
+    const yf=S.fees.filter(f=>cy(f)===S.year&&!f.student_id),tm=S.terms[S.year]||{};
     h+=`<div class="card col"><b>Autres frais · ${esc(S.year||'—')}</b>${yf.length?yf.map(f=>`<button class=ghost onclick="editFee('${f.id}')">${esc(f.name)} · ${nf(f.amount)} ${f.currency} · ${f.class_id?esc((S.classes.find(c=>c.id===f.class_id)||{}).name||''):'Toutes'}</button>`).join(''):'<small>Aucun frais supplémentaire.</small>'}<button class=ghost onclick=addFee()>+ Frais (inscription, uniforme, examen…)</button></div>`;
     h+=`<div class="card col"><b>Dates des trimestres</b><small>${hasTerms()?'T1 dès le '+fdate(tm.t1)+' · T2 dès le '+fdate(tm.t2)+' · T3 dès le '+fdate(tm.t3):'Non réglées : le statut « en retard » est désactivé.'}</small><button class=ghost onclick=setTerms()>Régler les dates · ${esc(S.year||'—')}</button></div>`;
   }
   if(dir())h+=`<div class="card col"><b>Années scolaires</b><small>Année affichée : ${esc(S.year||'—')}</small>${ybar()}<div class=row><button class=ghost onclick=newYear()>+ Nouvelle année</button><button class=ghost onclick=promote()>Passage de classe</button></div></div>`;
-  if(dir())h+=`<div class="card col"><b>Exports et sauvegarde</b><small>${bkTxt()}</small><button class=ghost onclick=exportMenu()>📤 Exporter (CSV / PDF)</button><button onclick="exRun(this,backupAll)">💾 Sauvegarde complète</button></div>`;
+  if(dir())h+=`<div class="card col"><b>Rapports, exports et sauvegarde</b><small>${bkTxt()}</small><button class=ghost onclick=monthReport()>📊 Rapport mensuel</button><button class=ghost onclick=exportMenu()>📤 Exporter (CSV / PDF)</button><button onclick="exRun(this,backupAll)">💾 Sauvegarde complète</button></div>`;
   if(dir())h+='<button class=ghost onclick=team()>Équipe</button><button class=ghost onclick=journal()>Journal d’activité</button>';
   h+=`<details><summary>Guide rapide</summary><p><b>Encaisser</b> : Élèves → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu sur WhatsApp.<br><b>Clôture</b> : Caisse → Clôturer ma journée (le directeur contrôle les écarts).<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel ; tout s’envoie tout seul au retour d’internet (bandeau en haut).<br><b>Correction</b> : Élève → Historique et reçus → Corriger. Le directeur corrige directement ; le percepteur envoie une demande que le directeur approuve dans Caisse.</p></details><button class=ghost id=lo>Déconnexion</button>`;
   $('#main').innerHTML=h;
@@ -923,6 +920,73 @@ async function backupAll(){
   localStorage['orea_bk_'+sc.id]=Date.now();toast('Sauvegarde enregistrée dans Téléchargements');vReglages();
 }
 const bkTxt=()=>{const a=bkAge();return a===null?'Aucune sauvegarde faite. Fais-en une chaque mois.':'Dernière sauvegarde : '+(a===0?'aujourd’hui':'il y a '+a+' jour'+(a>1?'s':''))+'.'};
+
+/* ---------- Paquet E : relance en série, rapport mensuel ---------- */
+const ago=t=>{const n=Math.floor((Date.now()-t)/864e5);return n<1?'aujourd’hui':'il y a '+n+' j'};
+async function reminders(){
+  const since=new Date(Date.now()-7*864e5).toISOString();
+  const r=await db.from('messages_log').select('student_id,created_at').eq('kind','frais').gte('created_at',since);
+  const sent=new Map();(r.data||[]).forEach(m=>{const t=+new Date(m.created_at);if(!(sent.get(m.student_id)>t))sent.set(m.student_id,t)});
+  const f={cls:'',late:false};
+  const go=s=>{const m=feeMsg(s),u=waLink(s.parent_phone,m);if(!u)return toast('Numéro invalide');window.open(u,'_blank');logMsg(s.id,'frais',m);sent.set(s.id,Date.now());draw()};
+  const draw=()=>{
+    const all=ys().filter(s=>s.balance_cdf>0&&(!f.cls||s.class_id===f.cls)&&(!f.late||status(s)==='late')),no=all.filter(s=>!s.parent_phone).length;
+    const l=all.filter(s=>s.parent_phone).sort((a,b)=>(sent.has(a.id)-sent.has(b.id))||b.balance_cdf-a.balance_cdf),done=l.filter(s=>sent.has(s.id)).length,nx=l.find(s=>!sent.has(s.id)),pc=l.length?Math.round(100*done/l.length):0;
+    const d=show(`<h3>Relance des parents</h3><select id=rcl><option value="">Toutes les classes</option>${yc().map(c=>`<option value="${c.id}" ${c.id===f.cls?'selected':''}>${esc(c.name)}</option>`).join('')}</select>${hasTerms()?`<div class=chips><button class="chip ${f.late?'':'on'}" data-f=all>Tous les impayés</button><button class="chip ${f.late?'on':''}" data-f=late>En retard</button></div>`:''}<small>Relancés ces 7 derniers jours : <b>${done} / ${l.length}</b></small><div class=pbar style="margin:6px 0 10px"><i style="width:${pc}%;background:var(--gold)"></i></div>${nx?`<button id=rn>▶ Relancer le suivant · ${esc(nx.name)}</button>`:l.length?'<p class=ok style="text-align:center">✓ Tous les parents ont été relancés</p>':''}${l.length?l.map(s=>`<div class=card><span>${status(s)==='late'?'🔴 ':''}${esc(s.name)}<br><small>${fmt(s.balance_cdf)}${sent.has(s.id)?' · ✓ relancé '+ago(sent.get(s.id)):''}</small></span><button class=ghost style=width:auto data-w=${s.id}>${sent.has(s.id)?'Renvoyer':'WhatsApp'}</button></div>`).join(''):'<p class=empty>Aucun impayé avec numéro.</p>'}${no?`<small>${no} élève(s) sans numéro ignoré(s).</small>`:''}<button class=ghost id=rc2>Fermer</button>`);
+    d.querySelector('#rcl').onchange=e=>{f.cls=e.target.value;draw()};
+    d.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{f.late=b.dataset.f==='late';draw()});
+    const rn=d.querySelector('#rn');if(rn)rn.onclick=()=>go(nx);
+    d.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>go(S.stu.find(x=>x.id===b.dataset.w)));
+    d.querySelector('#rc2').onclick=()=>d.close();
+  };
+  draw();
+}
+const cnm2=id=>{const c=S.classes.find(x=>x.id===id);return c?c.name+(yrs().length>1?' · '+cy(c):''):'—'};
+function monthReport(){
+  const now=new Date(),ms=[];
+  for(let i=0;i<12;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1),l=d.toLocaleDateString('fr-FR',{month:'long',year:'numeric'});ms.push([d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'),l.charAt(0).toUpperCase()+l.slice(1)])}
+  const d=show(`<h3>Rapport mensuel</h3><div class=col><label>Mois<select id=rm>${ms.map(m=>`<option value="${m[0]}">${m[1]}</option>`).join('')}</select></label><small>Montants affichés en ${S.cur}. L’état actuel concerne l’année ${esc(S.year||'—')}.</small><button id=rg>Générer le rapport</button><button class=ghost id=rx>Fermer</button></div>`);
+  d.querySelector('#rx').onclick=()=>d.close();
+  d.querySelector('#rg').onclick=e=>{const k=d.querySelector('#rm').value;exRun(e.currentTarget,()=>reportImg(k,ms.find(m=>m[0]===k)[1]))};
+}
+async function reportImg(key,label){
+  const[y,m]=key.split('-').map(Number),a=new Date(y,m-1,1),b=new Date(y,m,1),nk=b.getFullYear()+'-'+String(b.getMonth()+1).padStart(2,'0')+'-01';
+  const q=n=>pageAll(()=>db.from(n).select('student_id,amount_cdf,method,created_at').gte('created_at',a.toISOString()).lt('created_at',b.toISOString()));
+  const[p,f,c]=await Promise.all([q('payments'),q('fee_payments'),db.from('closures').select('expected_cash,declared_cash').gte('day',key+'-01').lt('day',nk)]);
+  const er=p.error||f.error;if(er)throw new Error(er.message);
+  const rows=p.data.concat(f.data),ids=new Map(S.stu.map(s=>[s.id,s])),tot=sum(rows),esp=sum(rows.filter(r=>r.method==='especes')),by={};
+  rows.forEach(r=>{const s=ids.get(r.student_id);if(s)by[s.class_id]=(by[s.class_id]||0)+Number(r.amount_cdf)});
+  const cl=Object.entries(by).map(([id,v])=>[cnm2(id),v]).sort((u,v)=>v[1]-u[1]).slice(0,8),mx=Math.max(...cl.map(z=>z[1]),1);
+  const cs=c.data||[],ecart=cs.reduce((t,k)=>t+Number(k.declared_cash)-Number(k.expected_cash),0);
+  const st=ys(),sm=k=>st.reduce((t,s)=>t+Number(s[k]||0),0),exp=sm('due1_cdf')+sm('due2_cdf')+sm('due3_cdf')+sm('fee_exp_cdf'),due=sm('balance_cdf'),pct=exp>0?Math.max(0,Math.min(100,Math.round(100*(1-due/exp)))):0,owe=st.filter(s=>s.balance_cdf>0).length;
+  const R=[['Taux de recouvrement',pct+' %'],['Reste à encaisser',fmt(due)],['Élèves avec un solde',owe+' / '+st.length]];
+  if(hasTerms())R.push(['Élèves en retard',String(st.filter(s=>status(s)==='late').length)]);
+  if(cs.length)R.push(['Écart de caisse ('+cs.length+' clôture'+(cs.length>1?'s':'')+')',fmt(ecart)]);
+  const W=720,CH=Math.max(cl.length,1),y0=545,yS=y0+CH*50+30,yF=yS+45+(R.length-1)*44+70,H=yF+40;
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;const x=cv.getContext('2d');
+  x.fillStyle='#fffdf6';x.fillRect(0,0,W,H);
+  const gg=x.createLinearGradient(0,0,W,H);gg.addColorStop(0,'#e9cf86');gg.addColorStop(.5,'#b08a30');gg.addColorStop(1,'#8a6a1f');
+  x.strokeStyle=gg;x.lineWidth=4;x.strokeRect(14,14,W-28,H-28);x.lineWidth=1;x.strokeRect(24,24,W-48,H-48);
+  const im=await new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.onerror=()=>r(null);i.src='logo-light.png'});
+  if(im)x.drawImage(im,295,44,130,130);
+  x.textAlign='center';x.fillStyle='#111211';x.font='bold 30px Georgia,serif';x.fillText(S.school.name,W/2,215);
+  x.fillStyle='#6b6a60';x.font='20px Georgia,serif';x.fillText('Rapport d’activité · '+label,W/2,248);
+  x.fillStyle=gg;x.fillRect(W/2-130,268,260,2);
+  x.fillStyle='#6b6a60';x.font='18px sans-serif';x.fillText('Encaissé ce mois',W/2,330);
+  const big=fmt(tot);let fs=58;x.font='600 '+fs+'px Georgia,serif';while(x.measureText(big).width>600&&fs>30){fs-=2;x.font='600 '+fs+'px Georgia,serif'}
+  x.fillStyle='#9a7a2c';x.fillText(big,W/2,400);
+  x.fillStyle='#111211';x.font='17px sans-serif';x.fillText(rows.length+' paiement'+(rows.length>1?'s':'')+' · Espèces '+fmt(esp)+' · Mobile Money '+fmt(tot-esp),W/2,440);
+  x.textAlign='left';x.fillStyle='#111211';x.font='bold 22px Georgia,serif';x.fillText('Encaissements par classe',50,500);
+  if(!cl.length){x.fillStyle='#6b6a60';x.font='17px sans-serif';x.fillText('Aucun paiement ce mois-ci.',50,y0+10)}
+  cl.forEach((r,i)=>{const yy=y0+i*50;x.textAlign='left';x.fillStyle='#111211';x.font='18px sans-serif';x.fillText(r[0],50,yy);x.textAlign='right';x.font='bold 18px Georgia,serif';x.fillText(fmt(r[1]),W-50,yy);x.fillStyle='#e8e0cc';x.fillRect(50,yy+10,W-100,8);x.fillStyle=gg;x.fillRect(50,yy+10,Math.max(4,(W-100)*r[1]/mx),8)});
+  x.textAlign='left';x.fillStyle='#111211';x.font='bold 22px Georgia,serif';x.fillText('État actuel · '+(S.year||'—'),50,yS);
+  R.forEach((r,i)=>{const yy=yS+45+i*44;x.strokeStyle='#e0d8c4';x.lineWidth=1;x.beginPath();x.moveTo(50,yy+14);x.lineTo(W-50,yy+14);x.stroke();x.textAlign='left';x.fillStyle='#6b6a60';x.font='18px sans-serif';x.fillText(r[0],50,yy);x.textAlign='right';x.fillStyle='#111211';x.font='bold 19px Georgia,serif';x.fillText(r[1],W-50,yy)});
+  x.textAlign='center';x.fillStyle='#6b6a60';x.font='15px sans-serif';x.fillText('Édité le '+new Date().toLocaleDateString('fr-FR')+' — ORÉA École',W/2,yF);
+  const blob=await new Promise(r=>cv.toBlob(r,'image/png')),url=URL.createObjectURL(blob),fn='rapport-'+key+'.png',file=new File([blob],fn,{type:'image/png'}),can=!!(navigator.canShare&&navigator.canShare({files:[file]}));
+  const d=show(`<h3>Rapport · ${esc(label)}</h3><div class=col><button id=ps>📤 Partager</button><a class="btn ghost" download="${fn}" href="${url}">Télécharger PNG</a><button class=ghost id=pc>Fermer</button></div><img src="${url}" alt="Rapport">`);
+  d.querySelector('#pc').onclick=()=>d.close();
+  d.querySelector('#ps').onclick=async()=>{if(can){try{await navigator.share({files:[file],text:'Rapport '+label+' — '+S.school.name})}catch(e){if(e.name!=='AbortError')toast('Partage impossible. Utilise Télécharger PNG.')}}else{dl(blob,fn);toast('Image enregistrée dans Téléchargements.')}};
+}
 
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
 window.addEventListener('online',()=>{S.offline?boot():qsync()});
