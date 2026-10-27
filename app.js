@@ -2,7 +2,7 @@ const tfetch=(u,o={})=>{const c=new AbortController(),t=setTimeout(()=>c.abort()
 const db=supabase.createClient(OREA_CONFIG.SUPABASE_URL,OREA_CONFIG.SUPABASE_ANON_KEY,{global:{fetch:tfetch}});
 const $=s=>document.querySelector(s);
 const CUR=['CDF','USD','EUR'],SYM={CDF:'FC',USD:'$',EUR:'€'};
-const S={me:null,school:null,classes:[],stu:[],cls:null,sort:'alpha',tab:'accueil',cur:localStorage.cur||'CDF',year:null,q:'',ft:'all',offline:false,fees:[],fpaid:{},terms:{}};
+const S={me:null,school:null,classes:[],stu:[],cls:null,sort:'alpha',tab:'accueil',cur:localStorage.cur||'CDF',year:null,q:'',ft:'all',offline:false,fees:[],fpaid:{},terms:{},depenses:[],depDate:null,bilDate:null,impcls:'',impf:'all',imps:'anciennete',_bilan:null};
 document.documentElement.dataset.theme=localStorage.theme||'dark';
 const dir=()=>S.me.role==='directeur';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -13,7 +13,7 @@ const toast=m=>{m=/failed to fetch|networkerror|network request|abort|load faile
 let dlgPushed=false,ignorePop=false;
 const show=h=>{const d=$('#dlg');d.innerHTML=h;if(!d.open){d.showModal();if(!dlgPushed){history.pushState({dlg:1},'');dlgPushed=true}}return d};
 $('#dlg').addEventListener('close',()=>setTimeout(()=>{const d=$('#dlg');if(!d.open&&dlgPushed){dlgPushed=false;ignorePop=true;history.back()}},0));
-window.addEventListener('popstate',()=>{if(ignorePop){ignorePop=false;return}const d=$('#dlg');if(d.open){dlgPushed=false;d.close();return}if(S.me&&S.tab!=='accueil'){S.tab='accueil';render()}});
+window.addEventListener('popstate',()=>{if(ignorePop){ignorePop=false;return}const d=$('#dlg');if(d.open){dlgPushed=false;d.close();return}if(S.me&&!['accueil','menu'].includes(S.tab)){if(['impayes','depenses','bilan','presences','caisse'].includes(S.tab)){S.tab='menu';render()}else{S.tab='accueil';render()}}});
 const sum=a=>a.reduce((t,p)=>t+Number(p.amount_cdf),0);
 const out=async()=>{const n=S.me?qget().length:0;if(n&&!confirm(n+' élément(s) pas encore envoyé(s) seront perdus. Se déconnecter quand même ?'))return;if(S.me)localStorage.removeItem('orea_q_'+S.me.id);localStorage.removeItem('orea_snap');await db.auth.signOut();location.reload()};
 
@@ -224,7 +224,7 @@ function stTag(s){
 function lateCard(){
   if(!hasTerms())return'';
   const n=ys().filter(s=>status(s)==='late').length;
-  return`<div class=card onclick="S.ft='late';S.q='';goTab('eleves')"><span>🔴 Élèves en retard</span><b class="${n?'due':'ok'}">${n}</b></div>`;
+  return`<div class=card onclick="menuGo('impayes')"><span>🔴 Élèves en retard</span><b class="${n?'due':'ok'}">${n}</b></div>`;
 }
 const short=cdf=>{const v=cdf/rateOf(S.cur);return v>=1e6?nf(v/1e6,1)+' M':v>=1e3?nf(Math.round(v/1e3),0)+' k':nf(v,0)};
 function classBars(){
@@ -260,13 +260,18 @@ function goTab(t){
   if(S.tab==='accueil'&&t!=='accueil'&&!(history.state&&history.state.t))history.pushState({t:1},'');
   S.tab=t;render();
 }
+function menuGo(t){
+  if(S.tab==='accueil'&&!(history.state&&history.state.t))history.pushState({t:1},'');
+  S.tab=t;render();
+}
 const SK='<div class=sk></div>'.repeat(4);
 const ICON={
   accueil:'<path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/>',
   eleves:'<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c0 1.5 3 3 6 3s6-1.5 6-3v-5"/>',
   presences:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M9 16l2 2 4-4"/>',
   caisse:'<rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20M16 15h2"/>',
-  reglages:'<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'
+  reglages:'<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+  menu:'<path d="M4 6h16M4 12h16M4 18h16"/>'
 };
 const svgI=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
 function addFee(){
@@ -344,11 +349,13 @@ function setupView(){
 /* ---------- Écrans ---------- */
 function render(){
   $('#nav').hidden=false;subBanner();
-  const R=S.me.role,tabs=[['accueil','Accueil'],['eleves','Élèves'],['presences','Présences'],...(R!=='enseignant'?[['caisse','Caisse']]:[]),['reglages','Réglages']];
-  if(!tabs.some(x=>x[0]===S.tab))S.tab='accueil';
+  const R=S.me.role,tabs=[['accueil','Accueil'],['eleves','Élèves'],['menu','Menu'],['reglages','Réglages']];
+  if(!tabs.some(x=>x[0]===S.tab) && !['impayes','depenses','bilan','presences','caisse'].includes(S.tab))S.tab='accueil';
+  let activeTab = ['impayes','depenses','bilan','presences','caisse'].includes(S.tab) ? 'menu' : S.tab;
   $('#nav').innerHTML=tabs.map(x=>`<button data-t=${x[0]}>${svgI(x[0])}<span>${x[1]}</span></button>`).join('');
-  document.querySelectorAll('#nav button').forEach(b=>{b.classList.toggle('on',b.dataset.t===S.tab);b.onclick=()=>goTab(b.dataset.t)});
-  ({accueil:vAccueil,eleves:vEleves,presences:vPresences,caisse:vCaisse,reglages:vReglages})[S.tab]();qui();
+  document.querySelectorAll('#nav button').forEach(b=>{b.classList.toggle('on',b.dataset.t===activeTab);b.onclick=()=>goTab(b.dataset.t)});
+  ({accueil:vAccueil,eleves:vEleves,menu:vMenu,reglages:vReglages,impayes:vImpayes,depenses:vDepenses,bilan:vBilan,presences:vPresences,caisse:vCaisse})[S.tab]();
+  qui();
 }
 const sorts={
   alpha:(a,b)=>a.name.localeCompare(b.name,'fr'),
@@ -646,6 +653,17 @@ async function receipt(p,sid){
 
 /* ---------- Accueil ---------- */
 const tdy=()=>new Date().toLocaleDateString('sv-SE');
+function previsionCard(){
+  const t=curTerm(S.year);
+  if(!t)return '';
+  const st=ys();
+  const due=st.reduce((a,s)=>a+Number(s['due'+t+'_cdf']||0),0);
+  const paid=st.reduce((a,s)=>a+Number(s['p'+t+'_cdf']||0),0);
+  const rem=Math.max(0,due-paid);
+  const tm=S.terms[S.year];
+  const dt=tm?tm['t'+t]:null;
+  return `<div class="card col"><b>📈 Prévision T${t}</b><small>Encaissé ${fmt(paid)} / ${fmt(due)}</small><small class=due>Reste à encaisser : ${fmt(rem)}</small><small>Fin du trimestre : ${dt?fdate(dt):'—'}</small></div>`;
+}
 async function vAccueil(){
   $('#main').innerHTML=SK;
   const t0=new Date();t0.setHours(0,0,0,0);const R=S.me.role;
@@ -661,15 +679,16 @@ async function vAccueil(){
   const left=S.school.sub_until?Math.ceil((new Date(S.school.sub_until)-Date.now())/864e5):99;
   if(R==='directeur'&&left>7&&left<=14)h+=`<div class="card col"><b class=due>⚠ Abonnement : ${left} jours restants</b><small>Pense à renouveler avant l’expiration.</small>${subWa(left)?`<a class=btn href="${subWa(left)}" target=_blank rel=noopener>Contacter l’administrateur</a>`:''}</div>`;
   if(R==='directeur')h+=bkCard();
-  if(pend)h+=`<div class="card" onclick="goTab('caisse')"><span>Demandes à approuver</span><b class=due>${pend}</b></div>`;
+  if(pend)h+=`<div class="card" onclick="menuGo('caisse')"><span>Demandes à approuver</span><b class=due>${pend}</b></div>`;
   if(R!=='enseignant'){
     h+=lateCard();
+    if(R==='directeur')h+=previsionCard();
     const pct=exp>0?Math.max(0,Math.min(100,Math.round(100*(1-due/exp)))):0;
     h+=`<div class="card hero"><small>Encaissé aujourd’hui ${R==='directeur'?'(école)':'(ma caisse)'}</small><span class=big>${fmt(tod)}</span></div><div class=card><span>Total encaissé</span><b>${fmt(sm('paid_cdf'))}</b></div><div class=card><span>Reste à encaisser</span><b class=due>${fmt(due)}</b></div><div class=card><span>Taux de recouvrement</span><div class=ring style="--p:${pct}"><b>${pct} %</b></div></div>`;
     h+='<h3>Par trimestre</h3>'+[1,2,3].map(i=>`<div class=card><span>T${i}</span><b>${fmt(sm('p'+i+'_cdf'))} / ${fmt(sm('due'+i+'_cdf'))}</b></div>`).join('');
     h+=classBars()+(R==='directeur'?'<div id=ch></div>':'');
   }
-  h+=`<h3>Présences du jour</h3><div class=card><span>Présents · Absents · Retards</span><b>${cnt('present')} · ${cnt('absent')} · ${cnt('retard')}</b></div><div class=card><span>Élèves inscrits</span><b>${st.length}</b></div><div class=row><button onclick="goTab('presences')">Faire l’appel</button>${R==='directeur'?'<button class=ghost onclick=reminders()>Relance des parents</button>':''}</div>`;
+  h+=`<h3>Présences du jour</h3><div class=card><span>Présents · Absents · Retards</span><b>${cnt('present')} · ${cnt('absent')} · ${cnt('retard')}</b></div><div class=card><span>Élèves inscrits</span><b>${st.length}</b></div><div class=row><button onclick="menuGo('presences')">Faire l’appel</button>${R==='directeur'?'<button class=ghost onclick=reminders()>Relance des parents</button>':''}</div>`;
   const ms=ml.data||[],K={frais:'Frais',absence:'Absence',sanction:'Sanction',libre:'Message'};
   if(R==='directeur')h+='<h3>Derniers messages</h3>'+(ms.length?ms.map(m=>{const s=st.find(x=>x.id===m.student_id);return `<div class="card col"><b>${esc(s?s.name:'')} · ${K[m.kind]||m.kind}</b><small>${new Date(m.created_at).toLocaleString('fr-FR')}</small></div>`}).join(''):'<p class=empty>Aucun message envoyé.</p>');
   if(S.tab!=='accueil')return;
@@ -678,10 +697,10 @@ async function vAccueil(){
 }
 /* ---------- Présences ---------- */
 async function vPresences(){
-  if(!yc().length){$('#main').innerHTML=ybar()+'<p class=empty>Crée d’abord une classe dans Élèves.</p>';return}
+  if(!yc().length){$('#main').innerHTML=ybar()+`<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><p class=empty>Crée d’abord une classe dans Élèves.</p>`;return}
   if(!yc().some(c=>c.id===S.cls))S.cls=yc()[0].id;
   S.day=S.day||tdy();
-  $('#main').innerHTML=SK;
+  $('#main').innerHTML='<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>'+SK;
   const{data}=await db.from('attendance').select('student_id,status').eq('day',S.day);
   if(data){S.att=Object.fromEntries(data.map(a=>[a.student_id,a.status]));S.attDay=S.day}else if(S.attDay!==S.day)S.att={};
   qget().filter(x=>x.k==='att'&&x.day===S.day).forEach(x=>S.att[x.student_id]=x.status);
@@ -691,7 +710,7 @@ async function vPresences(){
 function drawAtt(){
   const l=S.stu.filter(s=>s.class_id===S.cls).sort(sorts.alpha),A=S.att||{};
   const n=k=>l.filter(s=>A[s.id]===k).length,un=l.filter(s=>!A[s.id]).length,B=[['present','Présent'],['absent','Absent'],['retard','Retard']];
-  let h=ybar()+`<div class=bar><select id=cs>${yc().map(c=>`<option value="${c.id}" ${c.id===S.cls?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id=dy type=date value="${S.day}" max="${tdy()}"></div><div class=card><small>Présents ${n('present')} · Absents ${n('absent')} · Retards ${n('retard')} · Non marqués ${un}</small></div>`;
+  let h=`<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div>`+ybar()+`<div class=bar><select id=cs>${yc().map(c=>`<option value="${c.id}" ${c.id===S.cls?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id=dy type=date value="${S.day}" max="${tdy()}"></div><div class=card><small>Présents ${n('present')} · Absents ${n('absent')} · Retards ${n('retard')} · Non marqués ${un}</small></div>`;
   h+=l.length?(un?'<button class=ghost onclick=allPresent()>Tout le monde présent</button>':'')+l.map(s=>`<div class="card col"><b>${esc(s.name)}</b><div class=row>${B.map(b=>`<button class="${A[s.id]===b[0]?'':'ghost'}" onclick="mark('${s.id}','${b[0]}')">${A[s.id]===b[0]?'✓ ':''}${b[1]}</button>`).join('')}</div></div>`).join(''):'<p class=empty data-ic="🎓">Aucun élève dans cette classe.</p>';
   h+='<button class=ghost onclick=icsRappel()>Ajouter un rappel d’appel à l’agenda</button>';
   $('#main').innerHTML=h;
@@ -748,15 +767,15 @@ async function team(){
 
 /* ---------- Caisse ---------- */
 async function vCaisse(){
-  $('#main').innerHTML=SK;
+  $('#main').innerHTML='<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>'+SK;
   const t0=new Date();t0.setHours(0,0,0,0);
   const{data:ps0,error:pe0}=await todayFull(t0);
-  if(pe0||!ps0){$('#main').innerHTML='<p class=empty>La caisse demande une connexion internet. Les paiements saisis hors connexion partiront automatiquement.</p>';return}
+  if(pe0||!ps0){$('#main').innerHTML='<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><p class=empty>La caisse demande une connexion internet. Les paiements saisis hors connexion partiront automatiquement.</p>';return}
   const ps=ps0;
   const mine=ps.filter(p=>p.collector_id===S.me.id);
   const tot=a=>[sum(a.filter(p=>p.method==='especes')),sum(a.filter(p=>p.method==='mobile_money'))];
   const[c,m]=tot(dir()?ps:mine);
-  let h=`<h3>Aujourd’hui ${dir()?'(toute l’école)':'(ma caisse)'}</h3><div class=card><span>Espèces</span><b>${fmt(c)}</b></div><div class=card><span>Mobile Money</span><b>${fmt(m)}</b></div><div class=card><span>Paiements</span><b>${(dir()?ps:mine).length}</b></div>`;
+  let h=`<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Aujourd’hui ${dir()?'(toute l’école)':'(ma caisse)'}</h3><div class=card><span>Espèces</span><b>${fmt(c)}</b></div><div class=card><span>Mobile Money</span><b>${fmt(m)}</b></div><div class=card><span>Paiements</span><b>${(dir()?ps:mine).length}</b></div>`;
   if(S.me.role==='percepteur')h+='<button onclick=closeDay()>Clôturer ma journée</button>';
   const{data:cl=[]}=await db.from('closures').select('*').order('created_at',{ascending:false}).limit(30);
   const{data:pr=[]}=await db.from('profiles').select('id,full_name');
@@ -789,16 +808,13 @@ function vReglages(){
   const sc=S.school;
   let h=`<div class=card><span>Devise d’affichage</span><select id=cu style=width:auto;margin:0>${CUR.map(c=>`<option ${c===S.cur?'selected':''}>${c}</option>`).join('')}</select></div><div class=card><span>Thème</span><button class=ghost style=width:auto id=th>Clair / Sombre</button></div>`+installCard();
   if(dir())h+=`<div class="card col"><b>Taux de change (1 unité en FC)</b><label>USD<input id=r1 type=number step=any value="${sc.rates.USD}"></label><label>EUR<input id=r2 type=number step=any value="${sc.rates.EUR}"></label><label><input id=au type=checkbox style=width:auto ${sc.auto_rates?'checked':''}> Mise à jour automatique (désactive pour garder ton taux)</label><button id=sr>Enregistrer les taux</button><small>Code d’invitation des percepteurs : <b>${sc.code}</b></small></div>`;
-  if(dir())h+=`<div class="card col"><b>Frais par trimestre</b>${yc().length?yc().map(c=>`<button class=ghost onclick="editFees('${c.id}')">${esc(c.name)} · ${nf(c.fee)} ${c.fee_currency}</button>`).join(''):'<small>Aucune classe.</small>'}<small>Touche une classe pour modifier T1, T2 et T3.</small></div>`;
+  if(dir())h+=`<div class="card col"><b>Frais par trimestre</b>${yc().length?yc().map(c=>`<button class=ghost onclick="editFees('${c.id}')">${esc(c.name)} · T1: ${nf(c.fee_t1||0)} / T2: ${nf(c.fee_t2||0)} / T3: ${nf(c.fee_t3||0)} ${c.fee_currency}</button>`).join(''):'<small>Aucune classe.</small>'}<small>Touche une classe pour modifier T1, T2 et T3.</small></div>`;
   if(dir()){
     const yf=S.fees.filter(f=>cy(f)===S.year&&!f.student_id),tm=S.terms[S.year]||{};
     h+=`<div class="card col"><b>Autres frais · ${esc(S.year||'—')}</b>${yf.length?yf.map(f=>`<button class=ghost onclick="editFee('${f.id}')">${esc(f.name)} · ${nf(f.amount)} ${f.currency} · ${f.class_id?esc((S.classes.find(c=>c.id===f.class_id)||{}).name||''):'Toutes'}</button>`).join(''):'<small>Aucun frais supplémentaire.</small>'}<button class=ghost onclick=addFee()>+ Frais (inscription, uniforme, examen…)</button></div>`;
     h+=`<div class="card col"><b>Dates des trimestres</b><small>${hasTerms()?'T1 dès le '+fdate(tm.t1)+' · T2 dès le '+fdate(tm.t2)+' · T3 dès le '+fdate(tm.t3):'Non réglées : le statut « en retard » est désactivé.'}</small><button class=ghost onclick=setTerms()>Régler les dates · ${esc(S.year||'—')}</button></div>`;
   }
-  if(dir())h+=`<div class="card col"><b>Années scolaires</b><small>Année affichée : ${esc(S.year||'—')}</small>${ybar()}<div class=row><button class=ghost onclick=newYear()>+ Nouvelle année</button><button class=ghost onclick=promote()>Passage de classe</button></div></div>`;
-  if(dir())h+=`<div class="card col"><b>Rapports, exports et sauvegarde</b><small>${bkTxt()}</small><button class=ghost onclick=monthReport()>📊 Rapport mensuel</button><button class=ghost onclick=exportMenu()>📤 Exporter (CSV / PDF)</button><button onclick="exRun(this,backupAll)">💾 Sauvegarde complète</button></div>`;
-  if(dir())h+='<button class=ghost onclick=team()>Équipe</button><button class=ghost onclick=journal()>Journal d’activité</button>';
-  h+=`<details><summary>Guide rapide</summary><p><b>Encaisser</b> : Élèves → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu sur WhatsApp.<br><b>Clôture</b> : Caisse → Clôturer ma journée (le directeur contrôle les écarts).<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel ; tout s’envoie tout seul au retour d’internet (bandeau en haut).<br><b>Correction</b> : Élève → Historique et reçus → Corriger. Le directeur corrige directement ; le percepteur envoie une demande que le directeur approuve dans Caisse.</p></details><button class=ghost id=lo>Déconnexion</button>`;
+  h+=`<details><summary>Guide rapide</summary><p><b>Encaisser</b> : Élèves → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu sur WhatsApp.<br><b>Clôture</b> : Menu → Caisse → Clôturer ma journée (le directeur contrôle les écarts).<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel ; tout s’envoie tout seul au retour d’internet (bandeau en haut).<br><b>Correction</b> : Élève → Historique et reçus → Corriger. Le directeur corrige directement ; le percepteur envoie une demande que le directeur approuve dans Caisse.</p></details><button class=ghost id=lo>Déconnexion</button>`;
   $('#main').innerHTML=h;
   $('#lo').onclick=out;
   $('#cu').onchange=e=>{S.cur=e.target.value;localStorage.cur=S.cur;toast('Devise : '+S.cur)};
@@ -826,7 +842,7 @@ function subBanner(){
 const bkAge=()=>{const t=+localStorage['orea_bk_'+S.school.id]||0;return t?Math.floor((Date.now()-t)/864e5):null};
 function bkCard(){
   const a=bkAge();if(a!==null&&a<30)return'';
-  return`<div class="card col"><b class=due>💾 Sauvegarde conseillée</b><small>${a===null?'Aucune sauvegarde faite.':'Dernière sauvegarde il y a '+a+' jours.'}</small><button class=ghost onclick="goTab('reglages')">Ouvrir Réglages</button></div>`;
+  return`<div class="card col"><b class=due>💾 Sauvegarde conseillée</b><small>${a===null?'Aucune sauvegarde faite.':'Dernière sauvegarde il y a '+a+' jours.'}</small><button class=ghost onclick="exRun(event.target,backupAll)">Sauvegarder maintenant</button></div>`;
 }
 const dl=(blob,name)=>{const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),5000)};
 const fnm=(k,e)=>k+'-'+S.school.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()+'-'+tdy()+'.'+e;
@@ -909,7 +925,7 @@ function exportMenu(){
   d.querySelector('#xc').onclick=()=>d.close();
 }
 async function backupAll(){
-  const T=['classes','students','payments','fee_payments','closures','extra_fees','attendance','sanctions','messages_log','change_requests','audit_log'],o={},er={};
+  const T=['classes','students','payments','fee_payments','closures','extra_fees','attendance','sanctions','messages_log','change_requests','audit_log','expenses'],o={},er={};
   await Promise.all(T.map(async n=>{let r=await pageAll(()=>db.from(n).select('*'));if(r.error)r=await db.from(n).select('*');if(r.error)er[n]=r.error.message;else o[n]=r.data}));
   const[t,pr]=await Promise.all([db.from('terms').select('*'),db.from('profiles').select('id,full_name,role,active')]);
   if(!t.error)o.terms=t.data;if(!pr.error)o.profiles=pr.data;
@@ -917,7 +933,8 @@ async function backupAll(){
   const sc=S.school,b={app:'ORÉA École',format:1,date:new Date().toISOString(),ecole:{id:sc.id,name:sc.name,rates:sc.rates},donnees:o};
   if(Object.keys(er).length)b.erreurs=er;
   dl(new Blob([JSON.stringify(b)],{type:'application/json'}),fnm('sauvegarde','json'));
-  localStorage['orea_bk_'+sc.id]=Date.now();toast('Sauvegarde enregistrée dans Téléchargements');vReglages();
+  localStorage['orea_bk_'+sc.id]=Date.now();toast('Sauvegarde enregistrée dans Téléchargements');
+  if(S.tab==='reglages')vReglages();else render();
 }
 const bkTxt=()=>{const a=bkAge();return a===null?'Aucune sauvegarde faite. Fais-en une chaque mois.':'Dernière sauvegarde : '+(a===0?'aujourd’hui':'il y a '+a+' jour'+(a>1?'s':''))+'.'};
 
@@ -986,6 +1003,141 @@ async function reportImg(key,label){
   const d=show(`<h3>Rapport · ${esc(label)}</h3><div class=col><button id=ps>📤 Partager</button><a class="btn ghost" download="${fn}" href="${url}">Télécharger PNG</a><button class=ghost id=pc>Fermer</button></div><img src="${url}" alt="Rapport">`);
   d.querySelector('#pc').onclick=()=>d.close();
   d.querySelector('#ps').onclick=async()=>{if(can){try{await navigator.share({files:[file],text:'Rapport '+label+' — '+S.school.name})}catch(e){if(e.name!=='AbortError')toast('Partage impossible. Utilise Télécharger PNG.')}}else{dl(blob,fn);toast('Image enregistrée dans Téléchargements.')}};
+}
+
+/* ---------- PAQUET F : NOUVEAU MENU ET FINANCES ---------- */
+function doBackup(){exRun(event.target,backupAll)}
+function yearMenu(){
+  const y=yrs(),tm=S.terms[S.year]||{};
+  const d=show(`<h3>Année scolaire</h3><div class=col><small>Année affichée : <b>${esc(S.year||'—')}</b></small><select id=ym>${y.map(v=>`<option value="${esc(v)}" ${v===S.year?'selected':''}>${esc(v)}</option>`).join('')}</select><div class=row><button class=ghost id=yc>Fermer</button><button id=yn>+ Nouvelle</button><button id=yp>Passage</button></div></div>`);
+  d.querySelector('#yc').onclick=()=>d.close();
+  d.querySelector('#ym').onchange=e=>{setYear(e.target.value);d.close()};
+  d.querySelector('#yn').onclick=()=>{d.close();setTimeout(newYear,60)};
+  d.querySelector('#yp').onclick=()=>{d.close();setTimeout(promote,60)};
+}
+function vMenu(){
+  const R=S.me.role;let h=`<h3>Menu</h3>`;
+  h+=`<div class=card onclick="menuGo('presences')"><span>📋 Présences</span><b>›</b></div>`;
+  if(R!=='enseignant')h+=`<div class=card onclick="menuGo('caisse')"><span>💰 Caisse</span><b>›</b></div>`;
+  if(R!=='enseignant'){
+    h+=`<div class=card onclick="menuGo('impayes')"><span>🔴 Impayés</span><b>›</b></div>`;
+    if(R==='directeur'){
+      h+=`<div class=card onclick="menuGo('depenses')"><span>📉 Dépenses</span><b>›</b></div>`;
+      h+=`<div class=card onclick="menuGo('bilan')"><span>📊 Bilan mensuel</span><b>›</b></div>`;
+    }
+  }
+  if(dir()){
+    h+=`<h3>Administration</h3>`;
+    h+=`<div class=card onclick="yearMenu()"><span>📅 Années scolaires</span><b>›</b></div>`;
+    h+=`<div class=card onclick="team()"><span>👥 Équipe</span><b>›</b></div>`;
+    h+=`<div class=card onclick="journal()"><span>📋 Journal d'activité</span><b>›</b></div>`;
+    h+=`<div class=card onclick="exportMenu()"><span>📤 Exports (CSV / PDF)</span><b>›</b></div>`;
+    h+=`<div class=card onclick="doBackup()"><span>💾 Sauvegarde complète</span><b>›</b></div>`;
+    h+=`<div class=card onclick="monthReport()"><span>🖼️ Rapport mensuel</span><b>›</b></div>`;
+  }
+  $('#main').innerHTML=h;
+}
+function vImpayes(){
+  S.impcls=S.impcls||'';S.impf=S.impf||'all';S.imps=S.imps||'anciennete';
+  let l=ys().filter(s=>s.balance_cdf>0);
+  if(S.impcls)l=l.filter(s=>s.class_id===S.impcls);
+  if(S.impf==='30j')l=l.filter(s=>{const last=s.last_pay?new Date(s.last_pay).getTime():0;return Date.now()-last>30*864e5});
+  if(S.impf==='60j')l=l.filter(s=>{const last=s.last_pay?new Date(s.last_pay).getTime():0;return Date.now()-last>60*864e5});
+  l.sort((a,b)=>{if(S.imps==='montant')return b.balance_cdf-a.balance_cdf;const la=a.last_pay?new Date(a.last_pay).getTime():0,lb=b.last_pay?new Date(b.last_pay).getTime():0;return la-lb});
+  const tot=l.reduce((a,s)=>a+Number(s.balance_cdf||0),0);
+  let h=`<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Impayés</h3>`;
+  h+=`<div class=bar><select id=icl><option value="">Toutes classes</option>${yc().map(c=>`<option value="${c.id}" ${S.impcls===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>`;
+  h+=`<div class=chips><button class="chip ${S.impf==='all'?'on':''}" onclick="S.impf='all';render()">Tous</button><button class="chip ${S.impf==='30j'?'on':''}" onclick="S.impf='30j';render()">> 30j</button><button class="chip ${S.impf==='60j'?'on':''}" onclick="S.impf='60j';render()">> 60j</button></div>`;
+  h+=`<div class=card><span>${l.length} élève(s)</span><b class=due>${fmt(tot)}</b></div>`;
+  h+=`<div class=row><button class=ghost onclick=impayesPDF()>📄 PDF</button>${dir()?`<button onclick=reminders()>💬 Relancer</button>`:''}</div>`;
+  h+=l.length?l.map(s=>`<div class=card onclick="menu('${s.id}')"><span>${esc(s.name)}<br><small>${esc(cnm(s.class_id))} · ${s.last_pay?'Dernier paiement il y a '+Math.floor((Date.now()-new Date(s.last_pay))/864e5)+'j':'Jamais payé'}</small></span><b class=due>${fmt(s.balance_cdf)}</b></div>`).join(''):'<p class=empty>Aucun impayé pour ces critères.</p>';
+  $('#main').innerHTML=h;
+  $('#icl').onchange=e=>{S.impcls=e.target.value;render()};
+}
+function impayesPDF(){
+  let l=ys().filter(s=>s.balance_cdf>0);
+  if(S.impcls)l=l.filter(s=>s.class_id===S.impcls);
+  if(S.impf==='30j')l=l.filter(s=>{const last=s.last_pay?new Date(s.last_pay).getTime():0;return Date.now()-last>30*864e5});
+  if(S.impf==='60j')l=l.filter(s=>{const last=s.last_pay?new Date(s.last_pay).getTime():0;return Date.now()-last>60*864e5});
+  l.sort((a,b)=>{if(S.imps==='montant')return b.balance_cdf-a.balance_cdf;const la=a.last_pay?new Date(a.last_pay).getTime():0,lb=b.last_pay?new Date(b.last_pay).getTime():0;return la-lb});
+  if(!l.length)return toast('Aucun impayé à exporter.');
+  const rows=l.map(s=>[s.name,cnm(s.class_id),s.last_pay?new Date(s.last_pay).toLocaleDateString('fr-FR'):'Jamais',Math.round(Number(s.balance_cdf))]);
+  const r={name:'impayes',title:'Impayés — '+S.school.name,sub:stamp()+' · '+l.length+' élèves · montants en FC',head:['Élève','Classe','Dernier paiement','Reste dû (FC)'],rows,w:[40,25,20,15],r:[3],tot:['Total','','',rows.reduce((t,r)=>t+r[3],0)]};
+  try{dl(new Blob([mkPdf(r)],{type:'application/pdf'}),fnm(r.name,'pdf'));toast('PDF enregistré dans Téléchargements');}catch(e){toast(e.message)}
+}
+function nextMonth(ym){
+  const[y,m]=ym.split('-').map(Number),d=new Date(y,m,1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+async function vDepenses(){
+  $('#main').innerHTML='<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>'+SK;
+  const d=new Date();if(!S.depDate)S.depDate=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  const{data,error}=await db.from('expenses').select('*').gte('date',S.depDate+'-01').lt('date',nextMonth(S.depDate)+'-01').order('date',{ascending:false});
+  if(error)return toast(error.message);
+  S.depenses=data;
+  const tot=data.reduce((a,x)=>a+Number(x.amount_cdf),0);
+  let h=`<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Dépenses</h3>`;
+  h+=`<div class=bar><input type=month value="${S.depDate}" id=dpm></div>`;
+  h+=`<div class=card><span>Total du mois</span><b class=due>${fmt(tot)}</b></div><button onclick=addExpense()>+ Ajouter une dépense</button>`;
+  h+=data.length?data.map(x=>`<div class=card onclick="editExpense('${x.id}')"><span>${esc(x.label)}<br><small>${new Date(x.date+'T00:00').toLocaleDateString('fr-FR')} · ${x.category}</small></span><b>${nf(x.amount)} ${SYM[x.currency]}</b></div>`).join(''):'<p class=empty>Aucune dépense ce mois-ci.</p>';
+  if(S.tab!=='depenses')return;
+  $('#main').innerHTML=h;
+  $('#dpm').onchange=e=>{S.depDate=e.target.value;vDepenses()};
+}
+function addExpense(){
+  ask('Nouvelle dépense',[{n:'label',l:'Libellé'},{n:'amount',l:'Montant',t:'number'},{n:'cur',l:'Devise',o:CUR.map(c=>[c,c]),v:S.cur},{n:'cat',l:'Catégorie',o:[['salaires','Salaires'],['loyer','Loyer'],['electricite','Électricité/Eau'],['fournitures','Fournitures'],['transport','Transport'],['entretien','Entretien'],['examens','Examens'],['communication','Communication'],['autre','Autre']]},{n:'date',l:'Date',t:'date',v:tdy()}],async v=>{
+    const rate=rateOf(v.cur),amount_cdf=+v.amount*rate;
+    const{error}=await db.from('expenses').insert({school_id:S.school.id,label:v.label.trim(),amount:+v.amount,currency:v.cur,amount_cdf,rate,category:v.cat,date:v.date});
+    if(error)throw error;await vDepenses();toast('Dépense ajoutée');
+  });
+}
+function editExpense(id){
+  const x=S.depenses.find(z=>z.id===id);
+  const d=show(`<h3>${esc(x.label)}</h3><p>${nf(x.amount)} ${x.currency} · ${x.category} · ${new Date(x.date+'T00:00').toLocaleDateString('fr-FR')}</p><div class=col><button id=e1>Modifier</button><button class=ghost id=e2>Supprimer</button><button class=ghost id=e3>Fermer</button></div>`);
+  d.querySelector('#e3').onclick=()=>d.close();
+  d.querySelector('#e1').onclick=()=>ask('Modifier la dépense',[{n:'label',l:'Libellé',v:x.label},{n:'amount',l:'Montant ('+x.currency+')',t:'number',v:x.amount}],async v=>{
+    const{error}=await db.from('expenses').update({label:v.label.trim(),amount:+v.amount,amount_cdf:+v.amount*x.rate}).eq('id',id);
+    if(error)throw error;d.close();await vDepenses();toast('Dépense modifiée');
+  });
+  d.querySelector('#e2').onclick=async()=>{
+    if(!confirm('Supprimer cette dépense ?'))return;
+    const{error}=await db.from('expenses').delete().eq('id',id);
+    if(error)return toast(error.message);d.close();await vDepenses();toast('Dépense supprimée');
+  };
+}
+async function vBilan(){
+  const d=new Date();if(!S.bilDate)S.bilDate=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  $('#main').innerHTML='<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>'+SK;
+  const[y,m]=S.bilDate.split('-').map(Number),a=new Date(y,m-1,1),b=new Date(y,m,1),nk=b.getFullYear()+'-'+String(b.getMonth()+1).padStart(2,'0')+'-01';
+  const[p,f,ex]=await Promise.all([
+    pageAll(()=>db.from('payments').select('amount_cdf,method').gte('created_at',a.toISOString()).lt('created_at',b.toISOString())),
+    pageAll(()=>db.from('fee_payments').select('amount_cdf,method').gte('created_at',a.toISOString()).lt('created_at',b.toISOString())),
+    db.from('expenses').select('*').gte('date',S.bilDate+'-01').lt('date',nk)
+  ]);
+  if(p.error||f.error||ex.error)return toast((p.error||f.error||ex.error).message);
+  const enc=p.data.concat(f.data),totEnc=sum(enc),esp=sum(enc.filter(x=>x.method==='especes')),mm=totEnc-esp;
+  const dep=ex.data,totDep=dep.reduce((t,x)=>t+Number(x.amount_cdf),0);
+  const solde=totEnc-totDep;
+  S._bilan={esp,mm,totEnc,dep,totDep,solde,date:S.bilDate};
+  let h=`<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Bilan mensuel</h3>`;
+  h+=`<div class=bar><input type=month id=bm value="${S.bilDate}"></div>`;
+  h+=`<div class=card col"><b>Encaissé</b><span>Espèces : ${fmt(esp)}</span><span>Mobile Money : ${fmt(mm)}</span><b class=ok style="margin-top:6px">Total : ${fmt(totEnc)}</b></div>`;
+  h+=`<div class=card col"><b>Dépensé</b>${dep.length?dep.map(x=>`<span style="display:flex;justify-content:space-between"><small>${esc(x.label)}</small><small>${fmt(x.amount_cdf)}</small></span>`).join(''):'<small>Aucune dépense</small>'}<b class=due style="margin-top:6px">Total : ${fmt(totDep)}</b></div>`;
+  h+=`<div class="card hero col"><small>SOLDE DU MOIS</small><span class="big" style="color:${solde>=0?'var(--ok)':'var(--bad)'}">${fmt(solde)}</span></div>`;
+  h+=`<button class=ghost onclick=bilanPDF()>📄 Exporter en PDF</button>`;
+  if(S.tab!=='bilan')return;
+  $('#main').innerHTML=h;
+  $('#bm').onchange=e=>{S.bilDate=e.target.value;vBilan()};
+}
+function bilanPDF(){
+  if(!S._bilan)return toast('Ouvrez d\'abord le bilan.');
+  const b=S._bilan;
+  const rows=[['Encaissements espèces','',b.esp],['Encaissements Mobile Money','',b.mm],['TOTAL ENCAISSÉ','',b.totEnc]];
+  b.dep.forEach(x=>rows.push([x.label,x.category,Number(x.amount_cdf)]));
+  rows.push(['TOTAL DÉPENSÉ','',b.totDep]);
+  rows.push(['SOLDE DU MOIS','',b.solde]);
+  const r={name:'bilan-'+b.date,title:'Bilan mensuel — '+S.school.name,sub:'Mois : '+b.date+' · Montants en FC',head:['Élément','Catégorie','Montant (FC)'],rows,w:[50,30,20],r:[2],tot:null};
+  try{dl(new Blob([mkPdf(r)],{type:'application/pdf'}),fnm(r.name,'pdf'));toast('PDF enregistré');}catch(e){toast(e.message)}
 }
 
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
