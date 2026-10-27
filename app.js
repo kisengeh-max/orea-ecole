@@ -109,7 +109,7 @@ function menu(id){
 }
 /* ---------- Trimestres et WhatsApp ---------- */
 const COUNTRY='243'; // indicatif pays utilisé quand le numéro commence par 0 (243 = RDC)
-const trims=s=>{let p=Number(s.paid_cdf||0)+Number(s.discount_cdf||0);return[1,2,3].map(i=>{const f=Number(s['t'+i+'_cdf']||0),u=Math.min(Math.max(p,0),f);p-=u;return[i,f-u,f]})};
+const trims=s=>[1,2,3].map(i=>{const due=Number(s['due'+i+'_cdf']||0),paid=Number(s['p'+i+'_cdf']||0);return[i,Math.max(0,due-paid),due,paid]});
 function waLink(phone,msg){
   let n=String(phone||'').replace(/[^\d]/g,'');
   if(!n)return null;
@@ -185,10 +185,11 @@ async function ext(id,n){
 }
 function pay(id){
   const s=S.stu.find(x=>x.id===id);
-  ask('Encaisser — '+esc(s.name),[{n:'amount',l:'Montant',t:'number'},{n:'currency',l:'Devise',o:CUR.map(c=>[c,c]),v:S.cur},{n:'method',l:'Mode de paiement',o:[['especes','Espèces'],['mobile_money','Mobile Money']]},{n:'reference',l:'Référence Mobile Money (obligatoire si Mobile Money)',r:false}],async v=>{
+  const dt=(trims(s).find(x=>x[1]>0)||[1])[0];
+  ask('Encaisser — '+esc(s.name),[{n:'term',l:'Trimestre payé',o:[['1','1er trimestre'],['2','2e trimestre'],['3','3e trimestre']],v:String(dt)},{n:'amount',l:'Montant',t:'number'},{n:'currency',l:'Devise',o:CUR.map(c=>[c,c]),v:S.cur},{n:'method',l:'Mode de paiement',o:[['especes','Espèces'],['mobile_money','Mobile Money']]},{n:'reference',l:'Référence Mobile Money (obligatoire si Mobile Money)',r:false}],async v=>{
     const mm=v.method==='mobile_money';
     if(mm&&!v.reference.trim())throw Error('Référence Mobile Money obligatoire');
-    const{data,error}=await db.from('payments').insert({student_id:id,amount:+v.amount,currency:v.currency,method:v.method,reference:mm?v.reference.trim():null}).select().single();
+    const{data,error}=await db.from('payments').insert({student_id:id,term:+v.term,amount:+v.amount,currency:v.currency,method:v.method,reference:mm?v.reference.trim():null}).select().single();
     if(error)throw error.code==='23505'?Error('Cette référence existe déjà'):error;
     await load();render();receipt(data,id);
   });
@@ -196,7 +197,7 @@ function pay(id){
 async function hist(id){
   const{data,error}=await db.from('payments').select('*').eq('student_id',id).order('created_at',{ascending:false});
   if(error)return toast(error.message);
-  const d=show(`<h3>Reçus</h3>${data.length?data.map((p,i)=>`<div class=card><span>${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${nf(p.amount)} ${p.currency}</span><button class=ghost style=width:auto data-i=${i}>Reçu</button></div>`).join(''):'<p class=empty>Aucun paiement.</p>'}<button class=ghost id=hc>Fermer</button>`);
+  const d=show(`<h3>Reçus</h3>${data.length?data.map((p,i)=>`<div class=card><span>${new Date(p.created_at).toLocaleDateString('fr-FR')} · T${p.term} · ${nf(p.amount)} ${p.currency}</span><button class=ghost style=width:auto data-i=${i}>Reçu</button></div>`).join(''):'<p class=empty>Aucun paiement.</p>'}<button class=ghost id=hc>Fermer</button>`);
   d.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>receipt(data[b.dataset.i],id));
   d.querySelector('#hc').onclick=()=>d.close();
 }
@@ -208,10 +209,11 @@ async function receipt(p,sid){
   if(im)x.drawImage(im,210,10,220,220);
   x.fillStyle='#111211';x.textAlign='center';x.font='bold 28px sans-serif';x.fillText(S.school.name,320,270);
   x.font='20px sans-serif';x.fillText('REÇU DE PAIEMENT N° '+p.id.slice(0,8).toUpperCase(),320,305);
-  const L=[['Élève',s.name],['Classe',c?c.name:''],['Montant payé',nf(p.amount)+' '+p.currency],['Mode',p.method==='especes'?'Espèces':'Mobile Money']];
+  const L=[['Élève',s.name],['Classe',c?c.name:''],['Montant payé',nf(p.amount)+' '+p.currency+' (T'+(p.term||1)+')'],['Mode',p.method==='especes'?'Espèces':'Mobile Money']];
   if(p.reference)L.push(['Référence',p.reference]);
   L.push(['Date',new Date(p.created_at).toLocaleString('fr-FR')]);
   if(p.collector_id===S.me.id)L.push(['Perçu par',S.me.full_name]);
+  const tt=trims(s)[(p.term||1)-1];L.push(['Reste T'+(p.term||1),tt&&tt[1]>0?fmt(tt[1]):'Soldé']);
   L.push(['Solde actuel',s.balance_cdf>0?fmt(s.balance_cdf):'Soldé']);
   L.forEach((r,i)=>{const y=370+i*55;x.strokeStyle='#ddd';x.beginPath();x.moveTo(40,y+16);x.lineTo(600,y+16);x.stroke();
     x.textAlign='left';x.fillStyle='#6b6a60';x.font='18px sans-serif';x.fillText(r[0],40,y);
