@@ -27,3 +27,12 @@ dialog h3{margin:0 0 10px;color:var(--gold)}dialog img{width:100%;border-radius:
 .col{display:flex;flex-direction:column;gap:8px}
 #toast{position:fixed;left:14px;right:14px;bottom:90px;background:var(--bad);color:#fff;padding:12px;border-radius:12px;text-align:center;z-index:9}
 small,summary{color:var(--mut)}details{margin:12px 0}
+
+#qb{position:sticky;top:0;z-index:5;background:var(--gold);color:var(--bt);text-align:center;padding:8px 12px;font-size:14px;font-weight:700}#qb.off{background:var(--bad);color:#fff}#qb[hidden]{display:none}
+.chips{display:flex;gap:6px;overflow-x:auto;margin:6px 0 10px}
+.chip{width:auto;min-height:36px;padding:6px 14px;font-size:14px;font-weight:600;white-space:nowrap;background:none;color:var(--mut);border:1px solid var(--line);border-radius:20px}
+.chip.on{background:var(--gold);color:var(--bt);border-color:var(--gold)}
+a.btn{display:flex;align-items:center;justify-content:center;text-decoration:none;text-align:center}
+a.btn.ghost{background:none;color:var(--gold);border:1px solid var(--gold)}
+input[type=search]{margin-top:0}
+dialog{max-height:90vh;overflow:auto}

@@ -1,46 +1,171 @@
-const db=supabase.createClient(OREA_CONFIG.SUPABASE_URL,OREA_CONFIG.SUPABASE_ANON_KEY);
+const tfetch=(u,o={})=>{const c=new AbortController(),t=setTimeout(()=>c.abort(),15000);if(o.signal)o.signal.addEventListener('abort',()=>c.abort());return fetch(u,{...o,signal:c.signal}).finally(()=>clearTimeout(t))};
+const db=supabase.createClient(OREA_CONFIG.SUPABASE_URL,OREA_CONFIG.SUPABASE_ANON_KEY,{global:{fetch:tfetch}});
 const $=s=>document.querySelector(s);
 const CUR=['CDF','USD','EUR'],SYM={CDF:'FC',USD:'$',EUR:'€'};
-const S={me:null,school:null,classes:[],stu:[],cls:null,sort:'alpha',tab:'accueil',cur:localStorage.cur||'CDF'};
+const S={me:null,school:null,classes:[],stu:[],cls:null,sort:'alpha',tab:'accueil',cur:localStorage.cur||'CDF',year:null,q:'',ft:'all',offline:false};
 document.documentElement.dataset.theme=localStorage.theme||'dark';
 const dir=()=>S.me.role==='directeur';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const nf=(n,d=2)=>new Intl.NumberFormat('fr-FR',{maximumFractionDigits:d}).format(n);
 const fmt=n=>nf(n/(S.school.rates[S.cur]||1),S.cur==='CDF'?0:2)+' '+SYM[S.cur];
-const toast=m=>{const t=$('#toast');t.textContent=m;t.hidden=false;setTimeout(()=>t.hidden=true,4000)};
+const isNet=e=>!!e&&(e.name==='AuthRetryableFetchError'||e.status===0||/fetch|network|abort|load failed|timed? ?out/i.test(e.message||''));
+const toast=m=>{m=/failed to fetch|networkerror|network request|abort|load failed/i.test(m)?'Pas de connexion internet.':m;const t=$('#toast');t.textContent=m;t.hidden=false;setTimeout(()=>t.hidden=true,4000)};
 const show=h=>{const d=$('#dlg');d.innerHTML=h;if(!d.open)d.showModal();return d};
 const sum=a=>a.reduce((t,p)=>t+Number(p.amount_cdf),0);
-const out=async()=>{await db.auth.signOut();location.reload()};
+const out=async()=>{const n=S.me?qget().length:0;if(n&&!confirm(n+' élément(s) pas encore envoyé(s) seront perdus. Se déconnecter quand même ?'))return;if(S.me)localStorage.removeItem('orea_q_'+S.me.id);localStorage.removeItem('orea_snap');await db.auth.signOut();location.reload()};
 
 function ask(title,fields,ok){
   const d=show(`<form method=dialog><h3>${title}</h3>${fields.map(f=>`<label>${f.l}${f.o?`<select name=${f.n}>${f.o.map(o=>`<option value="${o[0]}" ${o[0]===f.v?'selected':''}>${o[1]}</option>`).join('')}</select>`:`<input name=${f.n} type=${f.t||'text'} step=any value="${esc(f.v)}" ${f.r===false?'':'required'}>`}</label>`).join('')}<div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Valider</button></div></form>`);
   d.querySelector('form').onsubmit=async e=>{if(e.submitter.value!=='ok')return;const v=Object.fromEntries(new FormData(e.target));try{await ok(v)}catch(x){toast(x.message||'Erreur')}};
 }
 
+/* ---------- Années scolaires ---------- */
+const cy=c=>c.year||'Sans année';
+const yrs=()=>[...new Set(S.classes.map(cy))].sort((a,b)=>a==='Sans année'?1:b==='Sans année'?-1:b.localeCompare(a,'fr'));
+function pickYear(){const y=yrs(),k='orea_year_'+S.school.id;if(!S.year||!y.includes(S.year)){const st=localStorage[k];S.year=y.includes(st)?st:(y[0]||'')}}
+const yc=()=>{pickYear();return S.classes.filter(c=>cy(c)===S.year)};
+const ys=()=>{const ids=new Set(yc().map(c=>c.id));return S.stu.filter(s=>ids.has(s.class_id))};
+function setYear(v){S.year=v;localStorage['orea_year_'+S.school.id]=v;S.cls=null;render()}
+const ybar=()=>yrs().length>1?`<div class=bar><select onchange="setYear(this.value)">${yrs().map(y=>`<option value="${esc(y)}" ${y===S.year?'selected':''}>${esc(y)}</option>`).join('')}</select></div>`:'';
+const nrm=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+const rno=p=>p.receipt_no?'REC-'+String(p.receipt_no).padStart(4,'0'):'REC-…';
+function newYear(){
+  const m=String(S.year).match(/(\d{4})\D+(\d{4})/),sg=m?(+m[1]+1)+'-'+(+m[2]+1):'';
+  ask('Nouvelle année scolaire',[{n:'y',l:'Année (ex : 2027-2028)',v:sg},{n:'cp',l:'Classes de départ',o:[['1','Copier les classes et les frais de '+esc(S.year)],['0','Partir de zéro']],v:'1'}],async v=>{
+    const y=v.y.trim();
+    if(!y)throw Error('Année obligatoire');
+    if(yrs().includes(y))throw Error('Cette année existe déjà');
+    if(v.cp==='0'){setTimeout(()=>addClass(y),60);return}
+    const rows=yc().map(c=>({school_id:S.school.id,name:c.name,year:y,fee_t1:c.fee_t1,fee_t2:c.fee_t2,fee_t3:c.fee_t3,fee_currency:c.fee_currency}));
+    if(!rows.length)throw Error('Aucune classe à copier');
+    const{error}=await db.from('classes').insert(rows);if(error)throw error;
+    S.year=y;S.cls=null;localStorage['orea_year_'+S.school.id]=y;await load();render();toast('Année '+y+' créée. Utilise « Passage de classe ».');
+  });
+}
+function promote(){
+  const oth=yrs().filter(y=>y!==S.year);
+  if(!oth.length)return toast('Crée d’abord la nouvelle année (+ Nouvelle année).');
+  const src=yc();if(!src.length)return toast('Aucune classe à faire passer.');
+  let tg=oth[0];
+  const guess=(n,tc)=>{const m=n.match(/\d+/);if(!m)return'';const g=n.replace(/\d+/,+m[0]+1).toLowerCase(),c=tc.find(x=>x.name.toLowerCase()===g);return c?c.id:''};
+  const d=show(`<form method=dialog><h3>Passage de classe</h3><small>De ${esc(S.year)} vers :</small><select id=py>${oth.map(y=>`<option value="${esc(y)}">${esc(y)}</option>`).join('')}</select><div id=pm></div><small>Les élèves gardent leur ancien dossier (paiements) dans l’année précédente. Les remises et les impayés ne sont pas reportés.</small><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Faire passer</button></div></form>`);
+  const draw=()=>{const tc=S.classes.filter(c=>cy(c)===tg);d.querySelector('#pm').innerHTML=src.map(c=>{const n=S.stu.filter(s=>s.class_id===c.id).length,g=guess(c.name,tc);return `<label>${esc(c.name)} (${n} élève${n>1?'s':''}) →<select name="m_${c.id}"><option value="">— Ne pas passer —</option>${tc.map(t=>`<option value="${t.id}" ${t.id===g?'selected':''}>${esc(t.name)}</option>`).join('')}</select></label>`}).join('')};
+  draw();
+  d.querySelector('#py').onchange=e=>{tg=e.target.value;draw()};
+  d.querySelector('form').onsubmit=async e=>{
+    if(e.submitter.value!=='ok')return;
+    e.preventDefault();
+    const f=e.target,rows=[];
+    for(const c of src){const dest=f.elements['m_'+c.id].value;if(!dest)continue;const have=new Set(S.stu.filter(s=>s.class_id===dest).map(s=>s.name.toLowerCase()));S.stu.filter(s=>s.class_id===c.id).forEach(s=>{if(!have.has(s.name.toLowerCase()))rows.push({school_id:S.school.id,class_id:dest,name:s.name,parent_phone:s.parent_phone})})}
+    if(!rows.length)return toast('Aucun élève à faire passer');
+    if(!confirm(rows.length+' élève(s) seront inscrits en '+tg+'. Continuer ?'))return;
+    e.submitter.disabled=true;
+    for(let i=0;i<rows.length;i+=300){const{error}=await db.from('students').insert(rows.slice(i,i+300));if(error){e.submitter.disabled=false;return toast(error.message)}}
+    d.close();S.year=tg;localStorage['orea_year_'+S.school.id]=tg;S.cls=null;await load();render();toast(rows.length+' élève(s) inscrit(s) en '+tg);
+  };
+}
+
+/* ---------- Hors connexion : copie locale et file d'attente ---------- */
+function saveSnap(){try{localStorage.orea_snap=JSON.stringify({uid:S.me.id,me:S.me,school:S.school,classes:S.classes,stu:S.stu,at:Date.now()})}catch{}}
+function readSnap(){try{return JSON.parse(localStorage.orea_snap||'null')}catch{return null}}
+function goOffline(sn){S.me=sn.me;S.school=sn.school;S.classes=sn.classes;S.stu=sn.stu;S.offline=true;$('#hs').textContent=sn.school.name;render();toast('Mode hors connexion : tu peux encaisser et faire l’appel.')}
+function netView(){$('#nav').hidden=true;$('#main').innerHTML='<div class=auth><h2>Pas de connexion</h2><p>Connecte-toi à internet une première fois pour charger tes données.</p><button onclick=boot()>Réessayer</button></div>'}
+const qkey=()=>'orea_q_'+(S.me&&S.me.id);
+function qget(){if(!S.me)return[];try{return JSON.parse(localStorage[qkey()]||'[]')}catch{return[]}}
+function qset(a){localStorage[qkey()]=JSON.stringify(a);qui()}
+function qadd(it){let a=qget();if(it.k==='att')a=a.filter(x=>!(x.k==='att'&&x.student_id===it.student_id&&x.day===it.day));a.push({...it,qid:crypto.randomUUID(),at:it.at||new Date().toISOString()});qset(a)}
+function qui(){
+  let b=$('#qb');
+  const a=qget(),bad=a.filter(x=>x.err).length,off=S.offline||!navigator.onLine;
+  if(!S.me||(!a.length&&!off)){if(b)b.hidden=true;return}
+  if(!b){b=document.createElement('div');b.id='qb';b.onclick=qview;$('header').after(b)}
+  b.hidden=false;b.className=off?'off':'';
+  b.textContent=[off?'📴 Hors connexion':'',a.length?'⏳ '+a.length+' en attente d’envoi':'',bad?'⚠ '+bad+' à vérifier':''].filter(Boolean).join(' · ');
+}
+function applyLocal(sid,term,cdf){
+  const s=S.stu.find(x=>x.id===sid);if(!s)return;
+  const rem=trims(s)[term-1][1];
+  s['p'+term+'_cdf']=Number(s['p'+term+'_cdf']||0)+cdf;
+  s.paid_cdf=Number(s.paid_cdf||0)+cdf;
+  s.balance_cdf=Math.max(0,Number(s.balance_cdf)-Math.min(cdf,rem));
+  s.last_pay=new Date().toISOString();
+}
+const cdfOf=x=>x.amount*(S.school.rates[x.currency]||1);
+function overlayQ(){qget().filter(x=>x.k==='pay').forEach(x=>applyLocal(x.student_id,x.term,cdfOf(x)))}
+function qToday(){const t0=new Date();t0.setHours(0,0,0,0);return qget().filter(x=>x.k==='pay'&&new Date(x.at)>=t0).reduce((t,x)=>t+cdfOf(x),0)}
+function payOffline(row){
+  const at=new Date().toISOString();
+  qadd({k:'pay',...row,at});
+  applyLocal(row.student_id,row.term,cdfOf(row));saveSnap();render();
+  toast('Enregistré hors connexion. Envoi automatique dès que le réseau revient.');
+  receipt({...row,created_at:at,collector_id:S.me.id,receipt_no:null},row.student_id);
+}
+async function qsend(it){
+  if(it.k==='att'){const{k,qid,at,err,...row}=it;return db.from('attendance').upsert(row,{onConflict:'student_id,day'})}
+  const{k,qid,at,err,...row}=it;
+  let r=await db.from('payments').insert({...row,created_at:at});
+  if(r.error&&r.error.code==='42501')r=await db.from('payments').insert(row);
+  if(r.error&&r.error.code==='23505'){if(/pkey/.test(r.error.message||''))return{};return{error:{message:'Référence Mobile Money déjà utilisée'}}}
+  return r;
+}
+let syncing=false;
+async function qsync(){
+  if(syncing||!S.me||S.offline||!navigator.onLine)return;
+  const todo=qget().filter(x=>!x.err);if(!todo.length)return;
+  syncing=true;let done=0;
+  try{
+    for(const it of todo){
+      let r;try{r=await qsend(it)}catch(e){r={error:e}}
+      if(r.error&&isNet(r.error))break;
+      const cur=qget();
+      if(!r.error){qset(cur.filter(x=>x.qid!==it.qid));done++}
+      else qset(cur.map(x=>x.qid===it.qid?{...x,err:r.error.message||'Refusé'}:x));
+    }
+  }finally{syncing=false}
+  if(done){await load();if(!$('#dlg').open)render();toast(done+' élément(s) envoyé(s) ✓')}
+}
+function qview(){
+  const a=qget(),sn=id=>(S.stu.find(x=>x.id===id)||{}).name||'?';
+  const d=show(`<h3>En attente d’envoi</h3>${a.length?a.map(x=>`<div class="card col"><b>${x.k==='pay'?'Paiement · '+esc(sn(x.student_id))+' · '+nf(x.amount)+' '+x.currency+' (T'+x.term+')':'Présence · '+esc(sn(x.student_id))+' · '+x.status}</b><small>${new Date(x.at).toLocaleString('fr-FR')}</small>${x.err?`<span class=due>⚠ ${esc(x.err)}</span><div class=row><button class=ghost data-r="${x.qid}">Réessayer</button><button class=ghost data-d="${x.qid}">Supprimer</button></div>`:''}</div>`).join(''):'<p class=empty>Rien en attente.</p>'}<div class=col><button id=qs>Envoyer maintenant</button><button class=ghost id=qc>Fermer</button></div>`);
+  d.querySelector('#qc').onclick=()=>d.close();
+  d.querySelector('#qs').onclick=async()=>{d.close();await qsync()};
+  d.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{qset(qget().map(x=>x.qid===b.dataset.r?{...x,err:undefined}:x));d.close();qsync()});
+  d.querySelectorAll('[data-d]').forEach(b=>b.onclick=async()=>{if(!confirm('Supprimer cet élément ? Il ne sera jamais envoyé.'))return;qset(qget().filter(x=>x.qid!==b.dataset.d));d.close();await load();render()});
+}
+
 /* ---------- Démarrage ---------- */
 async function boot(){
   $('#dlg').close?.();
-  const{data:{session}}=await db.auth.getSession();
+  const snap=readSnap();
+  let session=null;
+  try{
+    const r=await db.auth.getSession();session=r.data.session;
+    if(!session&&snap&&(isNet(r.error)||!navigator.onLine))return goOffline(snap);
+  }catch(e){if(snap)return goOffline(snap)}
   if(!session)return authView();
-  const{data:adm}=await db.rpc('is_platform_admin');
+  if(!navigator.onLine&&snap&&snap.uid===session.user.id)return goOffline(snap);
+  const{data:adm,error:ea}=await db.rpc('is_platform_admin');
+  if(isNet(ea))return snap&&snap.uid===session.user.id?goOffline(snap):netView();
   if(adm===true){$('#hs').textContent='Administration';return adminView()}
-  const{data:p}=await db.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
+  const{data:p,error:ep}=await db.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
+  if(isNet(ep))return snap&&snap.uid===session.user.id?goOffline(snap):netView();
   if(!p)return setupView();
   if(p.active===false){$('#nav').hidden=true;$('#main').innerHTML='<div class=auth><h2>Compte désactivé</h2><p>Contacte le directeur de ton école.</p><button class=ghost onclick=out()>Déconnexion</button></div>';return}
   S.me=p;
-  const{data:s}=await db.from('schools').select('*').eq('id',p.school_id).single();
+  const{data:s,error:es}=await db.from('schools').select('*').eq('id',p.school_id).single();
+  if(!s)return isNet(es)&&snap&&snap.uid===p.id?goOffline(snap):netView();
   S.school=s;$('#hs').textContent=s.name;
   if(s.sub_until){
     const left=Math.ceil((new Date(s.sub_until)-Date.now())/864e5);
     if(left<=0)return lockView();
     if(left<=7&&dir())toast('Abonnement : il reste '+left+' jour(s). Contacte l’administrateur.');
   }
-  await autoRate();await load();render();
+  await autoRate();await qsync();await load();render();
 }
 async function load(){
   const[a,b]=await Promise.all([db.from('classes').select('*').order('name'),db.from('student_balance').select('*')]);
   if(a.error||b.error)return toast((a.error||b.error).message);
-  S.classes=a.data;S.stu=b.data;
+  S.classes=a.data;S.stu=b.data;S.offline=false;overlayQ();saveSnap();
 }
 async function autoRate(){
   const s=S.school;
@@ -75,7 +200,7 @@ function render(){
   if(!tabs.some(x=>x[0]===S.tab))S.tab='accueil';
   $('#nav').innerHTML=tabs.map(x=>`<button data-t=${x[0]}>${x[1]}</button>`).join('');
   document.querySelectorAll('#nav button').forEach(b=>{b.classList.toggle('on',b.dataset.t===S.tab);b.onclick=()=>{S.tab=b.dataset.t;render()}});
-  ({accueil:vAccueil,eleves:vEleves,presences:vPresences,caisse:vCaisse,reglages:vReglages})[S.tab]();
+  ({accueil:vAccueil,eleves:vEleves,presences:vPresences,caisse:vCaisse,reglages:vReglages})[S.tab]();qui();
 }
 const sorts={
   alpha:(a,b)=>a.name.localeCompare(b.name,'fr'),
@@ -83,25 +208,42 @@ const sorts={
   retard:(a,b)=>{const k=s=>s.balance_cdf>0?(s.last_pay?+new Date(s.last_pay):0):9e15;return k(a)-k(b)}
 };
 function vEleves(){
-  const cl=S.classes;let h='';
-  if(!cl.length)h='<p class=empty>Aucune classe pour le moment.</p>';
+  const cl=yc();let h=ybar();
+  if(!cl.length)h+='<p class=empty>Aucune classe pour le moment.</p>';
   else{
     if(!cl.some(c=>c.id===S.cls))S.cls=cl[0].id;
-    h=`<div class=bar><select id=cs>${cl.map(c=>`<option value="${c.id}" ${c.id===S.cls?'selected':''}>${esc(c.name)}</option>`).join('')}</select><select id=so><option value=alpha>Alphabétique A → Z</option><option value=solde>Plus grand solde dû</option><option value=retard>Retard de paiement</option></select></div>`;
-    const l=S.stu.filter(s=>s.class_id===S.cls).sort(sorts[S.sort]);
-    h+=l.length?l.map(s=>`<div class=card onclick="menu('${s.id}')"><b>${esc(s.name)}</b><span class="${s.balance_cdf>0?'due':'ok'}">${s.balance_cdf>0?'Doit '+fmt(s.balance_cdf):'✓ Soldé'}</span></div>`).join(''):'<p class=empty>Aucun élève dans cette classe.</p>';
+    const FT=[['all','Tous'],['due','À payer'],['paid','Soldés'],['nophone','Sans n°']];
+    h+=`<input id=q type=search placeholder="🔍 Rechercher un élève (toutes les classes)" value="${esc(S.q)}"><div class=bar><select id=cs>${cl.map(c=>`<option value="${c.id}" ${c.id===S.cls?'selected':''}>${esc(c.name)}</option>`).join('')}</select><select id=so><option value=alpha>Alphabétique A → Z</option><option value=solde>Plus grand solde dû</option><option value=retard>Retard de paiement</option></select></div><div class=chips>${FT.map(f=>`<button class="chip ${S.ft===f[0]?'on':''}" data-f=${f[0]}>${f[1]}</button>`).join('')}</div><div id=lst></div>`;
   }
   if(dir())h+=`<div class=row><button class=ghost onclick=addClass()>+ Classe</button>${cl.length?'<button onclick=addStudent()>+ Élève</button><button class=ghost onclick=bulkAdd()>+ Liste</button>':''}</div>`;
   $('#main').innerHTML=h;
-  if($('#cs')){$('#so').value=S.sort;$('#cs').onchange=e=>{S.cls=e.target.value;vEleves()};$('#so').onchange=e=>{S.sort=e.target.value;vEleves()}}
+  if($('#cs')){
+    $('#so').value=S.sort;
+    $('#cs').onchange=e=>{S.cls=e.target.value;drawList()};
+    $('#so').onchange=e=>{S.sort=e.target.value;drawList()};
+    $('#q').oninput=e=>{S.q=e.target.value;drawList()};
+    document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{S.ft=b.dataset.f;document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('on',x===b));drawList()});
+    drawList();
+  }
 }
-function addClass(){
-  ask('Nouvelle classe',[{n:'name',l:'Nom (ex : 3e A)'},{n:'year',l:'Année scolaire (ex : 2026-2027)'},{n:'t1',l:'Frais 1er trimestre',t:'number'},{n:'t2',l:'Frais 2e trimestre',t:'number'},{n:'t3',l:'Frais 3e trimestre',t:'number'},{n:'cur',l:'Devise des frais',o:CUR.map(c=>[c,c]),v:S.cur}],async v=>{
+function drawList(){
+  const cn=Object.fromEntries(S.classes.map(c=>[c.id,c.name])),q=nrm(S.q).trim(),qd=q.replace(/\D/g,'');
+  let l=q?ys():ys().filter(s=>s.class_id===S.cls);
+  if(q)l=l.filter(s=>nrm(s.name).includes(q)||(qd&&String(s.parent_phone||'').replace(/\D/g,'').includes(qd)));
+  if(S.ft==='due')l=l.filter(s=>s.balance_cdf>0);
+  else if(S.ft==='paid')l=l.filter(s=>s.balance_cdf<=0);
+  else if(S.ft==='nophone')l=l.filter(s=>!s.parent_phone);
+  l.sort(sorts[S.sort]);
+  const tot=l.reduce((t,s)=>t+Number(s.balance_cdf||0),0);
+  $('#lst').innerHTML=l.length?`<small>${l.length} élève(s) · reste dû ${fmt(tot)}</small>`+l.map(s=>`<div class=card onclick="menu('${s.id}')"><span><b>${esc(s.name)}</b>${q?'<br><small>'+esc(cn[s.class_id]||'')+'</small>':''}</span><span class="${s.balance_cdf>0?'due':'ok'}">${s.balance_cdf>0?'Doit '+fmt(s.balance_cdf):'✓ Soldé'}</span></div>`).join(''):`<p class=empty>${q||S.ft!=='all'?'Aucun élève trouvé.':'Aucun élève dans cette classe.'}</p>`;
+}
+function addClass(yr){
+  ask('Nouvelle classe',[{n:'name',l:'Nom (ex : 3e A)'},{n:'year',l:'Année scolaire (ex : 2026-2027)',v:yr||S.year||''},{n:'t1',l:'Frais 1er trimestre',t:'number'},{n:'t2',l:'Frais 2e trimestre',t:'number'},{n:'t3',l:'Frais 3e trimestre',t:'number'},{n:'cur',l:'Devise des frais',o:CUR.map(c=>[c,c]),v:S.cur}],async v=>{
     const{error}=await db.from('classes').insert({school_id:S.school.id,name:v.name.trim(),year:v.year.trim(),fee_t1:+v.t1,fee_t2:+v.t2,fee_t3:+v.t3,fee_currency:v.cur});
-    if(error)throw error;await load();render()});
+    if(error)throw error;S.year=cy({year:v.year.trim()});S.cls=null;localStorage['orea_year_'+S.school.id]=S.year;await load();render()});
 }
 function addStudent(){
-  ask('Nouvel élève',[{n:'name',l:'Nom complet'},{n:'phone',l:'WhatsApp du parent (facultatif)',t:'tel',r:false},{n:'cls',l:'Classe',o:S.classes.map(c=>[c.id,esc(c.name)]),v:S.cls}],async v=>{
+  ask('Nouvel élève',[{n:'name',l:'Nom complet'},{n:'phone',l:'WhatsApp du parent (facultatif)',t:'tel',r:false},{n:'cls',l:'Classe',o:yc().map(c=>[c.id,esc(c.name)]),v:S.cls}],async v=>{
     const{error}=await db.from('students').insert({school_id:S.school.id,class_id:v.cls,name:v.name.trim(),parent_phone:v.phone.trim()||null});
     if(error)throw error;S.cls=v.cls;await load();render()});
 }
@@ -147,7 +289,7 @@ function editFees(id){
 }
 function editStudent(id){
   const s=S.stu.find(x=>x.id===id);
-  ask('Modifier l’élève',[{n:'name',l:'Nom complet',v:s.name},{n:'phone',l:'WhatsApp du parent',t:'tel',r:false,v:s.parent_phone},{n:'cls',l:'Classe',o:S.classes.map(c=>[c.id,esc(c.name)]),v:s.class_id}],async v=>{
+  ask('Modifier l’élève',[{n:'name',l:'Nom complet',v:s.name},{n:'phone',l:'WhatsApp du parent',t:'tel',r:false,v:s.parent_phone},{n:'cls',l:'Classe',o:yc().map(c=>[c.id,esc(c.name)]),v:s.class_id}],async v=>{
     const{data,error}=await db.from('students').update({name:v.name.trim(),parent_phone:v.phone.trim()||null,class_id:v.cls}).eq('id',id).select();
     if(error)throw error;if(!data.length)throw Error('Modification refusée');
     S.cls=v.cls;await load();render();toast('Élève modifié')});
@@ -162,7 +304,7 @@ async function delStudent(id){
 }
 const parseList=t=>{const seen=new Set();return t.split('\n').map(l=>l.replace(/^\s*\d+\s*[.)\-–]\s*/,'').trim()).filter(Boolean).map(l=>{const[n,p]=l.split(/[;\t]/);return{name:n.trim().replace(/\s+/g,' '),phone:(p||'').trim()||null}}).filter(r=>r.name&&!seen.has(r.name.toLowerCase())&&seen.add(r.name.toLowerCase()))};
 function bulkAdd(){
-  const d=show(`<form method=dialog><h3>Ajouter une liste d’élèves</h3><label>Classe<select name=cls>${S.classes.map(c=>`<option value="${c.id}" ${c.id===S.cls?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label><label>Un nom par ligne (téléphone facultatif après un « ; »)<textarea name=txt rows=10 style="width:100%" required></textarea></label><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Enregistrer</button></div></form>`);
+  const d=show(`<form method=dialog><h3>Ajouter une liste d’élèves</h3><label>Classe<select name=cls>${yc().map(c=>`<option value="${c.id}" ${c.id===S.cls?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label><label>Un nom par ligne (téléphone facultatif après un « ; »)<textarea name=txt rows=10 style="width:100%" required></textarea></label><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Enregistrer</button></div></form>`);
   d.querySelector('form').onsubmit=async e=>{
     if(e.submitter.value!=='ok')return;
     const f=e.target,cls=f.cls.value;
@@ -202,7 +344,10 @@ function pay(id){
   ask('Encaisser — '+esc(s.name),[{n:'term',l:'Trimestre payé',o:[['1','1er trimestre'],['2','2e trimestre'],['3','3e trimestre']],v:String(dt)},{n:'amount',l:'Montant',t:'number'},{n:'currency',l:'Devise',o:CUR.map(c=>[c,c]),v:S.cur},{n:'method',l:'Mode de paiement',o:[['especes','Espèces'],['mobile_money','Mobile Money']]},{n:'reference',l:'Référence Mobile Money (obligatoire si Mobile Money)',r:false}],async v=>{
     const mm=v.method==='mobile_money';
     if(mm&&!v.reference.trim())throw Error('Référence Mobile Money obligatoire');
-    const{data,error}=await db.from('payments').insert({student_id:id,term:+v.term,amount:+v.amount,currency:v.currency,method:v.method,reference:mm?v.reference.trim():null}).select().single();
+    const row={id:crypto.randomUUID(),student_id:id,term:+v.term,amount:+v.amount,currency:v.currency,method:v.method,reference:mm?v.reference.trim():null};
+    if(!navigator.onLine)return payOffline(row);
+    const{data,error}=await db.from('payments').insert(row).select().single();
+    if(isNet(error))return payOffline(row);
     if(error)throw error.code==='23505'?Error('Cette référence existe déjà'):error;
     await load();render();receipt(data,id);
   });
@@ -213,7 +358,7 @@ async function hist(id){
   const ids=data.map(p=>p.id);
   const{data:pend=[]}=ids.length?await db.from('change_requests').select('payment_id').eq('status','en_attente').in('payment_id',ids):{data:[]};
   const pe=new Set(pend.map(r=>r.payment_id));
-  const d=show(`<h3>Reçus</h3>${data.length?data.map((p,i)=>`<div class="card col"><span>${new Date(p.created_at).toLocaleDateString('fr-FR')} · T${p.term} · ${nf(p.amount)} ${p.currency}</span><div class=row><button class=ghost data-i=${i}>Reçu</button>${pe.has(p.id)?'<small>⏳ demande en attente</small>':`<button class=ghost data-c=${i}>${dir()?'Corriger':'Demander une correction'}</button>`}</div></div>`).join(''):'<p class=empty>Aucun paiement.</p>'}<button class=ghost id=hc>Fermer</button>`);
+  const d=show(`<h3>Reçus</h3>${data.length?data.map((p,i)=>`<div class="card col"><span>${rno(p)} · ${new Date(p.created_at).toLocaleDateString('fr-FR')} · T${p.term} · ${nf(p.amount)} ${p.currency}</span><div class=row><button class=ghost data-i=${i}>Reçu</button>${pe.has(p.id)?'<small>⏳ demande en attente</small>':`<button class=ghost data-c=${i}>${dir()?'Corriger':'Demander une correction'}</button>`}</div></div>`).join(''):'<p class=empty>Aucun paiement.</p>'}<button class=ghost id=hc>Fermer</button>`);
   d.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>receipt(data[b.dataset.i],id));
   d.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>fixPay(data[b.dataset.c],id));
   d.querySelector('#hc').onclick=()=>d.close();
@@ -253,7 +398,7 @@ async function receipt(p,sid){
   const im=await new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.onerror=()=>r(null);i.src='logo-light.png'});
   if(im)x.drawImage(im,210,10,220,220);
   x.fillStyle='#111211';x.textAlign='center';x.font='bold 28px sans-serif';x.fillText(S.school.name,320,270);
-  x.font='20px sans-serif';x.fillText('REÇU DE PAIEMENT N° '+p.id.slice(0,8).toUpperCase(),320,305);
+  x.font='20px sans-serif';x.fillText(p.receipt_no?'REÇU DE PAIEMENT N° '+rno(p):'REÇU PROVISOIRE (n° attribué à l’envoi)',320,305);
   const L=[['Élève',s.name],['Classe',c?c.name:''],['Montant payé',nf(p.amount)+' '+p.currency+' (T'+(p.term||1)+')'],['Mode',p.method==='especes'?'Espèces':'Mobile Money']];
   if(p.reference)L.push(['Référence',p.reference]);
   L.push(['Date',new Date(p.created_at).toLocaleString('fr-FR')]);
@@ -264,9 +409,19 @@ async function receipt(p,sid){
     x.textAlign='left';x.fillStyle='#6b6a60';x.font='18px sans-serif';x.fillText(r[0],40,y);
     x.textAlign='right';x.fillStyle='#111211';x.font='bold 20px sans-serif';x.fillText(r[1],600,y)});
   x.textAlign='center';x.fillStyle='#6b6a60';x.font='16px sans-serif';x.fillText('Merci — ORÉA École',320,870);
-  const d=show(`<h3>Reçu</h3><img src="${cv.toDataURL('image/png')}" alt="Reçu"><div class=row><a class=btn style="text-align:center;text-decoration:none" download="recu-${p.id.slice(0,8)}.png" href="${cv.toDataURL('image/png')}">Télécharger PNG</a></div><button class=ghost id=rc>Fermer</button>`);
+  const nm=p.receipt_no?rno(p):'provisoire-'+p.id.slice(0,6),fn='recu-'+nm+'.png';
+  const blob=await new Promise(r=>cv.toBlob(r,'image/png')),url=URL.createObjectURL(blob);
+  const file=new File([blob],fn,{type:'image/png'});
+  const txt='Reçu '+(p.receipt_no?rno(p):'provisoire')+' — '+S.school.name+'\n'+s.name+' : '+nf(p.amount)+' '+p.currency+' (T'+(p.term||1)+')';
+  const can=!!(navigator.canShare&&navigator.canShare({files:[file]}));
+  const d=show(`<h3>Reçu ${p.receipt_no?rno(p):'provisoire'}</h3><div class=col><button id=rw>📤 Envoyer le reçu sur WhatsApp</button><a class="btn ghost" download="${fn}" href="${url}">Télécharger PNG</a><button class=ghost id=rc>Fermer</button></div><img src="${url}" alt="Reçu">`);
   d.querySelector('#rc').onclick=()=>d.close();
+  d.querySelector('#rw').onclick=async()=>{
+    if(can){try{await navigator.share({files:[file],text:txt})}catch(e){if(e.name!=='AbortError')toast('Partage impossible. Utilise Télécharger PNG.')}}
+    else{const a=document.createElement('a');a.href=url;a.download=fn;a.click();const u=waLink(s.parent_phone,txt);if(u)window.open(u,'_blank');else toast('Image téléchargée : ajoute-la dans WhatsApp.')}
+  };
 }
+
 
 /* ---------- Accueil ---------- */
 const tdy=()=>new Date().toLocaleDateString('sv-SE');
@@ -277,10 +432,10 @@ async function vAccueil(){
     db.from('attendance').select('status').eq('day',tdy()),
     R==='directeur'?db.from('change_requests').select('id').eq('status','en_attente'):{data:[]},
     R==='directeur'?db.from('messages_log').select('*').order('created_at',{ascending:false}).limit(5):{data:[]}]);
-  const st=S.stu,sm=k=>st.reduce((a,s)=>a+Number(s[k]||0),0),A=aa.data||[],cnt=k=>A.filter(a=>a.status===k).length;
-  const tod=sum((pp.data||[]).filter(p=>R==='directeur'||p.collector_id===S.me.id)),pend=(rq.data||[]).length;
+  const st=ys(),sm=k=>st.reduce((a,s)=>a+Number(s[k]||0),0),A=aa.data||[],cnt=k=>A.filter(a=>a.status===k).length;
+  const tod=sum((pp.data||[]).filter(p=>R==='directeur'||p.collector_id===S.me.id))+qToday(),pend=(rq.data||[]).length;
   const exp=sm('due1_cdf')+sm('due2_cdf')+sm('due3_cdf'),due=sm('balance_cdf');
-  let h=`<h3>Bonjour ${esc(S.me.full_name)}</h3>`;
+  let h=ybar()+`<h3>Bonjour ${esc(S.me.full_name)}</h3>`;
   const left=S.school.sub_until?Math.ceil((new Date(S.school.sub_until)-Date.now())/864e5):99;
   if(R==='directeur'&&left<=14)h+=`<div class="card col"><b class=due>⚠ Abonnement : ${left} jour(s) restant(s)</b><small>Contacte l’administrateur pour prolonger.</small></div>`;
   if(pend)h+=`<div class="card" onclick="S.tab='caisse';render()"><span>Demandes à approuver</span><b class=due>${pend}</b></div>`;
@@ -294,7 +449,7 @@ async function vAccueil(){
   $('#main').innerHTML=h;
 }
 function reminders(){
-  const l=S.stu.filter(s=>s.balance_cdf>0&&s.parent_phone).sort((a,b)=>b.balance_cdf-a.balance_cdf),no=S.stu.filter(s=>s.balance_cdf>0&&!s.parent_phone).length;
+  const l=ys().filter(s=>s.balance_cdf>0&&s.parent_phone).sort((a,b)=>b.balance_cdf-a.balance_cdf),no=ys().filter(s=>s.balance_cdf>0&&!s.parent_phone).length;
   const d=show(`<h3>Rappels d’impayés</h3>${l.length?l.map(s=>`<div class=card><span>${esc(s.name)}<br><small>${fmt(s.balance_cdf)}</small></span><button class=ghost style=width:auto data-w=${s.id}>WhatsApp</button></div>`).join(''):'<p class=empty>Aucun impayé avec numéro.</p>'}${no?`<small>${no} élève(s) sans numéro ignoré(s).</small>`:''}<button class=ghost id=rc2>Fermer</button>`);
   d.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{const s=S.stu.find(x=>x.id===b.dataset.w),m=feeMsg(s),u=waLink(s.parent_phone,m);if(u){window.open(u,'_blank');logMsg(s.id,'frais',m);b.textContent='✓ Envoyé';b.disabled=true}});
   d.querySelector('#rc2').onclick=()=>d.close();
@@ -302,17 +457,18 @@ function reminders(){
 
 /* ---------- Présences ---------- */
 async function vPresences(){
-  if(!S.classes.length){$('#main').innerHTML='<p class=empty>Crée d’abord une classe dans Élèves.</p>';return}
-  if(!S.classes.some(c=>c.id===S.cls))S.cls=S.classes[0].id;
+  if(!yc().length){$('#main').innerHTML=ybar()+'<p class=empty>Crée d’abord une classe dans Élèves.</p>';return}
+  if(!yc().some(c=>c.id===S.cls))S.cls=yc()[0].id;
   S.day=S.day||tdy();
   const{data}=await db.from('attendance').select('student_id,status').eq('day',S.day);
-  S.att=Object.fromEntries((data||[]).map(a=>[a.student_id,a.status]));
+  if(data){S.att=Object.fromEntries(data.map(a=>[a.student_id,a.status]));S.attDay=S.day}else if(S.attDay!==S.day)S.att={};
+  qget().filter(x=>x.k==='att'&&x.day===S.day).forEach(x=>S.att[x.student_id]=x.status);
   drawAtt();
 }
 function drawAtt(){
   const l=S.stu.filter(s=>s.class_id===S.cls).sort(sorts.alpha),A=S.att||{};
   const n=k=>l.filter(s=>A[s.id]===k).length,un=l.filter(s=>!A[s.id]).length,B=[['present','Présent'],['absent','Absent'],['retard','Retard']];
-  let h=`<div class=bar><select id=cs>${S.classes.map(c=>`<option value="${c.id}" ${c.id===S.cls?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id=dy type=date value="${S.day}" max="${tdy()}"></div><div class=card><small>Présents ${n('present')} · Absents ${n('absent')} · Retards ${n('retard')} · Non marqués ${un}</small></div>`;
+  let h=ybar()+`<div class=bar><select id=cs>${yc().map(c=>`<option value="${c.id}" ${c.id===S.cls?'selected':''}>${esc(c.name)}</option>`).join('')}</select><input id=dy type=date value="${S.day}" max="${tdy()}"></div><div class=card><small>Présents ${n('present')} · Absents ${n('absent')} · Retards ${n('retard')} · Non marqués ${un}</small></div>`;
   h+=l.length?(un?'<button class=ghost onclick=allPresent()>Tout le monde présent</button>':'')+l.map(s=>`<div class="card col"><b>${esc(s.name)}</b><div class=row>${B.map(b=>`<button class="${A[s.id]===b[0]?'':'ghost'}" onclick="mark('${s.id}','${b[0]}')">${A[s.id]===b[0]?'✓ ':''}${b[1]}</button>`).join('')}</div></div>`).join(''):'<p class=empty>Aucun élève dans cette classe.</p>';
   h+='<button class=ghost onclick=icsRappel()>Ajouter un rappel d’appel à l’agenda</button>';
   $('#main').innerHTML=h;
@@ -321,13 +477,19 @@ function drawAtt(){
 }
 async function mark(id,st){
   const A=S.att=S.att||{},old=A[id];A[id]=st;drawAtt();
-  const{error}=await db.from('attendance').upsert({school_id:S.school.id,student_id:id,day:S.day,status:st},{onConflict:'student_id,day'});
+  const row={school_id:S.school.id,student_id:id,day:S.day,status:st};
+  if(!navigator.onLine)return qadd({k:'att',...row});
+  const{error}=await db.from('attendance').upsert(row,{onConflict:'student_id,day'});
+  if(isNet(error))return qadd({k:'att',...row});
   if(error){A[id]=old;drawAtt();toast(error.message)}
 }
 async function allPresent(){
   const A=S.att=S.att||{},rows=S.stu.filter(s=>s.class_id===S.cls&&!A[s.id]).map(s=>({school_id:S.school.id,student_id:s.id,day:S.day,status:'present'}));
   if(!rows.length)return;
+  const off=()=>{rows.forEach(r=>{A[r.student_id]='present';qadd({k:'att',...r})});drawAtt()};
+  if(!navigator.onLine)return off();
   const{error}=await db.from('attendance').upsert(rows,{onConflict:'student_id,day'});
+  if(isNet(error))return off();
   if(error)return toast(error.message);
   rows.forEach(r=>A[r.student_id]='present');drawAtt();
 }
@@ -364,7 +526,9 @@ async function team(){
 /* ---------- Caisse ---------- */
 async function vCaisse(){
   const t0=new Date();t0.setHours(0,0,0,0);
-  const{data:ps=[]}=await db.from('payments').select('*').gte('created_at',t0.toISOString());
+  const{data:ps0,error:pe0}=await db.from('payments').select('*').gte('created_at',t0.toISOString());
+  if(pe0||!ps0){$('#main').innerHTML='<p class=empty>La caisse demande une connexion internet. Les paiements saisis hors connexion partiront automatiquement.</p>';return}
+  const ps=ps0;
   const mine=ps.filter(p=>p.collector_id===S.me.id);
   const tot=a=>[sum(a.filter(p=>p.method==='especes')),sum(a.filter(p=>p.method==='mobile_money'))];
   const[c,m]=tot(dir()?ps:mine);
@@ -400,9 +564,10 @@ function vReglages(){
   const sc=S.school;
   let h=`<div class=card><span>Devise d’affichage</span><select id=cu style=width:auto;margin:0>${CUR.map(c=>`<option ${c===S.cur?'selected':''}>${c}</option>`).join('')}</select></div><div class=card><span>Thème</span><button class=ghost style=width:auto id=th>Clair / Sombre</button></div>`;
   if(dir())h+=`<div class="card col"><b>Taux de change (1 unité en FC)</b><label>USD<input id=r1 type=number step=any value="${sc.rates.USD}"></label><label>EUR<input id=r2 type=number step=any value="${sc.rates.EUR}"></label><label><input id=au type=checkbox style=width:auto ${sc.auto_rates?'checked':''}> Mise à jour automatique (désactive pour garder ton taux)</label><button id=sr>Enregistrer les taux</button><small>Code d’invitation des percepteurs : <b>${sc.code}</b></small></div>`;
-  if(dir())h+=`<div class="card col"><b>Frais par trimestre</b>${S.classes.length?S.classes.map(c=>`<button class=ghost onclick="editFees('${c.id}')">${esc(c.name)} · ${nf(c.fee)} ${c.fee_currency}</button>`).join(''):'<small>Aucune classe.</small>'}<small>Touche une classe pour modifier T1, T2 et T3.</small></div>`;
+  if(dir())h+=`<div class="card col"><b>Frais par trimestre</b>${yc().length?yc().map(c=>`<button class=ghost onclick="editFees('${c.id}')">${esc(c.name)} · ${nf(c.fee)} ${c.fee_currency}</button>`).join(''):'<small>Aucune classe.</small>'}<small>Touche une classe pour modifier T1, T2 et T3.</small></div>`;
+  if(dir())h+=`<div class="card col"><b>Années scolaires</b><small>Année affichée : ${esc(S.year||'—')}</small>${ybar()}<div class=row><button class=ghost onclick=newYear()>+ Nouvelle année</button><button class=ghost onclick=promote()>Passage de classe</button></div></div>`;
   if(dir())h+='<button class=ghost onclick=team()>Équipe</button><button class=ghost onclick=journal()>Journal d’activité</button>';
-  h+=`<details><summary>Guide rapide</summary><p><b>Encaisser</b> : Élèves → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Télécharger PNG.<br><b>Clôture</b> : Caisse → Clôturer ma journée (le directeur contrôle les écarts).<br><b>Correction</b> : Élève → Historique et reçus → Corriger. Le directeur corrige directement ; le percepteur envoie une demande que le directeur approuve dans Caisse.</p></details><button class=ghost id=lo>Déconnexion</button>`;
+  h+=`<details><summary>Guide rapide</summary><p><b>Encaisser</b> : Élèves → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu sur WhatsApp.<br><b>Clôture</b> : Caisse → Clôturer ma journée (le directeur contrôle les écarts).<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel ; tout s’envoie tout seul au retour d’internet (bandeau en haut).<br><b>Correction</b> : Élève → Historique et reçus → Corriger. Le directeur corrige directement ; le percepteur envoie une demande que le directeur approuve dans Caisse.</p></details><button class=ghost id=lo>Déconnexion</button>`;
   $('#main').innerHTML=h;
   $('#lo').onclick=out;
   $('#cu').onchange=e=>{S.cur=e.target.value;localStorage.cur=S.cur;toast('Devise : '+S.cur)};
@@ -415,4 +580,7 @@ function vReglages(){
 }
 
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+window.addEventListener('online',()=>{S.offline?boot():qsync()});
+window.addEventListener('offline',qui);
+setInterval(qsync,30000);
 boot();
