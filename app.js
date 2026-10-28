@@ -561,10 +561,10 @@ function waLink(phone, msg) {
 const logMsg = (sid, kind, body) => db.from('messages_log').insert({ school_id: S.school.id, student_id: sid, kind, body }).then(() => { }, () => { });
 const feeMsg = s => { const hi = `Bonjour, ici ${S.school.name}. `, rest = trims(s).filter(t => t[1] > 0).map(t => 'T' + t[0] + ' : ' + fmt(t[1])).concat(fees4(s).filter(f => feeRem(s, f) > 0).map(f => f.name + ' : ' + fmt(feeRemCdf(s, f)))).join(', '); return s.balance_cdf > 0 ? `${hi}Concernant ${s.name} : il reste ${fmt(s.balance_cdf)} à payer (${rest}). Merci de régulariser.` : `${hi}Les frais de ${s.name} sont entièrement soldés. Merci !`; };
 
+const fillTpl = (t, s) => String(t || '').replace(/{eleve}/g, s.name).replace(/{classe}/g, cnm(s.class_id)).replace(/{reste}/g, fmt(s.balance_cdf)).replace(/{ecole}/g, S.school.name);
 function getTpl(kind, s) {
     const tpl = S.school.message_templates || {};
-    const def = tpl[kind] || (kind === 'frais' ? feeMsg(s) : '');
-    return def.replace(/{eleve}/g, s.name).replace(/{classe}/g, cnm(s.class_id)).replace(/{reste}/g, fmt(s.balance_cdf)).replace(/{ecole}/g, S.school.name);
+    return fillTpl(tpl[kind] || (kind === 'frais' ? feeMsg(s) : ''), s);
 }
 
 async function wa(id) {
@@ -572,16 +572,18 @@ async function wa(id) {
     if (!s.parent_phone) { toast('Ajoute d’abord le numéro du parent.'); return; }
     const [{ data: ab }, { data: sa }] = await Promise.all([db.from('attendance').select('day').eq('student_id', id).eq('status', 'absent').order('day', { ascending: false }).limit(5), db.from('sanctions').select('*').eq('student_id', id).order('created_at', { ascending: false }).limit(1)]);
     const A = ab || [], X = sa || [], fd = x => new Date(x + 'T00:00').toLocaleDateString('fr-FR'), hi = `Bonjour, ici ${S.school.name}. `;
+    const C = (S.school.message_templates || {}).custom || [];
     const M = {
         frais: getTpl('frais', s),
         absence: A.length ? `${hi}${s.name} a été absent(e) le ${A.map(a => fd(a.day)).join(', ')}. Merci de nous en indiquer la raison.` : `${hi}${s.name} n’a pas d’absence récente.`,
         sanction: X.length ? `${hi}${s.name} a reçu la sanction suivante le ${fd(X[0].day)} : ${X[0].kind}${X[0].note ? ' (' + X[0].note + ')' : ''}. Merci de passer à l’école.` : `${hi}Aucune sanction enregistrée pour ${s.name}.`,
         libre: hi
     };
-    const d = show(`<h3>Message à ${esc(s.name)}</h3><label>Sujet<select id=wk><option value=frais>Frais restants</option><option value=absence>Absences</option><option value=sanction>Sanction</option><option value=libre>Message libre</option></select></label><label>Message<textarea id=wm rows=6 style="width:100%">${esc(M.frais)}</textarea></label><div class=col><button id=ws>Ouvrir WhatsApp</button><button class=ghost id=wc>Annuler</button></div>`);
+    C.forEach(c => { M['c_' + c.id] = fillTpl(c.text, s); });
+    const d = show(`<h3>Message à ${esc(s.name)}</h3><label>Sujet<select id=wk><option value=frais>Frais restants</option><option value=absence>Absences</option><option value=sanction>Sanction</option>${C.map(c => `<option value="c_${esc(c.id)}">${esc(c.name)}</option>`).join('')}<option value=libre>Message libre</option></select></label><label>Message<textarea id=wm rows=6 style="width:100%">${esc(M.frais)}</textarea></label><div class=col><button id=ws>Ouvrir WhatsApp</button><button class=ghost id=wc>Annuler</button></div>`);
     d.querySelector('#wk').onchange = e => { d.querySelector('#wm').value = M[e.target.value]; };
     d.querySelector('#wc').onclick = () => d.close();
-    d.querySelector('#ws').onclick = () => { const m = d.querySelector('#wm').value, u = waLink(s.parent_phone, m); if (!u) return toast('Numéro invalide'); window.open(u, '_blank'); logMsg(id, d.querySelector('#wk').value, m); d.close(); };
+    d.querySelector('#ws').onclick = () => { const m = d.querySelector('#wm').value, u = waLink(s.parent_phone, m), k = d.querySelector('#wk').value; if (!u) return toast('Numéro invalide'); window.open(u, '_blank'); logMsg(id, k.startsWith('c_') ? 'libre' : k, m); d.close(); };
 }
 function editFees(id) {
     const c = S.classes.find(x => x.id === id);
@@ -1006,16 +1008,22 @@ function vReglages() {
 }
 function editTemplates() {
     const t = S.school.message_templates || {};
-    const d = show(`<h3>Modèles de messages</h3><small>Variables : <b>{eleve}</b>, <b>{classe}</b>, <b>{reste}</b>, <b>{ecole}</b></small><form id=tf class=col><label>Relance des frais<textarea name=frais rows=4 style="width:100%">${esc(t.frais || feeMsg({ name: '{eleve}', class_id: '', balance_cdf: 0 }))}</textarea></label><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Enregistrer</button></div></form>`);
-    d.querySelector('form').onsubmit = async e => {
-        if (e.submitter.value !== 'ok') return;
-        e.preventDefault();
-        const nt = { frais: e.target.frais.value.trim() };
-        const { error } = await db.from('schools').update({ message_templates: nt }).eq('id', S.school.id);
-        if (error) return toast(error.message);
-        S.school.message_templates = nt;
-        d.close(); toast('Modèles mis à jour');
+    let cu = (t.custom || []).map(c => ({ ...c })), fr = t.frais || feeMsg({ name: '{eleve}', class_id: '', balance_cdf: 0 });
+    const draw = () => {
+        const d = show(`<h3>Modèles de messages</h3><small>Variables : <b>{eleve}</b>, <b>{classe}</b>, <b>{reste}</b>, <b>{ecole}</b></small><div class=col><label>Relance des frais<textarea id=tf0 rows=4 style="width:100%">${esc(fr)}</textarea></label>${cu.map((c, i) => `<div class=card style="display:block"><label>Nom<input data-n=${i} value="${esc(c.name)}"></label><label>Message<textarea data-t=${i} rows=3 style="width:100%">${esc(c.text)}</textarea></label><button type=button class=ghost data-x=${i}>🗑 Supprimer</button></div>`).join('')}<button type=button class=ghost id=ta>+ Ajouter un modèle</button><div class=row><button class=ghost id=tc>Annuler</button><button id=ts>Enregistrer</button></div></div>`);
+        const grab = () => { fr = d.querySelector('#tf0').value; d.querySelectorAll('[data-n]').forEach(x => cu[+x.dataset.n].name = x.value); d.querySelectorAll('[data-t]').forEach(x => cu[+x.dataset.t].text = x.value); };
+        d.querySelector('#ta').onclick = () => { grab(); cu.push({ id: Date.now().toString(36), name: 'Nouveau modèle', text: 'Bonjour, ici {ecole}. ' }); draw(); };
+        d.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { grab(); cu.splice(+b.dataset.x, 1); draw(); });
+        d.querySelector('#tc').onclick = () => d.close();
+        d.querySelector('#ts').onclick = async () => {
+            grab();
+            const nt = { ...t, frais: fr.trim(), custom: cu.filter(c => c.name.trim() && c.text.trim()).map(c => ({ id: c.id, name: c.name.trim(), text: c.text.trim() })) };
+            const { error } = await db.from('schools').update({ message_templates: nt }).eq('id', S.school.id);
+            if (error) return toast(error.message);
+            S.school.message_templates = nt; d.close(); toast('Modèles mis à jour');
+        };
     };
+    draw();
 }
 
 /* ---------- Recherche Globale ---------- */
