@@ -1,23 +1,46 @@
-// ORÉA École — Admin Parents (K2)
+// ORÉA École — Admin Parents (K2) - Version robuste
 (function() {
-    if (typeof vMenu === 'undefined') { setTimeout(arguments.callee, 100); return; }
-    
-    // Injecter dans le menu
-    const origVMenu = vMenu;
-    window.vMenu = function() {
-        origVMenu();
-        if (!dir()) return;
+    // 1. Fonction qui injecte la section dans le menu
+    function inject() {
+        // On vérifie qu'on est bien connecté, en tant que directeur, sur l'onglet Menu
+        if (typeof S === 'undefined' || !S.me || S.me.role !== 'directeur') return;
+        if (S.tab !== 'menu') return;
+        
         const main = document.getElementById('main');
+        if (!main) return;
+        
+        // Si on a déjà injecté, on ne le refait pas
+        if (main.querySelector('.p-admin-section')) return; 
+        
+        const h3 = main.querySelector('h3');
+        if (!h3 || h3.textContent !== 'Menu') return; // On attend que le menu soit affiché
+        
         const div = document.createElement('div');
-        div.innerHTML = `<h3>Parents & Communication</h3>
+        div.className = 'p-admin-section';
+        div.innerHTML = `
+            <h3 style="color:var(--gold);margin-top:20px">Parents & Communication</h3>
             <div class="card" onclick="pAdminInbox()"><span>💬 Messages des parents</span><b>›</b></div>
             <div class="card" onclick="pAdminJustifs()"><span>📝 Justificatifs d'absence</span><b>›</b></div>
-            <div class="card" onclick="pAdminAnnonce()"><span>📢 Publier une annonce</span><b>›</b></div>`;
-        const h3 = main.querySelector('h3');
-        if (h3) h3.before(div);
-        else main.appendChild(div);
-    };
+            <div class="card" onclick="pAdminAnnonce()"><span>📢 Publier une annonce</span><b>›</b></div>
+        `;
+        // On insère juste après le titre <h3>Menu</h3>
+        h3.after(div);
+    }
 
+    // 2. On surveille les changements d'écran
+    const observer = new MutationObserver(inject);
+    const start = () => {
+        const main = document.getElementById('main');
+        if (main) {
+            observer.observe(main, { childList: true });
+            inject();
+        } else {
+            setTimeout(start, 100);
+        }
+    };
+    start();
+
+    // 3. Les fonctions pour le directeur
     window.pAdminInbox = async function() {
         const { data } = await db.from('parent_messages').select('*, students(name)').order('created_at', { ascending: false }).limit(50);
         if (!data) return;
@@ -42,9 +65,9 @@
             const txt = e.target.txt.value.trim();
             const s = S.stu.find(x => x.id === sid);
             if (!s) return;
-            const parentId = (await db.from('parent_links').select('parent_id').eq('student_id', sid).limit(1).single()).data?.parent_id;
-            if (!parentId) return toast('Aucun parent lié à cet élève');
-            await db.from('parent_messages').insert({ school_id: S.school.id, student_id: sid, parent_id: parentId, sender_role: 'ecole', content: txt });
+            const {data} = await db.from('parent_links').select('parent_id').eq('student_id', sid).limit(1).single();
+            if (!data || !data.parent_id) return toast('Aucun parent lié');
+            await db.from('parent_messages').insert({ school_id: S.school.id, student_id: sid, parent_id: data.parent_id, sender_role: 'ecole', content: txt });
             d.close(); toast('Envoyé ✓'); pAdminInbox();
         };
     };
