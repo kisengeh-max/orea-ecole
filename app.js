@@ -317,6 +317,7 @@ async function boot() {
 }
 
 /* ---------- Autres frais, trimestres, stats ---------- */
+const rateOf = cur => S.school.rates[cur] || 1;
 const fees4 = s => { const c = S.classes.find(x => x.id === s.class_id); if (!c) return []; return S.fees.filter(f => cy(f) === cy(c) && (!f.class_id || f.class_id === c.id) && (!f.student_id || f.student_id === s.id)); };
 const feeRem = (s, f) => Math.max(0, Number(f.amount) - (S.fpaid[s.id + ':' + f.id] || 0));
 const feeRemCdf = (s, f) => feeRem(s, f) * rateOf(f.currency);
@@ -459,7 +460,6 @@ async function autoRate() {
         if (data) S.school = data;
     } catch { }
 }
-
 /* ---------- Connexion ---------- */
 function authView() {
     $('#nav').hidden = true;
@@ -483,6 +483,13 @@ function render() {
     let activeTab = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier'].includes(S.tab) ? 'menu' : S.tab;
     $('#nav').innerHTML = tabs.map(x => `<button data-t=${x[0]}>${svgI(x[0])}<span>${x[1]}</span></button>`).join('');
     document.querySelectorAll('#nav button').forEach(b => { b.classList.toggle('on', b.dataset.t === activeTab); b.onclick = () => goTab(b.dataset.t); });
+    
+    // Ajout de la barre de recherche globale dans l'en-tête
+    const hs = $('#hs');
+    if (hs && !$('#searchBtn')) {
+        hs.insertAdjacentHTML('afterend', `<button id="searchBtn" class="ghost" style="width:auto;min-height:40px;padding:8px;margin-left:auto;border:none" onclick="openSearch()">🔍</button>`);
+    }
+
     ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier })[S.tab]();
     qui();
 }
@@ -541,6 +548,7 @@ function menu(id) {
     const b = (k, f) => { const e = d.querySelector('#' + k); if (e) e.onclick = f; };
     b('m1', () => pay(id)); b('m2', () => hist(id)); b('m3', () => d.close()); b('m4', () => editStudent(id)); b('m5', () => { d.close(); delStudent(id); }); b('m6', () => wa(id)); b('m7', () => sanc(id));
 }
+
 /* ---------- Trimestres et WhatsApp ---------- */
 const COUNTRY = '243';
 const trims = s => [1, 2, 3].map(i => { const due = Number(s['due' + i + '_cdf'] || 0), paid = Number(s['p' + i + '_cdf'] || 0); return [i, Math.max(0, due - paid), due, paid]; });
@@ -628,7 +636,16 @@ async function adminView() {
     const m0 = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const thisMonth = pays.filter(p => new Date(p.created_at) >= m0);
     const totCur = list => { const m = {}; list.forEach(p => { m[p.currency] = (m[p.currency] || 0) + Number(p.amount); }); return Object.entries(m).filter(x => x[1] > 0).map(x => nf(x[1]) + ' ' + SYM[x[0]]).join(' · ') || '0 FC'; };
-    let h = `<h3>Espace administrateur</h3><div class=card><span>Écoles actives / total</span><b>${act} / ${data.length}</b></div><div class=card><span>Revenus ce mois</span><b>${totCur(thisMonth)}</b></div><div class=row><button onclick=adminHistory()>Historique des encaissements</button></div>`;
+    
+        // Calcul du graphique 6 mois
+    const ms = []; for (let i = 5; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); ms.push({ k: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), l: d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', ''), v: 0 }); }
+    pays.forEach(p => { if (p.currency === 'USD') { const d = new Date(p.created_at), k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), m = ms.find(x => x.k === k); if (m) m.v += Number(p.amount); } });
+    const mx = Math.max(...ms.map(x => x.v), 1);
+
+    let h = `<h3>Espace administrateur</h3><div class=card><span>Écoles actives / total</span><b>${act} / ${data.length}</b></div><div class=card><span>Revenus ce mois</span><b>${totCur(thisMonth)}</b></div>`;
+    h += `<div class="card col"><b>Revenus USD (6 derniers mois)</b><div class="admin-bar">${ms.map(x => `<div style="height:${Math.max(4, Math.round(x.v / mx * 80))}px" title="${nf(x.v)} $"><small>${x.l}</small></div>`).join('')}</div></div>`;
+    h += `<div class=row><button onclick=adminHistory()>Historique des encaissements</button></div>`;
+    
     h += '<h3>Écoles</h3>' + (data.length ? data.map(s => {
         const d = s.sub_until ? new Date(s.sub_until) : null;
         const left = d ? Math.ceil((d - now) / 864e5) : -999;
@@ -660,10 +677,16 @@ async function adminHistory() {
     const nm = Object.fromEntries(sc.map(s => [s.id, s.name]));
     const totUSD = p.filter(x => x.currency === 'USD').reduce((t, x) => t + Number(x.amount), 0);
     const totCDF = p.filter(x => x.currency === 'CDF').reduce((t, x) => t + Number(x.amount), 0);
-    const d = show(`<h3>Comptabilité abonnements</h3><div class=card><span>Total encaissé</span><b>${nf(totUSD)} $ · ${nf(totCDF)} FC</b></div>${p.length ? p.map(x => `<div class="card col"><b>${esc(nm[x.school_id] || 'École')} · +${x.months} mois</b><span>${nf(x.amount)} ${x.currency}</span><small>${new Date(x.created_at).toLocaleString('fr-FR')}</small></div>`).join('') : '<p class=empty>Aucun encaissement.</p>'}<button class=ghost id=ahc>Fermer</button>`);
+    const d = show(`<h3>Comptabilité abonnements</h3><div class=card><span>Total encaissé</span><b>${nf(totUSD)} $ · ${nf(totCDF)} FC</b></div><input type="search" id="ah-search" placeholder="Rechercher une école..." oninput="filterHistory(this.value)"><div id="ah-list">${p.length ? p.map(x => `<div class="card col" data-school="${esc(nm[x.school_id] || 'École')}"><b>${esc(nm[x.school_id] || 'École')} · +${x.months} mois</b><span>${nf(x.amount)} ${x.currency}</span><small>${new Date(x.created_at).toLocaleString('fr-FR')}</small></div>`).join('') : '<p class=empty>Aucun encaissement.</p>'}</div><button class=ghost id=ahc>Fermer</button>`);
     d.querySelector('#ahc').onclick = () => d.close();
 }
-
+function filterHistory(q) {
+    const s = nrm(q);
+    document.querySelectorAll('#ah-list .card').forEach(el => {
+        el.hidden = s && !nrm(el.dataset.school).includes(s);
+    });
+}
+/* ---------- Paiements ---------- */
 function pay(id) {
     const s = S.stu.find(x => x.id === id);
     const dt = (trims(s).find(x => x[1] > 0) || [0])[0], fs = fees4(s).filter(f => feeRem(s, f) > 0);
@@ -687,9 +710,19 @@ async function hist(id) {
     if (e1) return toast(e1.message);
     const data = [...d1.map(p => ({ ...p, _f: 0 })), ...(d2 || []).map(p => ({ ...p, _f: 1 }))].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     const ids = d1.map(p => p.id);
-    const { data: pend = [] } = ids.length ? await db.from('change_requests').select('payment_id').eq('status', 'en_attente').in('payment_id', ids) : { data: [] };
+    const fids = (d2 || []).map(p => p.id);
+    const [{ data: pend = [] }, { data: fpend = [] }] = await Promise.all([
+        ids.length ? db.from('change_requests').select('payment_id').eq('status', 'en_attente').in('payment_id', ids) : { data: [] },
+        fids.length ? db.from('change_requests').select('fee_payment_id').eq('status', 'en_attente').in('fee_payment_id', fids) : { data: [] }
+    ]);
     const pe = new Set(pend.map(r => r.payment_id));
-    const d = show(`<h3>Reçus</h3>${data.length ? data.map((p, i) => `<div class="card col"><span>${rno(p)} · ${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f ? esc(p.fee_name || 'Frais') : 'T' + p.term} · ${nf(p.amount)} ${p.currency}</span><div class=row><button class=ghost data-i=${i}>Reçu</button>${p._f ? (dir() ? `<button class=ghost data-x=${i}>Supprimer</button>` : '') : pe.has(p.id) ? '<small>⏳ demande en attente</small>' : `<button class=ghost data-c=${i}>${dir() ? 'Corriger' : 'Demander correction'}</button>`}</div></div>`).join('') : '<p class=empty data-ic="🧾">Aucun paiement.</p>'}<button class=ghost id=hc>Fermer</button>`);
+    const fpe = new Set(fpend.map(r => r.fee_payment_id));
+    
+    const d = show(`<h3>Reçus</h3>${data.length ? data.map((p, i) => {
+        const isP = pe.has(p.id) || fpe.has(p.id);
+        return `<div class="card col"><span>${rno(p)} · ${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f ? esc(p.fee_name || 'Frais') : 'T' + p.term} · ${nf(p.amount)} ${p.currency}</span><div class=row><button class=ghost data-i=${i}>Reçu</button>${p._f ? (dir() ? `<button class=ghost data-x=${i}>Supprimer</button>` : '') : pe.has(p.id) ? '<small>⏳ demande en attente</small>' : `<button class=ghost data-c=${i}>${dir() ? 'Corriger' : 'Demander correction'}</button>`}</div></div>`;
+    }).join('') : '<p class=empty data-ic="🧾">Aucun paiement.</p>'}<button class=ghost id=hc>Fermer</button>`);
+    
     d.querySelectorAll('[data-i]').forEach(b => b.onclick = () => receipt(data[b.dataset.i], id));
     d.querySelectorAll('[data-c]').forEach(b => b.onclick = () => fixPay(data[b.dataset.c], id));
     d.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => {
@@ -702,15 +735,25 @@ async function hist(id) {
 }
 function fixPay(p, sid) {
     const T = [['1', '1er trimestre'], ['2', '2e trimestre'], ['3', '3e trimestre']], D = dir();
-    const d = show(`<h3>Paiement de ${nf(p.amount)} ${p.currency} (T${p.term})</h3><div class=col><button id=f1>${D ? 'Modifier' : 'Demander modification'}</button><button class=ghost id=f2>${D ? 'Supprimer' : 'Demander suppression'}</button><button class=ghost id=f3>Retour</button></div>`);
+    const d = show(`<h3>Paiement de ${nf(p.amount)} ${p.currency} (${p._f ? (p.fee_name || 'Frais') : 'T' + p.term})</h3><div class=col><button id=f1>${D ? 'Modifier' : 'Demander modification'}</button><button class=ghost id=f2>${D ? 'Supprimer' : 'Demander suppression'}</button><button class=ghost id=f3>Retour</button></div>`);
     d.querySelector('#f3').onclick = () => hist(sid);
-    d.querySelector('#f1').onclick = () => ask(D ? 'Modifier' : 'Demande de modification', [{ n: 'amount', l: 'Montant', t: 'number', v: p.amount }, { n: 'term', l: 'Trimestre', o: T, v: String(p.term) }, ...(D ? [] : [{ n: 'reason', l: 'Motif', r: false }])], async v => {
-        if (D) { const { data, error } = await db.from('payments').update({ amount: +v.amount, term: +v.term }).eq('id', p.id).select(); if (error) throw error; if (!data.length) throw Error('Refusé'); await load(); render(); toast('Modifié'); }
-        else { const { error } = await db.from('change_requests').insert({ payment_id: p.id, kind: 'edit_payment', new_amount: +v.amount, new_term: +v.term, reason: (v.reason || '').trim() || null }); if (error) throw error.code === '23505' ? Error('Déjà en attente') : error; toast('Demande envoyée'); }
+    d.querySelector('#f1').onclick = () => ask(D ? 'Modifier' : 'Demande de modification', [{ n: 'amount', l: 'Montant', t: 'number', v: p.amount }, ...(p._f ? [] : [{ n: 'term', l: 'Trimestre', o: T, v: String(p.term) }]), ...(D ? [] : [{ n: 'reason', l: 'Motif', r: false }])], async v => {
+        if (D) {
+            if (p._f) { const { data, error } = await db.from('fee_payments').update({ amount: +v.amount, amount_cdf: +v.amount * p.rate, fee_paid: (+v.amount * p.rate) / rateOf(S.fees.find(f => f.id === p.fee_id).currency) }).eq('id', p.id).select(); if (error) throw error; if (!data.length) throw Error('Refusé'); }
+            else { const { data, error } = await db.from('payments').update({ amount: +v.amount, term: +v.term }).eq('id', p.id).select(); if (error) throw error; if (!data.length) throw Error('Refusé'); }
+            await load(); render(); toast('Modifié');
+        }
+        else {
+            const payload = p._f ? { fee_payment_id: p.id, kind: 'edit_fee_payment', new_amount: +v.amount, reason: (v.reason || '').trim() || null } : { payment_id: p.id, kind: 'edit_payment', new_amount: +v.amount, new_term: +v.term, reason: (v.reason || '').trim() || null };
+            const { error } = await db.from('change_requests').insert(payload); if (error) throw error.code === '23505' ? Error('Déjà en attente') : error; toast('Demande envoyée');
+        }
     });
     d.querySelector('#f2').onclick = () => {
-        if (D) { d.close(); if (!confirm('Supprimer ?')) return; db.from('payments').delete().eq('id', p.id).select().then(async ({ data, error }) => { if (error || !data.length) return toast(error ? error.message : 'Refusé'); await load(); render(); toast('Supprimé'); }); }
-        else ask('Demande de suppression', [{ n: 'reason', l: 'Motif', r: false }], async v => { const { error } = await db.from('change_requests').insert({ payment_id: p.id, kind: 'delete_payment', reason: (v.reason || '').trim() || null }); if (error) throw error.code === '23505' ? Error('Déjà en attente') : error; toast('Demande envoyée'); });
+        if (D) { d.close(); if (!confirm('Supprimer ?')) return; const tb = p._f ? 'fee_payments' : 'payments'; db.from(tb).delete().eq('id', p.id).select().then(async ({ data, error }) => { if (error || !data.length) return toast(error ? error.message : 'Refusé'); await load(); render(); toast('Supprimé'); }); }
+        else ask('Demande de suppression', [{ n: 'reason', l: 'Motif', r: false }], async v => {
+            const payload = p._f ? { fee_payment_id: p.id, kind: 'delete_fee_payment', reason: (v.reason || '').trim() || null } : { payment_id: p.id, kind: 'delete_payment', reason: (v.reason || '').trim() || null };
+            const { error } = await db.from('change_requests').insert(payload); if (error) throw error.code === '23505' ? Error('Déjà en attente') : error; toast('Demande envoyée');
+        });
     };
 }
 async function decide(id, ok) {
@@ -729,7 +772,7 @@ async function journal() {
         return r.op === 'DELETE' ? `supprimé : ${o.name}` : `modifié : ${n.name}`;
     };
     const d = show(`<h3>Journal d’activité</h3>${a.length ? a.map(r => `<div class="card col"><b>${T[r.tbl] || r.tbl} ${esc(line(r))}</b><small>${new Date(r.created_at).toLocaleString('fr-FR')} · ${esc(nm[r.user_id] || '?')}</small></div>`).join('') : '<p class=empty data-ic="📋">Aucune activité.</p>'}<button class=ghost id=jc>Fermer</button>`);
-    d.querySelector('#jc').onclick = () => d.close();
+    d.querySelector('#jc').onclick = () => d.close(); 
 }
 async function receipt(p, sid) {
     const s = S.stu.find(x => x.id === sid), c = S.classes.find(x => x.id === s.class_id);
@@ -938,7 +981,6 @@ async function ctl(id) {
     const { error } = await db.from('closures').update({ status: 'controlee', reviewed_by: S.me.id, reviewed_at: new Date().toISOString() }).eq('id', id);
     error ? toast(error.message) : render();
 }
-
 /* ---------- Réglages ---------- */
 function vReglages() {
     const sc = S.school;
@@ -975,7 +1017,73 @@ function editTemplates() {
         d.close(); toast('Modèles mis à jour');
     };
 }
-/* ---------- Paquet D ---------- */
+
+/* ---------- Recherche Globale ---------- */
+function openSearch() {
+    let m = $('#searchModal');
+    if (!m) {
+        m = document.createElement('div');
+        m.id = 'searchModal';
+        m.innerHTML = `
+            <header>
+                <input type="search" id="globalSearch" placeholder="Rechercher un élève, une classe, REC-0042..." oninput="doGlobalSearch(this.value)">
+                <button class="ghost" style="width:auto;margin-top:10px" onclick="closeSearch()">Fermer</button>
+            </header>
+            <div class="res" id="searchRes"></div>
+        `;
+        document.body.appendChild(m);
+    }
+    m.hidden = false;
+    $('#globalSearch').value = '';
+    $('#searchRes').innerHTML = '';
+    setTimeout(() => $('#globalSearch').focus(), 100);
+}
+
+function closeSearch() {
+    const m = $('#searchModal');
+    if (m) m.hidden = true;
+}
+
+async function doGlobalSearch(q) {
+    q = nrm(q).trim();
+    const res = $('#searchRes');
+    if (!q) { res.innerHTML = ''; return; }
+    
+    let h = '';
+    const stu = S.stu.filter(s => nrm(s.name).includes(q));
+    if (stu.length) {
+        h += '<h3>👤 Élèves</h3>' + stu.slice(0, 10).map(s => {
+            const cname = (S.classes.find(c => c.id === s.class_id) || {}).name || '';
+            return `<div class="card" onclick="closeSearch();menu('${s.id}')"><span>${esc(s.name)}<br><small>${esc(cname)}</small></span><b class="${s.balance_cdf > 0 ? 'due' : 'ok'}">${fmt(s.balance_cdf)}</b></div>`;
+        }).join('');
+    }
+    
+    const cls = S.classes.filter(c => nrm(c.name).includes(q));
+    if (cls.length) {
+        h += '<h3>🏫 Classes</h3>' + cls.map(c => `<div class="card" onclick="closeSearch();S.cls='${c.id}';S.tab='eleves';render()"><span>${esc(c.name)}</span><small>${cy(c)}</small></div>`).join('');
+    }
+
+    const isRec = q.startsWith('rec') || /^\d+$/.test(q);
+    if (!h) res.innerHTML = '<p class=empty>Recherche...</p>';
+    else res.innerHTML = h;
+
+    if (isRec) {
+        const num = q.replace('rec-', '').replace('rec', '');
+        const rno = parseInt(num, 10);
+        if (!isNaN(rno)) {
+            const [{ data: p }, { data: f }] = await Promise.all([
+                db.from('payments').select('*, students(name)').eq('receipt_no', rno).limit(1),
+                db.from('fee_payments').select('*, students(name)').eq('receipt_no', rno).limit(1)
+            ]);
+            const found = (p && p.length ? p[0] : (f && f.length ? f[0] : null));
+            if (found) {
+                h += '<h3>🧾 Reçu trouvé</h3>' + `<div class="card" onclick="closeSearch();hist('${found.student_id}')"><span>REC-${String(found.receipt_no).padStart(4, '0')}<br><small>${esc(found.students ? found.students.name : '')}</small></span><b>${nf(found.amount)} ${found.currency}</b></div>`;
+                res.innerHTML = h;
+            }
+        }
+    }
+}
+/* ---------- Paquet D : exports, sauvegarde, bannière ---------- */
 document.querySelector('header').insertAdjacentHTML('afterend', '<div id=exb hidden></div>');
 (function () {
     if (sessionStorage.orea_sp || matchMedia('(prefers-reduced-motion: reduce)').matches) return; sessionStorage.orea_sp = 1;
@@ -992,8 +1100,11 @@ function subBanner() {
 }
 const bkAge = () => { const t = +localStorage['orea_bk_' + S.school.id] || 0; return t ? Math.floor((Date.now() - t) / 864e5) : null; };
 function bkCard() {
-    const a = bkAge(); if (a !== null && a < 30) return '';
-    return `<div class="card col"><b class=due>💾 Sauvegarde conseillée</b><small>${a === null ? 'Aucune sauvegarde faite.' : 'Dernière sauvegarde il y a ' + a + ' jours.'}</small><button class=ghost onclick="exRun(event.target,backupAll)">Sauvegarder maintenant</button></div>`;
+    const a = bkAge();
+    // Rappel automatique le 1er du mois
+    const is1st = new Date().getDate() === 1;
+    if (a !== null && a < 30 && !is1st) return '';
+    return `<div class="card col"><b class=due>💾 Sauvegarde ${is1st ? 'du mois' : 'conseillée'}</b><small>${a === null ? 'Aucune sauvegarde faite.' : 'Dernière sauvegarde il y a ' + a + ' jours.'}</small><button class=ghost onclick="exRun(event.target,backupAll)">Sauvegarder maintenant</button></div>`;
 }
 const dl = (blob, name) => { const u = URL.createObjectURL(blob), a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 5000); };
 const fnm = (k, e) => k + '-' + S.school.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() + '-' + tdy() + '.' + e;
@@ -1088,7 +1199,6 @@ async function backupAll() {
     localStorage['orea_bk_' + sc.id] = Date.now(); toast('Sauvegarde enregistrée dans Téléchargements');
     if (S.tab === 'reglages') vReglages(); else render();
 }
-const bkTxt = () => { const a = bkAge(); return a === null ? 'Aucune sauvegarde faite. Fais-en une chaque mois.' : 'Dernière sauvegarde : ' + (a === 0 ? 'aujourd’hui' : 'il y a ' + a + ' jour' + (a > 1 ? 's' : '')) + '.'; };
 
 /* ---------- Paquet E : relance ---------- */
 const ago = t => { const n = Math.floor((Date.now() - t) / 864e5); return n < 1 ? 'aujourd’hui' : 'il y a ' + n + ' j'; };
@@ -1156,7 +1266,6 @@ async function reportImg(key, label) {
     d.querySelector('#pc').onclick = () => d.close();
     d.querySelector('#ps').onclick = async () => { if (can) { try { await navigator.share({ files: [file], text: 'Rapport ' + label + ' — ' + S.school.name }); } catch (e) { if (e.name !== 'AbortError') toast('Partage impossible.'); } } else { dl(blob, fn); toast('Image enregistrée.'); } };
 }
-
 /* ---------- PAQUET F & G : MENU, FINANCES, PÉDAGOGIE ---------- */
 function doBackup() { exRun(event.target, backupAll); }
 function yearMenu() {
@@ -1292,7 +1401,6 @@ function bilanPDF() {
     const r = { name: 'bilan-' + b.date, title: 'Bilan mensuel — ' + S.school.name, sub: 'Mois : ' + b.date + ' · Montants en FC', head: ['Élément', 'Catégorie', 'Montant (FC)'], rows, w: [50, 30, 20], r: [2], tot: null };
     try { dl(new Blob([mkPdf(r)], { type: 'application/pdf' }), fnm(r.name, 'pdf')); toast('PDF enregistré'); } catch (e) { toast(e.message); }
 }
-
 async function vAbsences() {
     const d = new Date(); if (!S.absM) S.absM = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
     $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
