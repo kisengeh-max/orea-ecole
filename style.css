@@ -85,3 +85,13 @@ dialog h3{background:var(--gl);-webkit-background-clip:text;background-clip:text
 .ring b,.card.hero .big,nav svg{filter:drop-shadow(0 1px 2px rgba(0,0,0,.15))}
 @media(max-width:380px){nav button{font-size:11px;padding:6px 2px}nav svg{width:20px;height:20px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Paquet H — Recherche globale & Admin */
+#searchModal{position:fixed;inset:0;background:var(--bg);z-index:1000;display:flex;flex-direction:column;padding:20px}
+#searchModal[hidden]{display:none}
+#searchModal header{padding:0 0 14px;border-bottom:1px solid var(--line);background:none}
+#searchModal input{font-size:20px;padding:16px;border-radius:16px}
+#searchModal .res{margin-top:14px;overflow-y:auto;flex:1}
+.admin-bar{height:100px;display:flex;align-items:flex-end;gap:4px;padding:10px 0}
+.admin-bar>div{flex:1;background:var(--gl);border-radius:4px 4px 0 0;min-height:4px;position:relative}
+.admin-bar>div small{position:absolute;bottom:-20px;left:0;right:0;text-align:center;font-size:10px;color:var(--mut);white-space:nowrap}
