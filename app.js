@@ -64,7 +64,7 @@ window.addEventListener('popstate', () => {
         return;
     }
     if (S.me && !['accueil', 'menu'].includes(S.tab)) {
-        if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier'].includes(S.tab)) {
+        if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps'].includes(S.tab)) {
             S.tab = 'menu';
             render();
         } else {
@@ -218,7 +218,6 @@ function promote() {
         toast(rows.length + ' élève(s) inscrit(s) en ' + tg + (rep ? ' · ' + rep + ' impayé(s) reporté(s)' : ''));
     };
 }
-
 /* ---------- Hors connexion ---------- */
 function saveSnap() { try { localStorage.orea_snap = JSON.stringify({ uid: S.me.id, me: S.me, school: S.school, classes: S.classes, stu: S.stu, fees: S.fees, fpaid: S.fpaid, terms: S.terms, at: Date.now() }); } catch { } }
 function readSnap() { try { return JSON.parse(localStorage.orea_snap || 'null'); } catch { return null; } }
@@ -391,8 +390,7 @@ function goTab(t) {
 function menuGo(t) {
     if (S.tab === 'accueil' && !(history.state && history.state.t)) history.pushState({ t: 1 }, '');
     S.tab = t; render();
-}
-
+        }
 const SK = '<div class=sk></div>'.repeat(4);
 const ICON = {
     accueil: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/>',
@@ -479,18 +477,17 @@ function setupView() {
 function render() {
     $('#nav').hidden = false; subBanner();
     const R = S.me.role, tabs = [['accueil', 'Accueil'], ['eleves', 'Élèves'], ['menu', 'Menu'], ['reglages', 'Réglages']];
-    if (!tabs.some(x => x[0] === S.tab) && !['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier'].includes(S.tab)) S.tab = 'accueil';
-    let activeTab = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier'].includes(S.tab) ? 'menu' : S.tab;
+    if (!tabs.some(x => x[0] === S.tab) && !['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps'].includes(S.tab)) S.tab = 'accueil';
+    let activeTab = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps'].includes(S.tab) ? 'menu' : S.tab;
     $('#nav').innerHTML = tabs.map(x => `<button data-t=${x[0]}>${svgI(x[0])}<span>${x[1]}</span></button>`).join('');
     document.querySelectorAll('#nav button').forEach(b => { b.classList.toggle('on', b.dataset.t === activeTab); b.onclick = () => goTab(b.dataset.t); });
-    
-    // Ajout de la barre de recherche globale dans l'en-tête
+
     const hs = $('#hs');
     if (hs && !$('#searchBtn')) {
         hs.insertAdjacentHTML('afterend', `<button id="searchBtn" class="ghost" style="width:auto;min-height:40px;padding:8px;margin-left:auto;border:none" onclick="openSearch()">🔍</button>`);
     }
 
-    ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier })[S.tab]();
+    ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier, devoirs: vDevoirs, emploi_temps: vEmploiTemps })[S.tab]();
     qui();
 }
 const sorts = {
@@ -556,7 +553,6 @@ function menu(id) {
         btn.onclick = () => { (navigator.clipboard ? navigator.clipboard.writeText(data.access_code) : Promise.reject()).then(() => toast('Code copié !')).catch(() => toast('Code : ' + data.access_code)); };
     });
 }
-
 /* ---------- Trimestres et WhatsApp ---------- */
 const COUNTRY = '243';
 const trims = s => [1, 2, 3].map(i => { const due = Number(s['due' + i + '_cdf'] || 0), paid = Number(s['p' + i + '_cdf'] || 0); return [i, Math.max(0, due - paid), due, paid]; });
@@ -646,8 +642,7 @@ async function adminView() {
     const m0 = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const thisMonth = pays.filter(p => new Date(p.created_at) >= m0);
     const totCur = list => { const m = {}; list.forEach(p => { m[p.currency] = (m[p.currency] || 0) + Number(p.amount); }); return Object.entries(m).filter(x => x[1] > 0).map(x => nf(x[1]) + ' ' + SYM[x[0]]).join(' · ') || '0 FC'; };
-    
-        // Calcul du graphique 6 mois
+
     const ms = []; for (let i = 5; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); ms.push({ k: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), l: d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', ''), v: 0 }); }
     pays.forEach(p => { if (p.currency === 'USD') { const d = new Date(p.created_at), k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), m = ms.find(x => x.k === k); if (m) m.v += Number(p.amount); } });
     const mx = Math.max(...ms.map(x => x.v), 1);
@@ -655,7 +650,7 @@ async function adminView() {
     let h = `<h3>Espace administrateur</h3><div class=card><span>Écoles actives / total</span><b>${act} / ${data.length}</b></div><div class=card><span>Revenus ce mois</span><b>${totCur(thisMonth)}</b></div>`;
     h += `<div class="card col"><b>Revenus USD (6 derniers mois)</b><div class="admin-bar">${ms.map(x => `<div style="height:${Math.max(4, Math.round(x.v / mx * 80))}px" title="${nf(x.v)} $"><small>${x.l}</small></div>`).join('')}</div></div>`;
     h += `<div class=row><button onclick=adminHistory()>Historique des encaissements</button></div>`;
-    
+
     h += '<h3>Écoles</h3>' + (data.length ? data.map(s => {
         const d = s.sub_until ? new Date(s.sub_until) : null;
         const left = d ? Math.ceil((d - now) / 864e5) : -999;
@@ -695,7 +690,7 @@ function filterHistory(q) {
     document.querySelectorAll('#ah-list .card').forEach(el => {
         el.hidden = s && !nrm(el.dataset.school).includes(s);
     });
-}
+                                      }
 /* ---------- Paiements ---------- */
 function pay(id) {
     const s = S.stu.find(x => x.id === id);
@@ -727,12 +722,12 @@ async function hist(id) {
     ]);
     const pe = new Set(pend.map(r => r.payment_id));
     const fpe = new Set(fpend.map(r => r.fee_payment_id));
-    
+
     const d = show(`<h3>Reçus</h3>${data.length ? data.map((p, i) => {
         const isP = pe.has(p.id) || fpe.has(p.id);
         return `<div class="card col"><span>${rno(p)} · ${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f ? esc(p.fee_name || 'Frais') : 'T' + p.term} · ${nf(p.amount)} ${p.currency}</span><div class=row><button class=ghost data-i=${i}>Reçu</button>${p._f ? (dir() ? `<button class=ghost data-x=${i}>Supprimer</button>` : '') : pe.has(p.id) ? '<small>⏳ demande en attente</small>' : `<button class=ghost data-c=${i}>${dir() ? 'Corriger' : 'Demander correction'}</button>`}</div></div>`;
     }).join('') : '<p class=empty data-ic="🧾">Aucun paiement.</p>'}<button class=ghost id=hc>Fermer</button>`);
-    
+
     d.querySelectorAll('[data-i]').forEach(b => b.onclick = () => receipt(data[b.dataset.i], id));
     d.querySelectorAll('[data-c]').forEach(b => b.onclick = () => fixPay(data[b.dataset.c], id));
     d.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => {
@@ -782,7 +777,7 @@ async function journal() {
         return r.op === 'DELETE' ? `supprimé : ${o.name}` : `modifié : ${n.name}`;
     };
     const d = show(`<h3>Journal d’activité</h3>${a.length ? a.map(r => `<div class="card col"><b>${T[r.tbl] || r.tbl} ${esc(line(r))}</b><small>${new Date(r.created_at).toLocaleString('fr-FR')} · ${esc(nm[r.user_id] || '?')}</small></div>`).join('') : '<p class=empty data-ic="📋">Aucune activité.</p>'}<button class=ghost id=jc>Fermer</button>`);
-    d.querySelector('#jc').onclick = () => d.close(); 
+    d.querySelector('#jc').onclick = () => d.close();
 }
 async function receipt(p, sid) {
     const s = S.stu.find(x => x.id === sid), c = S.classes.find(x => x.id === s.class_id);
@@ -817,8 +812,7 @@ async function receipt(p, sid) {
         if (can) { try { await navigator.share({ files: [file], text: txt }); } catch (e) { if (e.name !== 'AbortError') toast('Partage impossible.'); } }
         else { const a = document.createElement('a'); a.href = url; a.download = fn; a.click(); const u = waLink(s.parent_phone, txt); if (u) window.open(u, '_blank'); else toast('Image téléchargée.'); }
     };
-}
-
+            }
 /* ---------- Accueil ---------- */
 const tdy = () => new Date().toLocaleDateString('sv-SE');
 function previsionCard() {
@@ -859,7 +853,7 @@ async function vAccueil() {
         h += lateCard();
         if (R === 'directeur') h += previsionCard();
         const pct = exp > 0 ? Math.max(0, Math.min(100, Math.round(100 * (1 - due / exp)))) : 0;
-        h += `<div class="card hero"><small>Encaissé aujourd’hui ${R === 'directeur' ? '(école)' : '(ma caisse)'}</small><span class=big>${fmt(tod)}</span></div><div class=card><span>Total encaissé</span><b>${fmt(sm('paid_cdf'))}</b></div><div class=card><span>Reste à encaisser</span><b class=due>${fmt(due)}</b></div><div class=card><span>Taux de recouvrement</span><div class=ring style="--p:${pct}"><b>${pct} %</b></div></div>`;
+        h += `<div class="card hero"><small>Encaissé aujourd'hui ${R === 'directeur' ? '(école)' : '(ma caisse)'}</small><span class=big>${fmt(tod)}</span></div><div class=card><span>Total encaissé</span><b>${fmt(sm('paid_cdf'))}</b></div><div class=card><span>Reste à encaisser</span><b class=due>${fmt(due)}</b></div><div class=card><span>Taux de recouvrement</span><div class=ring style="--p:${pct}"><b>${pct} %</b></div></div>`;
         h += '<h3>Par trimestre</h3>' + [1, 2, 3].map(i => `<div class=card><span>T${i}</span><b>${fmt(sm('p' + i + '_cdf'))} / ${fmt(sm('due' + i + '_cdf'))}</b></div>`).join('');
         h += classBars() + (R === 'directeur' ? '<div id=ch></div>' : '');
     }
@@ -870,6 +864,7 @@ async function vAccueil() {
     $('#main').innerHTML = h;
     if (R === 'directeur') monthChart();
 }
+
 /* ---------- Présences ---------- */
 async function vPresences() {
     if (!yc().length) { $('#main').innerHTML = ybar() + `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><p class=empty>Crée d’abord une classe.</p>`; return; }
@@ -950,8 +945,7 @@ async function team() {
     d.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { const p = data.find(x => x.id === b.dataset.r); up(p.id, { role: p.role === 'percepteur' ? 'enseignant' : 'percepteur' }); });
     d.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { const p = data.find(x => x.id === b.dataset.a); up(p.id, { active: p.active === false }); });
     d.querySelector('#tc').onclick = () => d.close();
-}
-
+            }
 /* ---------- Caisse ---------- */
 async function vCaisse() {
     $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
@@ -991,6 +985,7 @@ async function ctl(id) {
     const { error } = await db.from('closures').update({ status: 'controlee', reviewed_by: S.me.id, reviewed_at: new Date().toISOString() }).eq('id', id);
     error ? toast(error.message) : render();
 }
+
 /* ---------- Réglages ---------- */
 function vReglages() {
     const sc = S.school;
@@ -1033,7 +1028,6 @@ function editTemplates() {
     };
     draw();
 }
-
 /* ---------- Recherche Globale ---------- */
 function openSearch() {
     let m = $('#searchModal');
@@ -1064,7 +1058,7 @@ async function doGlobalSearch(q) {
     q = nrm(q).trim();
     const res = $('#searchRes');
     if (!q) { res.innerHTML = ''; return; }
-    
+
     let h = '';
     const stu = S.stu.filter(s => nrm(s.name).includes(q));
     if (stu.length) {
@@ -1073,7 +1067,7 @@ async function doGlobalSearch(q) {
             return `<div class="card" onclick="closeSearch();menu('${s.id}')"><span>${esc(s.name)}<br><small>${esc(cname)}</small></span><b class="${s.balance_cdf > 0 ? 'due' : 'ok'}">${fmt(s.balance_cdf)}</b></div>`;
         }).join('');
     }
-    
+
     const cls = S.classes.filter(c => nrm(c.name).includes(q));
     if (cls.length) {
         h += '<h3>🏫 Classes</h3>' + cls.map(c => `<div class="card" onclick="closeSearch();S.cls='${c.id}';S.tab='eleves';render()"><span>${esc(c.name)}</span><small>${cy(c)}</small></div>`).join('');
@@ -1099,6 +1093,7 @@ async function doGlobalSearch(q) {
         }
     }
 }
+
 /* ---------- Paquet D : exports, sauvegarde, bannière ---------- */
 document.querySelector('header').insertAdjacentHTML('afterend', '<div id=exb hidden></div>');
 (function () {
@@ -1117,14 +1112,13 @@ function subBanner() {
 const bkAge = () => { const t = +localStorage['orea_bk_' + S.school.id] || 0; return t ? Math.floor((Date.now() - t) / 864e5) : null; };
 function bkCard() {
     const a = bkAge();
-    // Rappel automatique le 1er du mois
     const is1st = new Date().getDate() === 1;
     if (a !== null && a < 30 && !is1st) return '';
     return `<div class="card col"><b class=due>💾 Sauvegarde ${is1st ? 'du mois' : 'conseillée'}</b><small>${a === null ? 'Aucune sauvegarde faite.' : 'Dernière sauvegarde il y a ' + a + ' jours.'}</small><button class=ghost onclick="exRun(event.target,backupAll)">Sauvegarder maintenant</button></div>`;
 }
 const dl = (blob, name) => { const u = URL.createObjectURL(blob), a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 5000); };
 const fnm = (k, e) => k + '-' + S.school.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() + '-' + tdy() + '.' + e;
-const csvCell = v => { if (typeof v === 'number') return String(v).replace('.', ','); v = v == null ? '' : String(v); if (/^[=+\-@]/.test(v)) v = "'" + v; return /[;"\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+const csvCell = v => { if (typeof v === 'number') return String(v).replace('.', ','); v = v == null ? '' : String(v); if (/^[=+\-@]/.test(v)) v = "'" + v; return /[;\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
 const toCsv = (h, r) => '\ufeff' + [h, ...r].map(x => x.map(csvCell).join(';')).join('\r\n');
 const WIN = { '€': 128, '…': 133, '‘': 145, '’': 146, '“': 147, '”': 148, '–': 150, '—': 151, 'œ': 156, 'Œ': 140 };
 const wenc = s => String(s ?? '').replace(/[\u202f\u00a0\u2009]/g, ' ').replace(/[\s\S]/g, c => { const k = c.charCodeAt(0); return WIN[c] ? String.fromCharCode(WIN[c]) : k < 32 ? ' ' : k < 256 ? c : '?'; }).replace(/[\\()]/g, '\\$&');
@@ -1167,7 +1161,7 @@ function mkPdf(o) {
     put(`trailer\n<< /Size ${n} /Root 1 0 R >>\nstartxref\n${xo}\n%%EOF`);
     const str = out.join(''), u = new Uint8Array(str.length); for (let k = 0; k < str.length; k++) u[k] = str.charCodeAt(k) & 255;
     return u;
-}
+        }
 async function ex(n) { const r = await pageAll(() => db.from(n).select('*')); if (r.error) throw new Error(r.error.message); return r.data; }
 const cnm = id => (S.classes.find(c => c.id === id) || {}).name || '';
 const stamp = () => 'Année ' + (S.year || '—') + ' · édité le ' + new Date().toLocaleDateString('fr-FR');
@@ -1204,7 +1198,7 @@ function exportMenu() {
     d.querySelector('#xc').onclick = () => d.close();
 }
 async function backupAll() {
-    const T = ['classes', 'students', 'payments', 'fee_payments', 'closures', 'extra_fees', 'attendance', 'sanctions', 'messages_log', 'change_requests', 'audit_log', 'expenses', 'events'], o = {}, er = {};
+    const T = ['classes', 'students', 'payments', 'fee_payments', 'closures', 'extra_fees', 'attendance', 'sanctions', 'messages_log', 'change_requests', 'audit_log', 'expenses', 'events', 'assignments', 'timetable'], o = {}, er = {};
     await Promise.all(T.map(async n => { let r = await pageAll(() => db.from(n).select('*')); if (r.error) r = await db.from(n).select('*'); if (r.error) er[n] = r.error.message; else o[n] = r.data; }));
     const [t, pr] = await Promise.all([db.from('terms').select('*'), db.from('profiles').select('id,full_name,role,active')]);
     if (!t.error) o.terms = t.data; if (!pr.error) o.profiles = pr.data;
@@ -1216,7 +1210,7 @@ async function backupAll() {
     if (S.tab === 'reglages') vReglages(); else render();
 }
 
-/* ---------- Paquet E : relance ---------- */
+/* ---------- Relance des parents ---------- */
 const ago = t => { const n = Math.floor((Date.now() - t) / 864e5); return n < 1 ? 'aujourd’hui' : 'il y a ' + n + ' j'; };
 async function reminders() {
     const since = new Date(Date.now() - 7 * 864e5).toISOString();
@@ -1281,8 +1275,8 @@ async function reportImg(key, label) {
     const d = show(`<h3>Rapport · ${esc(label)}</h3><div class=col><button id=ps>📤 Partager</button><a class="btn ghost" download="${fn}" href="${url}">Télécharger PNG</a><button class=ghost id=pc>Fermer</button></div><img src="${url}" alt="Rapport">`);
     d.querySelector('#pc').onclick = () => d.close();
     d.querySelector('#ps').onclick = async () => { if (can) { try { await navigator.share({ files: [file], text: 'Rapport ' + label + ' — ' + S.school.name }); } catch (e) { if (e.name !== 'AbortError') toast('Partage impossible.'); } } else { dl(blob, fn); toast('Image enregistrée.'); } };
-}
-/* ---------- PAQUET F & G : MENU, FINANCES, PÉDAGOGIE ---------- */
+    }
+/* ---------- PAQUET F & G : MENU, FINANCES ---------- */
 function doBackup() { exRun(event.target, backupAll); }
 function yearMenu() {
     const y = yrs(), tm = S.terms[S.year] || {};
@@ -1307,6 +1301,8 @@ function vMenu() {
     h += `<div class=card onclick="menuGo('absences')"><span>📉 Suivi des absences</span><b>›</b></div>`;
     h += `<div class=card onclick="menuGo('sanctions')"><span>⚖️ Sanctions</span><b>›</b></div>`;
     h += `<div class=card onclick="menuGo('calendrier')"><span>📅 Calendrier</span><b>›</b></div>`;
+    h += `<div class=card onclick="menuGo('devoirs')"><span>📝 Devoirs</span><b>›</b></div>`;
+    h += `<div class=card onclick="menuGo('emploi_temps')"><span>📅 Emploi du temps</span><b>›</b></div>`;
     if (dir()) {
         h += `<h3>Administration</h3>`;
         h += `<div class=card onclick="yearMenu()"><span>🗓️ Années scolaires</span><b>›</b></div>`;
@@ -1491,8 +1487,121 @@ function icsEvents() {
     S.events.forEach(e => { const d = e.start_date.split('-'), ds = d[0] + d[1] + d[2]; lines.push('BEGIN:VEVENT', 'UID:' + e.id + '@orea', 'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + ds, 'SUMMARY:' + e.title, 'DESCRIPTION:' + (e.description || ''), 'END:VEVENT'); });
     lines.push('END:VCALENDAR');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/calendar' })); a.download = 'calendrier-orea.ics'; a.click();
+                                            }
+/* ========================================================
+   PAQUET K5 — Devoirs & Emploi du temps
+   ======================================================== */
+function vDevoirs() {
+    const R = S.me.role;
+    if (!yc().length) { $('#main').innerHTML = ybar() + `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><p class=empty>Crée d'abord une classe.</p>`; return; }
+    if (!yc().some(c => c.id === S.cls)) S.cls = yc()[0].id;
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Devoirs</h3>` + ybar();
+    h += `<div class=bar><select id=dvc>${yc().map(c => `<option value="${c.id}" ${c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
+    if (R === 'directeur' || R === 'enseignant') h += `<button onclick=addAssignment()>+ Nouveau devoir</button>`;
+    h += `<div id=dvl><div class=sk></div><div class=sk></div><div class=sk></div></div>`;
+    $('#main').innerHTML = h;
+    $('#dvc').onchange = e => { S.cls = e.target.value; drawDevoirs(); };
+    drawDevoirs();
+}
+async function drawDevoirs() {
+    const { data, error } = await db.from('assignments').select('*').eq('class_id', S.cls).order('due_date', { ascending: false });
+    if (S.tab !== 'devoirs') return;
+    const el = $('#dvl'); if (!el) return;
+    if (error) { el.innerHTML = `<p class=empty>${esc(error.message)}</p>`; return; }
+    const R = S.me.role, l = data || [];
+    if (!l.length) { el.innerHTML = `<p class=empty data-ic="📝">Aucun devoir pour cette classe.</p>`; return; }
+    const today = tdy();
+    el.innerHTML = l.map(a => {
+        const late = String(a.due_date) < today;
+        const can = R === 'directeur' || R === 'enseignant';
+        return `<div class="card col" style="${late ? 'border-left:3px solid var(--bad)' : 'border-left:3px solid var(--gold)'}"><b>${esc(a.subject)}</b><small>${late ? '⚠ Rendu' : 'À rendre'} le ${fdate(a.due_date)}</small><span>${esc(a.description)}</span>${can ? `<div class=row><button class=ghost data-e="${a.id}">✏️ Modifier</button><button class=ghost data-x="${a.id}">🗑</button></div>` : ''}</div>`;
+    }).join('');
+    el.querySelectorAll('[data-e]').forEach(b => b.onclick = () => editAssignment(b.dataset.e));
+    el.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => { if (!confirm('Supprimer ce devoir ?')) return; const { error } = await db.from('assignments').delete().eq('id', b.dataset.x); if (error) return toast(error.message); toast('Supprimé'); drawDevoirs(); });
+}
+function addAssignment() {
+    if (!S.cls) return toast('Sélectionne une classe');
+    const cn = (S.classes.find(c => c.id === S.cls) || {}).name || '';
+    ask('Nouveau devoir — ' + esc(cn), [
+        { n: 'subject', l: 'Matière / titre court' },
+        { n: 'description', l: 'Description', t: 'textarea' },
+        { n: 'due', l: 'À rendre le', t: 'date', v: tdy() }
+    ], async v => {
+        const { error } = await db.from('assignments').insert({ school_id: S.school.id, class_id: S.cls, subject: v.subject.trim(), description: v.description.trim(), due_date: v.due, year: S.year || '', created_by: S.me.id });
+        if (error) throw error; toast('Devoir ajouté'); drawDevoirs();
+    });
+}
+async function editAssignment(id) {
+    const { data: a, error } = await db.from('assignments').select('*').eq('id', id).single();
+    if (error || !a) return toast('Introuvable');
+    ask('Modifier le devoir', [
+        { n: 'subject', l: 'Matière / titre', v: a.subject },
+        { n: 'description', l: 'Description', t: 'textarea', v: a.description },
+        { n: 'due', l: 'À rendre le', t: 'date', v: a.due_date }
+    ], async v => {
+        const { error } = await db.from('assignments').update({ subject: v.subject.trim(), description: v.description.trim(), due_date: v.due }).eq('id', id);
+        if (error) throw error; toast('Modifié'); drawDevoirs();
+    });
 }
 
+const hhmmP = t => t ? String(t).slice(0, 5) : '';
+function vEmploiTemps() {
+    const R = S.me.role;
+    if (!yc().length) { $('#main').innerHTML = ybar() + `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><p class=empty>Crée d'abord une classe.</p>`; return; }
+    if (!yc().some(c => c.id === S.cls)) S.cls = yc()[0].id;
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Emploi du temps</h3>` + ybar();
+    h += `<div class=bar><select id=ttc>${yc().map(c => `<option value="${c.id}" ${c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
+    if (R === 'directeur' || R === 'enseignant') h += `<button onclick=addSlot()>+ Créneau</button>`;
+    h += `<div id=ttl><div class=sk></div><div class=sk></div><div class=sk></div></div>`;
+    $('#main').innerHTML = h;
+    $('#ttc').onchange = e => { S.cls = e.target.value; drawTT(); };
+    drawTT();
+}
+async function drawTT() {
+    const { data, error } = await db.from('timetable').select('*').eq('class_id', S.cls).order('day').order('start_time');
+    if (S.tab !== 'emploi_temps') return;
+    const el = $('#ttl'); if (!el) return;
+    if (error) { el.innerHTML = `<p class=empty>${esc(error.message)}</p>`; return; }
+    const l = data || [], R = S.me.role;
+    if (!l.length) { el.innerHTML = `<p class=empty data-ic="📅">Aucun créneau pour cette classe.</p>`; return; }
+    const byDay = {}; l.forEach(t => (byDay[t.day] = byDay[t.day] || []).push(t));
+    const days = Object.keys(byDay).map(Number).sort((a, b) => a - b);
+    el.innerHTML = days.map(d => `<h3>${['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'][d] || ''}</h3>` + byDay[d].map(t => {
+        const can = R === 'directeur' || R === 'enseignant';
+        return `<div class=card><span><b>${esc(t.subject)}</b><br><small>${hhmmP(t.start_time)} – ${hhmmP(t.end_time)}${t.room ? ' · ' + esc(t.room) : ''}</small></span>${can ? `<div class=row style="margin:0"><button class=ghost data-e="${t.id}" style="width:auto;min-height:36px;padding:6px 10px">✏️</button><button class=ghost data-x="${t.id}" style="width:auto;min-height:36px;padding:6px 10px">🗑</button></div>` : ''}</div>`;
+    }).join('')).join('');
+    el.querySelectorAll('[data-e]').forEach(b => b.onclick = () => editSlot(b.dataset.e));
+    el.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => { if (!confirm('Supprimer ce créneau ?')) return; const { error } = await db.from('timetable').delete().eq('id', b.dataset.x); if (error) return toast(error.message); toast('Supprimé'); drawTT(); });
+}
+function addSlot() {
+    if (!S.cls) return toast('Sélectionne une classe');
+    ask('Nouveau créneau — ' + esc((S.classes.find(c => c.id === S.cls) || {}).name || ''), [
+        { n: 'day', l: 'Jour', o: [['1', 'Lundi'], ['2', 'Mardi'], ['3', 'Mercredi'], ['4', 'Jeudi'], ['5', 'Vendredi'], ['6', 'Samedi'], ['0', 'Dimanche']], v: '1' },
+        { n: 'start', l: 'Heure début', t: 'time', v: '08:00' },
+        { n: 'end', l: 'Heure fin', t: 'time', v: '09:00' },
+        { n: 'subject', l: 'Matière' },
+        { n: 'room', l: 'Salle (facultatif)', r: false }
+    ], async v => {
+        if (v.end <= v.start) throw Error("L'heure de fin doit être après le début");
+        const { error } = await db.from('timetable').insert({ school_id: S.school.id, class_id: S.cls, year: S.year || '', day: +v.day, start_time: v.start, end_time: v.end, subject: v.subject.trim(), room: v.room.trim() || null });
+        if (error) throw error; toast('Créneau ajouté'); drawTT();
+    });
+}
+async function editSlot(id) {
+    const { data: t, error } = await db.from('timetable').select('*').eq('id', id).single();
+    if (error || !t) return toast('Introuvable');
+    ask('Modifier le créneau', [
+        { n: 'day', l: 'Jour', o: [['1', 'Lundi'], ['2', 'Mardi'], ['3', 'Mercredi'], ['4', 'Jeudi'], ['5', 'Vendredi'], ['6', 'Samedi'], ['0', 'Dimanche']], v: String(t.day) },
+        { n: 'start', l: 'Heure début', t: 'time', v: hhmmP(t.start_time) },
+        { n: 'end', l: 'Heure fin', t: 'time', v: hhmmP(t.end_time) },
+        { n: 'subject', l: 'Matière', v: t.subject },
+        { n: 'room', l: 'Salle', r: false, v: t.room || '' }
+    ], async v => {
+        if (v.end <= v.start) throw Error("L'heure de fin doit être après le début");
+        const { error } = await db.from('timetable').update({ day: +v.day, start_time: v.start, end_time: v.end, subject: v.subject.trim(), room: v.room.trim() || null }).eq('id', id);
+        if (error) throw error; toast('Modifié'); drawTT();
+    });
+        }
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 window.addEventListener('online', () => { S.offline ? boot() : qsync(); });
 window.addEventListener('offline', qui);
@@ -1500,7 +1609,6 @@ setInterval(qsync, 30000);
 boot();
 
 /* ---------- Parents & Communication (intégré) ---------- */
-// 3. Les fonctions pour le directeur
 window.pAdminInbox = async function() {
     const { data } = await db.from('parent_messages').select('*, students(name)').order('created_at', { ascending: false }).limit(50);
     if (!data) return;
@@ -1555,4 +1663,3 @@ window.pAdminAnnonce = function() {
         d.close(); toast('Annonce publiée ✓');
     };
 };
-
