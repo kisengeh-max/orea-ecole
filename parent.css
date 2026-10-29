@@ -1,6 +1,5 @@
-/* ORÉA École — styles spécifiques à l'interface Parent (K1) */
+/* ORÉA École — styles spécifiques à l'interface Parent (K1 + K2 + K5) */
 
-/* Cartes d'enfant */
 .p-card {
   background: var(--card, #1c1d1a);
   border: 1px solid var(--line, #33342e);
@@ -17,7 +16,6 @@
 .p-card .p-due { color: var(--bad, #e85454); }
 .p-card .p-line { font-size: 13px; color: var(--muted, #a8a495); margin: 3px 0; }
 
-/* État vide */
 .p-empty {
   text-align: center;
   padding: 40px 20px;
@@ -26,7 +24,6 @@
 }
 .p-empty .p-ic { font-size: 48px; display: block; margin-bottom: 12px; opacity: .6; }
 
-/* Barre d'action du bas */
 .p-actions {
   margin-top: 20px;
   display: flex;
@@ -34,7 +31,6 @@
   gap: 8px;
 }
 
-/* En-tête d'accueil */
 .p-hello {
   padding: 16px 0 8px;
   font-size: 15px;
@@ -42,7 +38,6 @@
 }
 .p-hello b { color: var(--text, #f2ecd6); }
 
-/* Auth (login) */
 .p-auth {
   max-width: 340px;
   margin: 40px auto;
@@ -85,7 +80,6 @@
   border: 1px solid var(--gold, #b08a30);
 }
 
-/* Lien discret */
 .p-link {
   text-align: center;
   display: block;
@@ -96,7 +90,6 @@
   text-decoration: underline;
 }
 
-/* Bouton principal */
 .p-btn {
   width: 100%;
   padding: 13px;
@@ -109,7 +102,6 @@
   cursor: pointer;
 }
 
-/* Section « Détails enfant » */
 .p-sec {
   background: var(--card, #1c1d1a);
   border: 1px solid var(--line, #33342e);
@@ -135,7 +127,6 @@
 .p-sec .p-row b { color: var(--text, #f2ecd6); }
 .p-sec .p-row small { color: var(--muted, #a8a495); }
 
-/* Bannière haut */
 .p-banner {
   background: rgba(232, 84, 84, .12);
   border: 1px solid var(--bad, #e85454);
@@ -146,7 +137,6 @@
   color: var(--text, #f2ecd6);
 }
 
-/* Toast */
 #ptoast {
   position: fixed;
   bottom: 20px;
@@ -159,4 +149,38 @@
   font-size: 14px;
   z-index: 9999;
   box-shadow: 0 4px 20px rgba(0,0,0,.5);
-  }
+}
+
+/* K5 — Devoirs / Emploi du temps */
+.p-assign {
+  background: var(--card, #1c1d1a);
+  border: 1px solid var(--line, #33342e);
+  border-left: 3px solid var(--gold, #b08a30);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 8px 0;
+}
+.p-assign.late { border-left-color: var(--bad, #e85454); }
+.p-assign h5 { margin: 0 0 4px; font-size: 14px; color: var(--text, #f2ecd6); }
+.p-assign .p-meta { font-size: 12px; color: var(--muted, #a8a495); margin-bottom: 4px; }
+.p-assign .p-desc { font-size: 13.5px; margin-top: 6px; line-height: 1.4; }
+
+.p-tt-day { margin: 12px 0; }
+.p-tt-day h5 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--gold, #b08a30);
+}
+.p-tt-row {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line, #33342e);
+  font-size: 13.5px;
+}
+.p-tt-row:last-child { border-bottom: none; }
+.p-tt-row .p-tt-h { color: var(--muted, #a8a495); min-width: 96px; font-variant-numeric: tabular-nums; }
+.p-tt-row b { color: var(--text, #f2ecd6); }
+.p-tt-row small { color: var(--muted, #a8a495); margin-left: 6px; }
