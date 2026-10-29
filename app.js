@@ -217,7 +217,7 @@ function promote() {
         d.close(); S.year = tg; localStorage['orea_year_' + S.school.id] = tg; S.cls = null; await load(); render();
         toast(rows.length + ' élève(s) inscrit(s) en ' + tg + (rep ? ' · ' + rep + ' impayé(s) reporté(s)' : ''));
     };
-}
+                                            }
 /* ---------- Hors connexion ---------- */
 function saveSnap() { try { localStorage.orea_snap = JSON.stringify({ uid: S.me.id, me: S.me, school: S.school, classes: S.classes, stu: S.stu, fees: S.fees, fpaid: S.fpaid, terms: S.terms, at: Date.now() }); } catch { } }
 function readSnap() { try { return JSON.parse(localStorage.orea_snap || 'null'); } catch { return null; } }
@@ -352,11 +352,14 @@ function stTag(s) {
     if (st === 'late') return `<span class=due>🔴 En retard<br><small>Doit ${fmt(s.balance_cdf)}</small></span>`;
     return `<span class=due>Doit ${fmt(s.balance_cdf)}</span>`;
 }
+
+/* ---------- Carte « retard » (refonte SVG) ---------- */
 function lateCard() {
     if (!hasTerms()) return '';
     const n = ys().filter(s => status(s) === 'late').length;
-    return `<div class=card onclick="menuGo('impayes')"><span>🔴 Élèves en retard</span><b class="${n ? 'due' : 'ok'}">${n}</b></div>`;
+    return `<div class=menu-card onclick="menuGo('impayes')"><div class=menu-ic>${svgI('alerte')}</div><div class=menu-label>Élèves en retard<small>${n > 0 ? 'Action requise' : 'Aucun retard'}</small></div><b class="${n ? 'due' : 'ok'}" style="font-family:var(--serif);font-size:18px">${n}</b><span class=menu-arrow>›</span></div>`;
 }
+
 const short = cdf => { const v = cdf / rateOf(S.cur); return v >= 1e6 ? nf(v / 1e6, 1) + ' M' : v >= 1e3 ? nf(Math.round(v / 1e3), 0) + ' k' : nf(v, 0); };
 function classBars() {
     const r = yc().map(c => {
@@ -390,7 +393,7 @@ function goTab(t) {
 function menuGo(t) {
     if (S.tab === 'accueil' && !(history.state && history.state.t)) history.pushState({ t: 1 }, '');
     S.tab = t; render();
-        }
+    }
 const SK = '<div class=sk></div>'.repeat(4);
 const ICON = {
     accueil: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/>',
@@ -398,9 +401,30 @@ const ICON = {
     presences: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M9 16l2 2 4-4"/>',
     caisse: '<rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20M16 15h2"/>',
     reglages: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
-    menu: '<path d="M4 6h16M4 12h16M4 18h16"/>'
+    menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+    impayes: '<path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>',
+    depenses: '<path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/>',
+    bilan: '<rect x="3" y="10" width="4" height="10" rx="1"/><rect x="10" y="6" width="4" height="14" rx="1"/><rect x="17" y="13" width="4" height="7" rx="1"/>',
+    absences: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-4 4"/><path d="M22 15l-4-4"/>',
+    sanctions: '<path d="M12 3v18"/><path d="M5 7h14"/><path d="M5 7l-2 6h4l-2-6z"/><path d="M19 7l-2 6h4l-2-6z"/><path d="M9 21h6"/>',
+    calendrier: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    devoirs: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h6M9 11h6"/>',
+    emploi_temps: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+    equipe: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    journal: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>',
+    exports: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
+    sauvegarde: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+    rapport: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M8 9h2"/>',
+    messages: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    justificatifs: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>',
+    annonces: '<path d="M3 11l19-9-9 19-2-8-8-2z"/>',
+    annees: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>',
+    alerte: '<path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>',
+    graph: '<path d="M3 3v18h18"/><path d="M7 12l4-4 4 4 5-5"/>',
+    check: '<polyline points="20 6 9 17 4 12"/>',
+    arrow: '<polyline points="9 6 15 12 9 18"/>'
 };
-const svgI = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
+const svgI = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICON[k] || ''}</svg>`;
 
 function addFee() {
     if (!yc().length) return toast('Crée d’abord une classe.');
@@ -458,6 +482,7 @@ async function autoRate() {
         if (data) S.school = data;
     } catch { }
 }
+
 /* ---------- Connexion ---------- */
 function authView() {
     $('#nav').hidden = true;
@@ -477,8 +502,9 @@ function setupView() {
 function render() {
     $('#nav').hidden = false; subBanner();
     const R = S.me.role, tabs = [['accueil', 'Accueil'], ['eleves', 'Élèves'], ['menu', 'Menu'], ['reglages', 'Réglages']];
-    if (!tabs.some(x => x[0] === S.tab) && !['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps'].includes(S.tab)) S.tab = 'accueil';
-    let activeTab = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps'].includes(S.tab) ? 'menu' : S.tab;
+    const SUB = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps'];
+    if (!tabs.some(x => x[0] === S.tab) && !SUB.includes(S.tab)) S.tab = 'accueil';
+    let activeTab = SUB.includes(S.tab) ? 'menu' : S.tab;
     $('#nav').innerHTML = tabs.map(x => `<button data-t=${x[0]}>${svgI(x[0])}<span>${x[1]}</span></button>`).join('');
     document.querySelectorAll('#nav button').forEach(b => { b.classList.toggle('on', b.dataset.t === activeTab); b.onclick = () => goTab(b.dataset.t); });
 
@@ -552,7 +578,7 @@ function menu(id) {
         btn.textContent = '🔑 Code : ' + data.access_code + ' (toucher pour copier)';
         btn.onclick = () => { (navigator.clipboard ? navigator.clipboard.writeText(data.access_code) : Promise.reject()).then(() => toast('Code copié !')).catch(() => toast('Code : ' + data.access_code)); };
     });
-}
+        }
 /* ---------- Trimestres et WhatsApp ---------- */
 const COUNTRY = '243';
 const trims = s => [1, 2, 3].map(i => { const due = Number(s['due' + i + '_cdf'] || 0), paid = Number(s['p' + i + '_cdf'] || 0); return [i, Math.max(0, due - paid), due, paid]; });
@@ -564,7 +590,6 @@ function waLink(phone, msg) {
 }
 const logMsg = (sid, kind, body) => db.from('messages_log').insert({ school_id: S.school.id, student_id: sid, kind, body }).then(() => { }, () => { });
 const feeMsg = s => { const hi = `Bonjour, ici ${S.school.name}. `, rest = trims(s).filter(t => t[1] > 0).map(t => 'T' + t[0] + ' : ' + fmt(t[1])).concat(fees4(s).filter(f => feeRem(s, f) > 0).map(f => f.name + ' : ' + fmt(feeRemCdf(s, f)))).join(', '); return s.balance_cdf > 0 ? `${hi}Concernant ${s.name} : il reste ${fmt(s.balance_cdf)} à payer (${rest}). Merci de régulariser.` : `${hi}Les frais de ${s.name} sont entièrement soldés. Merci !`; };
-
 const fillTpl = (t, s) => String(t || '').replace(/{eleve}/g, s.name).replace(/{classe}/g, cnm(s.class_id)).replace(/{reste}/g, fmt(s.balance_cdf)).replace(/{ecole}/g, S.school.name);
 function getTpl(kind, s) {
     const tpl = S.school.message_templates || {};
@@ -633,7 +658,6 @@ function lockView() {
     $('#nav').hidden = true; $('#exb').hidden = true;
     $('#main').innerHTML = `<div class=auth><h2>Abonnement expiré</h2><p>L’accès de ${esc(S.school.name)} est suspendu. Contacte l’administrateur.</p>${ADMIN_WA ? `<a class=btn style="text-align:center;text-decoration:none" href="https://wa.me/${ADMIN_WA}?text=${encodeURIComponent('Bonjour, je souhaite renouveler l’abonnement de ' + S.school.name)}">Contacter l’administrateur</a>` : ''}<button class=ghost onclick=out()>Déconnexion</button></div>`;
 }
-
 async function adminView() {
     $('#nav').hidden = true;
     const [{ data, error }, { data: pays = [] }] = await Promise.all([db.rpc('admin_list_schools'), db.from('sub_payments').select('amount,currency,created_at')]);
@@ -642,15 +666,12 @@ async function adminView() {
     const m0 = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const thisMonth = pays.filter(p => new Date(p.created_at) >= m0);
     const totCur = list => { const m = {}; list.forEach(p => { m[p.currency] = (m[p.currency] || 0) + Number(p.amount); }); return Object.entries(m).filter(x => x[1] > 0).map(x => nf(x[1]) + ' ' + SYM[x[0]]).join(' · ') || '0 FC'; };
-
     const ms = []; for (let i = 5; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); ms.push({ k: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), l: d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', ''), v: 0 }); }
     pays.forEach(p => { if (p.currency === 'USD') { const d = new Date(p.created_at), k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), m = ms.find(x => x.k === k); if (m) m.v += Number(p.amount); } });
     const mx = Math.max(...ms.map(x => x.v), 1);
-
     let h = `<h3>Espace administrateur</h3><div class=card><span>Écoles actives / total</span><b>${act} / ${data.length}</b></div><div class=card><span>Revenus ce mois</span><b>${totCur(thisMonth)}</b></div>`;
     h += `<div class="card col"><b>Revenus USD (6 derniers mois)</b><div class="admin-bar">${ms.map(x => `<div style="height:${Math.max(4, Math.round(x.v / mx * 80))}px" title="${nf(x.v)} $"><small>${x.l}</small></div>`).join('')}</div></div>`;
     h += `<div class=row><button onclick=adminHistory()>Historique des encaissements</button></div>`;
-
     h += '<h3>Écoles</h3>' + (data.length ? data.map(s => {
         const d = s.sub_until ? new Date(s.sub_until) : null;
         const left = d ? Math.ceil((d - now) / 864e5) : -999;
@@ -661,7 +682,6 @@ async function adminView() {
     }).join('') : '<p class=empty>Aucune école pour le moment.</p>') + installCard() + '<button class=ghost onclick=out()>Déconnexion</button>';
     $('#main').innerHTML = h;
 }
-
 function extModal(sid, sname, n) {
     ask('Prolonger ' + sname + ' (+' + n + ' mois)', [{ n: 'amount', l: 'Montant perçu', t: 'number', v: '0' }, { n: 'cur', l: 'Devise', o: CUR.map(c => [c, c]), v: 'USD' }, { n: 'note', l: 'Remarque', r: false }], async v => {
         const { error } = await db.rpc('admin_extend', { sid, n: +n, pay_amount: +v.amount || 0, pay_cur: v.cur, pay_note: v.note.trim() || null });
@@ -690,7 +710,8 @@ function filterHistory(q) {
     document.querySelectorAll('#ah-list .card').forEach(el => {
         el.hidden = s && !nrm(el.dataset.school).includes(s);
     });
-                                      }
+}
+
 /* ---------- Paiements ---------- */
 function pay(id) {
     const s = S.stu.find(x => x.id === id);
@@ -722,12 +743,10 @@ async function hist(id) {
     ]);
     const pe = new Set(pend.map(r => r.payment_id));
     const fpe = new Set(fpend.map(r => r.fee_payment_id));
-
     const d = show(`<h3>Reçus</h3>${data.length ? data.map((p, i) => {
         const isP = pe.has(p.id) || fpe.has(p.id);
         return `<div class="card col"><span>${rno(p)} · ${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f ? esc(p.fee_name || 'Frais') : 'T' + p.term} · ${nf(p.amount)} ${p.currency}</span><div class=row><button class=ghost data-i=${i}>Reçu</button>${p._f ? (dir() ? `<button class=ghost data-x=${i}>Supprimer</button>` : '') : pe.has(p.id) ? '<small>⏳ demande en attente</small>' : `<button class=ghost data-c=${i}>${dir() ? 'Corriger' : 'Demander correction'}</button>`}</div></div>`;
     }).join('') : '<p class=empty data-ic="🧾">Aucun paiement.</p>'}<button class=ghost id=hc>Fermer</button>`);
-
     d.querySelectorAll('[data-i]').forEach(b => b.onclick = () => receipt(data[b.dataset.i], id));
     d.querySelectorAll('[data-c]').forEach(b => b.onclick = () => fixPay(data[b.dataset.c], id));
     d.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => {
@@ -812,8 +831,9 @@ async function receipt(p, sid) {
         if (can) { try { await navigator.share({ files: [file], text: txt }); } catch (e) { if (e.name !== 'AbortError') toast('Partage impossible.'); } }
         else { const a = document.createElement('a'); a.href = url; a.download = fn; a.click(); const u = waLink(s.parent_phone, txt); if (u) window.open(u, '_blank'); else toast('Image téléchargée.'); }
     };
-            }
-/* ---------- Accueil ---------- */
+}
+
+/* ---------- Accueil (REFONTE GRAPHIQUE) ---------- */
 const tdy = () => new Date().toLocaleDateString('sv-SE');
 function previsionCard() {
     const t = curTerm(S.year);
@@ -824,7 +844,8 @@ function previsionCard() {
     const rem = Math.max(0, due - paid);
     const tm = S.terms[S.year];
     const dt = tm ? tm['t' + t] : null;
-    return `<div class="card col"><b>📈 Prévision T${t}</b><small>Encaissé ${fmt(paid)} / ${fmt(due)}</small><small class=due>Reste à encaisser : ${fmt(rem)}</small><small>Fin du trimestre : ${dt ? fdate(dt) : '—'}</small></div>`;
+    const pct = due > 0 ? Math.max(0, Math.min(100, Math.round(100 * paid / due))) : 0;
+    return `<div class="card col" style="padding:14px 16px"><div style="display:flex;align-items:center;gap:10px"><div class=menu-ic style="width:34px;height:34px;border-radius:9px">${svgI('graph')}</div><b style="font-family:var(--serif);font-size:15px">Prévision T${t}</b></div><small style="margin-top:8px">Encaissé ${fmt(paid)} / ${fmt(due)}</small><div class=tri-bar style="margin:6px 0"><i style="width:${pct}%"></i></div><small class=due>Reste à encaisser : ${fmt(rem)}</small><small>Fin du trimestre : ${dt ? fdate(dt) : '—'}</small></div>`;
 }
 async function vAccueil() {
     $('#main').innerHTML = SK;
@@ -842,29 +863,37 @@ async function vAccueil() {
 
     if (S.events && S.events.length) {
         const ev = S.events[0];
-        h += `<div class="card col" style="border-color:var(--gold)"><b>📅 Prochain événement</b><span>${esc(ev.title)}</span><small>Le ${fdate(ev.start_date)}</small></div>`;
+        h += `<div class="menu-card"><div class=menu-ic>${svgI('calendrier')}</div><div class=menu-label>${esc(ev.title)}<small>Le ${fdate(ev.start_date)}</small></div></div>`;
     }
 
     const left = S.school.sub_until ? Math.ceil((new Date(S.school.sub_until) - Date.now()) / 864e5) : 99;
     if (R === 'directeur' && left > 7 && left <= 14) h += `<div class="card col"><b class=due>⚠ Abonnement : ${left} jours restants</b><small>Pense à renouveler.</small>${subWa(left) ? `<a class=btn href="${subWa(left)}" target=_blank rel=noopener>Contacter l’administrateur</a>` : ''}</div>`;
     if (R === 'directeur') h += bkCard();
-    if (pend) h += `<div class="card" onclick="menuGo('caisse')"><span>Demandes à approuver</span><b class=due>${pend}</b></div>`;
+    if (pend) h += `<div class="menu-card" onclick="menuGo('caisse')"><div class=menu-ic>${svgI('alerte')}</div><div class=menu-label>Demandes à approuver<small>Corrections en attente</small></div><b class=due style="font-family:var(--serif);font-size:18px">${pend}</b><span class=menu-arrow>›</span></div>`;
     if (R !== 'enseignant') {
         h += lateCard();
         if (R === 'directeur') h += previsionCard();
         const pct = exp > 0 ? Math.max(0, Math.min(100, Math.round(100 * (1 - due / exp)))) : 0;
-        h += `<div class="card hero"><small>Encaissé aujourd'hui ${R === 'directeur' ? '(école)' : '(ma caisse)'}</small><span class=big>${fmt(tod)}</span></div><div class=card><span>Total encaissé</span><b>${fmt(sm('paid_cdf'))}</b></div><div class=card><span>Reste à encaisser</span><b class=due>${fmt(due)}</b></div><div class=card><span>Taux de recouvrement</span><div class=ring style="--p:${pct}"><b>${pct} %</b></div></div>`;
-        h += '<h3>Par trimestre</h3>' + [1, 2, 3].map(i => `<div class=card><span>T${i}</span><b>${fmt(sm('p' + i + '_cdf'))} / ${fmt(sm('due' + i + '_cdf'))}</b></div>`).join('');
+        h += `<div class="card hero"><small>Encaissé aujourd'hui ${R === 'directeur' ? '· école' : '· ma caisse'}</small><span class=big>${fmt(tod)}</span></div>`;
+        h += `<div class="stat-pair"><div class="card stat"><span>Total encaissé</span><b>${fmt(sm('paid_cdf'))}</b></div><div class="card stat"><span>Reste à encaisser</span><b class="${due > 0 ? 'due' : ''}">${fmt(due)}</b></div></div>`;
+        h += `<div class="card ring-card"><span>Taux de recouvrement</span><div class=ring style="--p:${pct}"><b>${pct} %</b></div></div>`;
+        h += '<h3>Par trimestre</h3><div class=tri-list>';
+        [1, 2, 3].forEach(i => {
+            const paidI = sm('p' + i + '_cdf'), dueI = sm('due' + i + '_cdf');
+            const pctI = dueI > 0 ? Math.max(0, Math.min(100, Math.round(100 * paidI / dueI))) : 0;
+            h += `<div class=tri-card><div class=tri-badge>T${i}</div><div class=tri-info><div class=tri-labels><small>Encaissé</small><b>${fmt(paidI)} / ${fmt(dueI)}</b></div><div class=tri-bar><i style="width:${pctI}%"></i></div></div></div>`;
+        });
+        h += '</div>';
         h += classBars() + (R === 'directeur' ? '<div id=ch></div>' : '');
     }
-    h += `<h3>Présences du jour</h3><div class=card><span>Présents · Absents · Retards</span><b>${cnt('present')} · ${cnt('absent')} · ${cnt('retard')}</b></div><div class=card><span>Élèves inscrits</span><b>${st.length}</b></div><div class=row><button onclick="menuGo('presences')">Faire l’appel</button>${R === 'directeur' ? '<button class=ghost onclick=reminders()>Relance des parents</button>' : ''}</div>`;
+    h += `<h3>Présences du jour</h3><div class=stat-pair><div class="card stat"><span>Présents · Absents · Retards</span><b>${cnt('present')} · ${cnt('absent')} · ${cnt('retard')}</b></div><div class="card stat"><span>Élèves inscrits</span><b>${st.length}</b></div></div>`;
+    h += `<div class=row><button onclick="menuGo('presences')">Faire l’appel</button>${R === 'directeur' ? '<button class=ghost onclick=reminders()>Relance des parents</button>' : ''}</div>`;
     const ms = ml.data || [], K = { frais: 'Frais', absence: 'Absence', sanction: 'Sanction', libre: 'Message' };
-    if (R === 'directeur') h += '<h3>Derniers messages</h3>' + (ms.length ? ms.map(m => { const s = st.find(x => x.id === m.student_id); return `<div class="card col"><b>${esc(s ? s.name : '')} · ${K[m.kind] || m.kind}</b><small>${new Date(m.created_at).toLocaleString('fr-FR')}</small></div>`; }).join('') : '<p class=empty>Aucun message envoyé.</p>');
+    if (R === 'directeur') h += '<h3>Derniers messages</h3>' + (ms.length ? ms.map(m => { const s = st.find(x => x.id === m.student_id); return `<div class=menu-card style="cursor:default"><div class=menu-ic>${svgI('messages')}</div><div class=menu-label>${esc(s ? s.name : '')} · ${K[m.kind] || m.kind}<small>${new Date(m.created_at).toLocaleString('fr-FR')}</small></div></div>`; }).join('') : '<p class=empty>Aucun message envoyé.</p>');
     if (S.tab !== 'accueil') return;
     $('#main').innerHTML = h;
     if (R === 'directeur') monthChart();
-}
-
+        }
 /* ---------- Présences ---------- */
 async function vPresences() {
     if (!yc().length) { $('#main').innerHTML = ybar() + `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><p class=empty>Crée d’abord une classe.</p>`; return; }
@@ -945,7 +974,8 @@ async function team() {
     d.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { const p = data.find(x => x.id === b.dataset.r); up(p.id, { role: p.role === 'percepteur' ? 'enseignant' : 'percepteur' }); });
     d.querySelectorAll('[data-a]').forEach(b => b.onclick = () => { const p = data.find(x => x.id === b.dataset.a); up(p.id, { active: p.active === false }); });
     d.querySelector('#tc').onclick = () => d.close();
-            }
+}
+
 /* ---------- Caisse ---------- */
 async function vCaisse() {
     $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
@@ -1028,19 +1058,14 @@ function editTemplates() {
     };
     draw();
 }
-/* ---------- Recherche Globale ---------- */
+
+/* ---------- Recherche globale ---------- */
 function openSearch() {
     let m = $('#searchModal');
     if (!m) {
         m = document.createElement('div');
         m.id = 'searchModal';
-        m.innerHTML = `
-            <header>
-                <input type="search" id="globalSearch" placeholder="Rechercher un élève, une classe, REC-0042..." oninput="doGlobalSearch(this.value)">
-                <button class="ghost" style="width:auto;margin-top:10px" onclick="closeSearch()">Fermer</button>
-            </header>
-            <div class="res" id="searchRes"></div>
-        `;
+        m.innerHTML = `<header><input type="search" id="globalSearch" placeholder="Rechercher un élève, une classe, REC-0042..." oninput="doGlobalSearch(this.value)"><button class="ghost" style="width:auto;margin-top:10px" onclick="closeSearch()">Fermer</button></header><div class="res" id="searchRes"></div>`;
         document.body.appendChild(m);
     }
     m.hidden = false;
@@ -1048,17 +1073,11 @@ function openSearch() {
     $('#searchRes').innerHTML = '';
     setTimeout(() => $('#globalSearch').focus(), 100);
 }
-
-function closeSearch() {
-    const m = $('#searchModal');
-    if (m) m.hidden = true;
-}
-
+function closeSearch() { const m = $('#searchModal'); if (m) m.hidden = true; }
 async function doGlobalSearch(q) {
     q = nrm(q).trim();
     const res = $('#searchRes');
     if (!q) { res.innerHTML = ''; return; }
-
     let h = '';
     const stu = S.stu.filter(s => nrm(s.name).includes(q));
     if (stu.length) {
@@ -1067,16 +1086,13 @@ async function doGlobalSearch(q) {
             return `<div class="card" onclick="closeSearch();menu('${s.id}')"><span>${esc(s.name)}<br><small>${esc(cname)}</small></span><b class="${s.balance_cdf > 0 ? 'due' : 'ok'}">${fmt(s.balance_cdf)}</b></div>`;
         }).join('');
     }
-
     const cls = S.classes.filter(c => nrm(c.name).includes(q));
     if (cls.length) {
         h += '<h3>🏫 Classes</h3>' + cls.map(c => `<div class="card" onclick="closeSearch();S.cls='${c.id}';S.tab='eleves';render()"><span>${esc(c.name)}</span><small>${cy(c)}</small></div>`).join('');
     }
-
     const isRec = q.startsWith('rec') || /^\d+$/.test(q);
     if (!h) res.innerHTML = '<p class=empty>Recherche...</p>';
     else res.innerHTML = h;
-
     if (isRec) {
         const num = q.replace('rec-', '').replace('rec', '');
         const rno = parseInt(num, 10);
@@ -1093,8 +1109,7 @@ async function doGlobalSearch(q) {
         }
     }
 }
-
-/* ---------- Paquet D : exports, sauvegarde, bannière ---------- */
+/* ---------- Bannière, sauvegarde, exports ---------- */
 document.querySelector('header').insertAdjacentHTML('afterend', '<div id=exb hidden></div>');
 (function () {
     if (sessionStorage.orea_sp || matchMedia('(prefers-reduced-motion: reduce)').matches) return; sessionStorage.orea_sp = 1;
@@ -1161,7 +1176,7 @@ function mkPdf(o) {
     put(`trailer\n<< /Size ${n} /Root 1 0 R >>\nstartxref\n${xo}\n%%EOF`);
     const str = out.join(''), u = new Uint8Array(str.length); for (let k = 0; k < str.length; k++) u[k] = str.charCodeAt(k) & 255;
     return u;
-        }
+}
 async function ex(n) { const r = await pageAll(() => db.from(n).select('*')); if (r.error) throw new Error(r.error.message); return r.data; }
 const cnm = id => (S.classes.find(c => c.id === id) || {}).name || '';
 const stamp = () => 'Année ' + (S.year || '—') + ' · édité le ' + new Date().toLocaleDateString('fr-FR');
@@ -1230,6 +1245,233 @@ async function reminders() {
     };
     draw();
 }
+
+/* ---------- MENU (REFONTE SVG) ---------- */
+function doBackup() { exRun(event.target, backupAll); }
+function yearMenu() {
+    const y = yrs();
+    const d = show(`<h3>Année scolaire</h3><div class=col><small>Année affichée : <b>${esc(S.year || '—')}</b></small><select id=ym>${y.map(v => `<option value="${esc(v)}" ${v === S.year ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select><div class=row><button class=ghost id=yc>Fermer</button><button id=yn>+ Nouvelle</button><button id=yp>Passage</button></div></div>`);
+    d.querySelector('#yc').onclick = () => d.close();
+    d.querySelector('#ym').onchange = e => { setYear(e.target.value); d.close(); };
+    d.querySelector('#yn').onclick = () => { d.close(); setTimeout(newYear, 60); };
+    d.querySelector('#yp').onclick = () => { d.close(); setTimeout(promote, 60); };
+}
+function menuCard(ic, label, sub, action) {
+    return `<div class=menu-card onclick="${action}"><div class=menu-ic>${svgI(ic)}</div><div class=menu-label>${label}${sub ? `<small>${sub}</small>` : ''}</div><span class=menu-arrow>›</span></div>`;
+}
+function vMenu() {
+    const R = S.me.role; let h = `<h3>Menu</h3>`;
+    h += `<div class=menu-title>Gestion quotidienne</div>`;
+    h += menuCard('presences', 'Présences', null, "menuGo('presences')");
+    if (R !== 'enseignant') h += menuCard('caisse', 'Caisse', null, "menuGo('caisse')");
+    if (R !== 'enseignant') {
+        h += menuCard('impayes', 'Impayés', null, "menuGo('impayes')");
+        if (R === 'directeur') {
+            h += menuCard('depenses', 'Dépenses', null, "menuGo('depenses')");
+            h += menuCard('bilan', 'Bilan mensuel', null, "menuGo('bilan')");
+        }
+    }
+    h += `<div class=menu-title>Pédagogie</div>`;
+    h += menuCard('absences', 'Suivi des absences', null, "menuGo('absences')");
+    h += menuCard('sanctions', 'Sanctions', null, "menuGo('sanctions')");
+    h += menuCard('calendrier', 'Calendrier', null, "menuGo('calendrier')");
+    h += menuCard('devoirs', 'Devoirs', null, "menuGo('devoirs')");
+    h += menuCard('emploi_temps', 'Emploi du temps', null, "menuGo('emploi_temps')");
+    if (dir()) {
+        h += `<div class=menu-title>Administration</div>`;
+        h += menuCard('annees', 'Années scolaires', null, "yearMenu()");
+        h += menuCard('equipe', 'Équipe', null, "team()");
+        h += menuCard('journal', 'Journal d’activité', null, "journal()");
+        h += menuCard('exports', 'Exports (CSV / PDF)', null, "exportMenu()");
+        h += menuCard('sauvegarde', 'Sauvegarde complète', null, "doBackup()");
+        h += menuCard('rapport', 'Rapport mensuel', null, "monthReport()");
+        h += `<div class=menu-title>Parents & Communication</div>`;
+        h += menuCard('messages', 'Messages des parents', null, "pAdminInbox()");
+        h += menuCard('justificatifs', 'Justificatifs d’absence', null, "pAdminJustifs()");
+        h += menuCard('annonces', 'Publier une annonce', null, "pAdminAnnonce()");
+    }
+    $('#main').innerHTML = h;
+}
+
+/* ---------- Impayés ---------- */
+function vImpayes() {
+    S.impcls = S.impcls || ''; S.impf = S.impf || 'all'; S.imps = S.imps || 'anciennete';
+    let l = ys().filter(s => s.balance_cdf > 0);
+    if (S.impcls) l = l.filter(s => s.class_id === S.impcls);
+    if (S.impf === '30j') l = l.filter(s => { const last = s.last_pay ? new Date(s.last_pay).getTime() : 0; return Date.now() - last > 30 * 864e5; });
+    if (S.impf === '60j') l = l.filter(s => { const last = s.last_pay ? new Date(s.last_pay).getTime() : 0; return Date.now() - last > 60 * 864e5; });
+    l.sort((a, b) => { if (S.imps === 'montant') return b.balance_cdf - a.balance_cdf; const la = a.last_pay ? new Date(a.last_pay).getTime() : 0, lb = b.last_pay ? new Date(b.last_pay).getTime() : 0; return la - lb; });
+    const tot = l.reduce((a, s) => a + Number(s.balance_cdf || 0), 0);
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Impayés</h3>`;
+    h += `<div class=bar><select id=icl><option value="">Toutes classes</option>${yc().map(c => `<option value="${c.id}" ${S.impcls === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
+    h += `<div class=chips><button class="chip ${S.impf === 'all' ? 'on' : ''}" onclick="S.impf='all';render()">Tous</button><button class="chip ${S.impf === '30j' ? 'on' : ''}" onclick="S.impf='30j';render()">> 30j</button><button class="chip ${S.impf === '60j' ? 'on' : ''}" onclick="S.impf='60j';render()">> 60j</button></div>`;
+    h += `<div class=card><span>${l.length} élève(s)</span><b class=due>${fmt(tot)}</b></div>`;
+    h += `<div class=row><button class=ghost onclick=impayesPDF()>📄 PDF</button>${dir() ? `<button onclick=reminders()>💬 Relancer</button>` : ''}</div>`;
+    h += l.length ? l.map(s => `<div class=card onclick="menu('${s.id}')"><span>${esc(s.name)}<br><small>${esc(cnm(s.class_id))} · ${s.last_pay ? 'Dernier paiement il y a ' + Math.floor((Date.now() - new Date(s.last_pay)) / 864e5) + 'j' : 'Jamais payé'}</small></span><b class=due>${fmt(s.balance_cdf)}</b></div>`).join('') : '<p class=empty>Aucun impayé pour ces critères.</p>';
+    $('#main').innerHTML = h;
+    $('#icl').onchange = e => { S.impcls = e.target.value; render(); };
+}
+function impayesPDF() {
+    let l = ys().filter(s => s.balance_cdf > 0);
+    if (S.impcls) l = l.filter(s => s.class_id === S.impcls);
+    if (S.impf === '30j') l = l.filter(s => { const last = s.last_pay ? new Date(s.last_pay).getTime() : 0; return Date.now() - last > 30 * 864e5; });
+    if (S.impf === '60j') l = l.filter(s => { const last = s.last_pay ? new Date(s.last_pay).getTime() : 0; return Date.now() - last > 60 * 864e5; });
+    l.sort((a, b) => { if (S.imps === 'montant') return b.balance_cdf - a.balance_cdf; const la = a.last_pay ? new Date(a.last_pay).getTime() : 0, lb = b.last_pay ? new Date(b.last_pay).getTime() : 0; return la - lb; });
+    if (!l.length) return toast('Aucun impayé à exporter.');
+    const rows = l.map(s => [s.name, cnm(s.class_id), s.last_pay ? new Date(s.last_pay).toLocaleDateString('fr-FR') : 'Jamais', Math.round(Number(s.balance_cdf))]);
+    const r = { name: 'impayes', title: 'Impayés — ' + S.school.name, sub: stamp() + ' · ' + l.length + ' élèves · montants en FC', head: ['Élève', 'Classe', 'Dernier paiement', 'Reste dû (FC)'], rows, w: [40, 25, 20, 15], r: [3], tot: ['Total', '', '', rows.reduce((t, r) => t + r[3], 0)] };
+    try { dl(new Blob([mkPdf(r)], { type: 'application/pdf' }), fnm(r.name, 'pdf')); toast('PDF enregistré dans Téléchargements'); } catch (e) { toast(e.message); }
+}
+
+/* ---------- Dépenses ---------- */
+function nextMonth(ym) { const [y, m] = ym.split('-').map(Number), d = new Date(y, m, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+async function vDepenses() {
+    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
+    const d = new Date(); if (!S.depDate) S.depDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const { data, error } = await db.from('expenses').select('*').gte('date', S.depDate + '-01').lt('date', nextMonth(S.depDate) + '-01').order('date', { ascending: false });
+    if (error) return toast(error.message);
+    S.depenses = data;
+    const tot = data.reduce((a, x) => a + Number(x.amount_cdf), 0);
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Dépenses</h3>`;
+    h += `<div class=bar><input type=month value="${S.depDate}" id=dpm></div>`;
+    h += `<div class=card><span>Total du mois</span><b class=due>${fmt(tot)}</b></div><button onclick=addExpense()>+ Ajouter une dépense</button>`;
+    h += data.length ? data.map(x => `<div class=card onclick="editExpense('${x.id}')"><span>${esc(x.label)}<br><small>${new Date(x.date + 'T00:00').toLocaleDateString('fr-FR')} · ${x.category}</small></span><b>${nf(x.amount)} ${SYM[x.currency]}</b></div>`).join('') : '<p class=empty>Aucune dépense ce mois-ci.</p>';
+    if (S.tab !== 'depenses') return;
+    $('#main').innerHTML = h;
+    $('#dpm').onchange = e => { S.depDate = e.target.value; vDepenses(); };
+}
+function addExpense() {
+    ask('Nouvelle dépense', [{ n: 'label', l: 'Libellé' }, { n: 'amount', l: 'Montant', t: 'number' }, { n: 'cur', l: 'Devise', o: CUR.map(c => [c, c]), v: S.cur }, { n: 'cat', l: 'Catégorie', o: [['salaires', 'Salaires'], ['loyer', 'Loyer'], ['electricite', 'Électricité/Eau'], ['fournitures', 'Fournitures'], ['transport', 'Transport'], ['entretien', 'Entretien'], ['examens', 'Examens'], ['communication', 'Communication'], ['autre', 'Autre']] }, { n: 'date', l: 'Date', t: 'date', v: tdy() }], async v => {
+        const rate = rateOf(v.cur), amount_cdf = +v.amount * rate;
+        const { error } = await db.from('expenses').insert({ school_id: S.school.id, label: v.label.trim(), amount: +v.amount, currency: v.cur, amount_cdf, rate, category: v.cat, date: v.date });
+        if (error) throw error; await vDepenses(); toast('Dépense ajoutée');
+    });
+}
+function editExpense(id) {
+    const x = S.depenses.find(z => z.id === id);
+    const d = show(`<h3>${esc(x.label)}</h3><p>${nf(x.amount)} ${x.currency} · ${x.category} · ${new Date(x.date + 'T00:00').toLocaleDateString('fr-FR')}</p><div class=col><button id=e1>Modifier</button><button class=ghost id=e2>Supprimer</button><button class=ghost id=e3>Fermer</button></div>`);
+    d.querySelector('#e3').onclick = () => d.close();
+    d.querySelector('#e1').onclick = () => ask('Modifier la dépense', [{ n: 'label', l: 'Libellé', v: x.label }, { n: 'amount', l: 'Montant (' + x.currency + ')', t: 'number', v: x.amount }], async v => {
+        const { error } = await db.from('expenses').update({ label: v.label.trim(), amount: +v.amount, amount_cdf: +v.amount * x.rate }).eq('id', id);
+        if (error) throw error; d.close(); await vDepenses(); toast('Dépense modifiée');
+    });
+    d.querySelector('#e2').onclick = async () => {
+        if (!confirm('Supprimer cette dépense ?')) return;
+        const { error } = await db.from('expenses').delete().eq('id', id);
+        if (error) return toast(error.message); d.close(); await vDepenses(); toast('Dépense supprimée');
+    };
+}
+/* ---------- Bilan mensuel ---------- */
+async function vBilan() {
+    const d = new Date(); if (!S.bilDate) S.bilDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
+    const [y, m] = S.bilDate.split('-').map(Number), a = new Date(y, m - 1, 1), b = new Date(y, m, 1), nk = b.getFullYear() + '-' + String(b.getMonth() + 1).padStart(2, '0') + '-01';
+    const [p, f, ex] = await Promise.all([
+        pageAll(() => db.from('payments').select('amount_cdf,method').gte('created_at', a.toISOString()).lt('created_at', b.toISOString())),
+        pageAll(() => db.from('fee_payments').select('amount_cdf,method').gte('created_at', a.toISOString()).lt('created_at', b.toISOString())),
+        db.from('expenses').select('*').gte('date', S.bilDate + '-01').lt('date', nk)
+    ]);
+    if (p.error || f.error || ex.error) return toast((p.error || f.error || ex.error).message);
+    const enc = p.data.concat(f.data), totEnc = sum(enc), esp = sum(enc.filter(x => x.method === 'especes')), mm = totEnc - esp;
+    const dep = ex.data, totDep = dep.reduce((t, x) => t + Number(x.amount_cdf), 0);
+    const solde = totEnc - totDep;
+    S._bilan = { esp, mm, totEnc, dep, totDep, solde, date: S.bilDate };
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Bilan mensuel</h3>`;
+    h += `<div class=bar><input type=month id=bm value="${S.bilDate}"></div>`;
+    h += `<div class=card col"><b>Encaissé</b><span>Espèces : ${fmt(esp)}</span><span>Mobile Money : ${fmt(mm)}</span><b class=ok style="margin-top:6px">Total : ${fmt(totEnc)}</b></div>`;
+    h += `<div class=card col"><b>Dépensé</b>${dep.length ? dep.map(x => `<span style="display:flex;justify-content:space-between"><small>${esc(x.label)}</small><small>${fmt(x.amount_cdf)}</small></span>`).join('') : '<small>Aucune dépense</small>'}<b class=due style="margin-top:6px">Total : ${fmt(totDep)}</b></div>`;
+    h += `<div class="card hero col"><small>SOLDE DU MOIS</small><span class="big" style="color:${solde >= 0 ? 'var(--ok)' : 'var(--bad)'}">${fmt(solde)}</span></div>`;
+    h += `<button class=ghost onclick=bilanPDF()>📄 Exporter en PDF</button>`;
+    if (S.tab !== 'bilan') return;
+    $('#main').innerHTML = h;
+    $('#bm').onchange = e => { S.bilDate = e.target.value; vBilan(); };
+}
+function bilanPDF() {
+    if (!S._bilan) return toast('Ouvrez d\'abord le bilan.');
+    const b = S._bilan;
+    const rows = [['Encaissements espèces', '', b.esp], ['Encaissements Mobile Money', '', b.mm], ['TOTAL ENCAISSÉ', '', b.totEnc]];
+    b.dep.forEach(x => rows.push([x.label, x.category, Number(x.amount_cdf)]));
+    rows.push(['TOTAL DÉPENSÉ', '', b.totDep]);
+    rows.push(['SOLDE DU MOIS', '', b.solde]);
+    const r = { name: 'bilan-' + b.date, title: 'Bilan mensuel — ' + S.school.name, sub: 'Mois : ' + b.date + ' · Montants en FC', head: ['Élément', 'Catégorie', 'Montant (FC)'], rows, w: [50, 30, 20], r: [2], tot: null };
+    try { dl(new Blob([mkPdf(r)], { type: 'application/pdf' }), fnm(r.name, 'pdf')); toast('PDF enregistré'); } catch (e) { toast(e.message); }
+}
+
+/* ---------- Suivi des absences ---------- */
+async function vAbsences() {
+    const d = new Date(); if (!S.absM) S.absM = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
+    const [y, m] = S.absM.split('-').map(Number), a = new Date(y, m - 1, 1), b = new Date(y, m, 1);
+    const { data, error } = await db.from('attendance').select('*').eq('status', 'absent').gte('day', a.toISOString().split('T')[0]).lt('day', b.toISOString().split('T')[0]);
+    if (error) return toast(error.message);
+    const abs = data || [], byStu = {}, byCls = {};
+    abs.forEach(x => { byStu[x.student_id] = (byStu[x.student_id] || 0) + 1; const s = S.stu.find(z => z.id === x.student_id); if (s) byCls[s.class_id] = (byCls[s.class_id] || 0) + 1; });
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Suivi des absences</h3>`;
+    h += `<div class=bar><input type=month id=am value="${S.absM}"></div>`;
+    const l = Object.entries(byStu).map(([id, n]) => ({ s: S.stu.find(z => z.id === id), n })).filter(x => x.s && x.n >= 3).sort((a, b) => b.n - a.n);
+    h += `<div class=card col"><b>Élèves à surveiller (≥ 3 absences)</b>${l.length ? l.map(x => `<div style="display:flex;justify-content:space-between;margin:4px 0"><span>${esc(x.s.name)} (${esc(cnm(x.s.class_id))})</span><b class=due>${x.n} fois</b></div>`).join('') : '<small>Aucun élève en dessous de la limite.</small>'}</div>`;
+    const c = Object.entries(byCls).map(([id, n]) => ({ c: S.classes.find(z => z.id === id), n })).filter(x => x.c).sort((a, b) => b.n - a.n);
+    h += `<div class="card col"><b>Absences par classe</b>${c.length ? c.map(x => `<div style="display:flex;justify-content:space-between;margin:4px 0"><span>${esc(x.c.name)}</span><b>${x.n} abs.</b></div>`).join('') : '<small>Aucune absence.</small>'}</div>`;
+    if (S.tab !== 'absences') return;
+    $('#main').innerHTML = h;
+    $('#am').onchange = e => { S.absM = e.target.value; vAbsences(); };
+}
+
+/* ---------- Sanctions (vue globale) ---------- */
+async function vSanctions() {
+    const d = new Date(); if (!S.sanM) S.sanM = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
+    const [y, m] = S.sanM.split('-').map(Number), a = new Date(y, m - 1, 1), b = new Date(y, m, 1);
+    const { data, error } = await db.from('sanctions').select('*').gte('day', a.toISOString().split('T')[0]).lt('day', b.toISOString().split('T')[0]).order('day', { ascending: false });
+    if (error) return toast(error.message);
+    const sanc = data || [], byStu = {};
+    sanc.forEach(x => byStu[x.student_id] = (byStu[x.student_id] || 0) + 1);
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Vue globale des sanctions</h3>`;
+    h += `<div class=bar><input type=month id=sm value="${S.sanM}"></div>`;
+    const l = Object.entries(byStu).map(([id, n]) => ({ s: S.stu.find(z => z.id === id), n })).filter(x => x.s && x.n >= 3).sort((a, b) => b.n - a.n);
+    h += `<div class="card col"><b>Élèves à dossier (≥ 3 sanctions)</b>${l.length ? l.map(x => `<div style="display:flex;justify-content:space-between;margin:4px 0"><span>${esc(x.s.name)} (${esc(cnm(x.s.class_id))})</span><b class=due>${x.n} fois</b></div>`).join('') : '<small>Aucun élève avec un tel dossier.</small>'}</div>`;
+    h += `<h3>Sanctions du mois (${sanc.length})</h3>`;
+    h += sanc.length ? sanc.map(x => { const s = S.stu.find(z => z.id === x.student_id); return `<div class="card col"><b>${esc(s ? s.name : '?')} · ${esc(x.kind)}</b><small>${esc(cnm(s ? s.class_id : ''))} · ${new Date(x.day + 'T00:00').toLocaleDateString('fr-FR')}${x.note ? ' · ' + esc(x.note) : ''}</small></div>`; }).join('') : '<p class=empty>Aucune sanction enregistrée.</p>';
+    if (S.tab !== 'sanctions') return;
+    $('#main').innerHTML = h;
+    $('#sm').onchange = e => { S.sanM = e.target.value; vSanctions(); };
+}
+
+/* ---------- Calendrier scolaire ---------- */
+async function vCalendrier() {
+    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
+    const { data, error } = await db.from('events').select('*').gte('start_date', tdy()).order('start_date');
+    if (error) return toast(error.message);
+    const evs = data || [];
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Calendrier scolaire</h3>`;
+    if (dir()) h += `<button onclick=addEvent()>+ Ajouter un événement</button>`;
+    h += evs.length ? evs.map(x => `<div class="card col" onclick="editEvent('${x.id}')"><b>${esc(x.title)}</b><span>${fdate(x.start_date)}${x.end_date ? ' au ' + fdate(x.end_date) : ''}</span><small>${x.type.toUpperCase()}${x.description ? ' · ' + esc(x.description) : ''}</small></div>`).join('') : '<p class=empty data-ic="📅">Aucun événement à venir.</p>';
+    h += `<h3>Exporter</h3><button class=ghost onclick=icsEvents()>📅 Ajouter à mon agenda (.ics)</button>`;
+    if (S.tab !== 'calendrier') return;
+    $('#main').innerHTML = h;
+}
+function addEvent() {
+    ask('Nouvel événement', [{ n: 'title', l: 'Titre' }, { n: 'type', l: 'Type', o: [['rentree', 'Rentrée'], ['vacances', 'Vacances'], ['examens', 'Examens'], ['reunion', 'Réunion parents'], ['fete', 'Fête'], ['autre', 'Autre']] }, { n: 'start', l: 'Date de début', t: 'date', v: tdy() }, { n: 'end', l: 'Date de fin (facultatif)', t: 'date', r: false }, { n: 'desc', l: 'Description (facultatif)', t: 'textarea', r: false }], async v => {
+        const { error } = await db.from('events').insert({ school_id: S.school.id, title: v.title.trim(), type: v.type, start_date: v.start, end_date: v.end || null, description: v.desc.trim() || null });
+        if (error) throw error; await load(); vCalendrier(); toast('Événement ajouté');
+    });
+}
+function editEvent(id) {
+    const e = S.events.find(x => x.id === id);
+    const d = show(`<h3>${esc(e.title)}</h3><p>${fdate(e.start_date)}${e.end_date ? ' au ' + fdate(e.end_date) : ''}</p><p><small>${esc(e.description || '')}</small></p><div class=col><button class=ghost id=e2>Supprimer</button><button class=ghost id=e3>Fermer</button></div>`);
+    d.querySelector('#e3').onclick = () => d.close();
+    d.querySelector('#e2').onclick = async () => { if (!confirm('Supprimer ?')) return; const { error } = await db.from('events').delete().eq('id', id); if (error) return toast(error.message); d.close(); await load(); vCalendrier(); toast('Supprimé'); };
+}
+function icsEvents() {
+    if (!S.events || !S.events.length) return toast('Aucun événement.');
+    const p = n => String(n).padStart(2, '0'), stamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//OREA Ecole//FR'];
+    S.events.forEach(e => { const d = e.start_date.split('-'), ds = d[0] + d[1] + d[2]; lines.push('BEGIN:VEVENT', 'UID:' + e.id + '@orea', 'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + ds, 'SUMMARY:' + e.title, 'DESCRIPTION:' + (e.description || ''), 'END:VEVENT'); });
+    lines.push('END:VCALENDAR');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/calendar' })); a.download = 'calendrier-orea.ics'; a.click();
+}
+
+/* ---------- Rapport mensuel (image PNG partageable) ---------- */
 const cnm2 = id => { const c = S.classes.find(x => x.id === id); return c ? c.name + (yrs().length > 1 ? ' · ' + cy(c) : '') : '—'; };
 function monthReport() {
     const now = new Date(), ms = [];
@@ -1275,219 +1517,7 @@ async function reportImg(key, label) {
     const d = show(`<h3>Rapport · ${esc(label)}</h3><div class=col><button id=ps>📤 Partager</button><a class="btn ghost" download="${fn}" href="${url}">Télécharger PNG</a><button class=ghost id=pc>Fermer</button></div><img src="${url}" alt="Rapport">`);
     d.querySelector('#pc').onclick = () => d.close();
     d.querySelector('#ps').onclick = async () => { if (can) { try { await navigator.share({ files: [file], text: 'Rapport ' + label + ' — ' + S.school.name }); } catch (e) { if (e.name !== 'AbortError') toast('Partage impossible.'); } } else { dl(blob, fn); toast('Image enregistrée.'); } };
-    }
-/* ---------- PAQUET F & G : MENU, FINANCES ---------- */
-function doBackup() { exRun(event.target, backupAll); }
-function yearMenu() {
-    const y = yrs(), tm = S.terms[S.year] || {};
-    const d = show(`<h3>Année scolaire</h3><div class=col><small>Année affichée : <b>${esc(S.year || '—')}</b></small><select id=ym>${y.map(v => `<option value="${esc(v)}" ${v === S.year ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select><div class=row><button class=ghost id=yc>Fermer</button><button id=yn>+ Nouvelle</button><button id=yp>Passage</button></div></div>`);
-    d.querySelector('#yc').onclick = () => d.close();
-    d.querySelector('#ym').onchange = e => { setYear(e.target.value); d.close(); };
-    d.querySelector('#yn').onclick = () => { d.close(); setTimeout(newYear, 60); };
-    d.querySelector('#yp').onclick = () => { d.close(); setTimeout(promote, 60); };
-}
-function vMenu() {
-    const R = S.me.role; let h = `<h3>Menu</h3>`;
-    h += `<div class=card onclick="menuGo('presences')"><span>📋 Présences</span><b>›</b></div>`;
-    if (R !== 'enseignant') h += `<div class=card onclick="menuGo('caisse')"><span>💰 Caisse</span><b>›</b></div>`;
-    if (R !== 'enseignant') {
-        h += `<div class=card onclick="menuGo('impayes')"><span>🔴 Impayés</span><b>›</b></div>`;
-        if (R === 'directeur') {
-            h += `<div class=card onclick="menuGo('depenses')"><span>📉 Dépenses</span><b>›</b></div>`;
-            h += `<div class=card onclick="menuGo('bilan')"><span>📊 Bilan mensuel</span><b>›</b></div>`;
         }
-    }
-    h += `<h3>Pédagogie</h3>`;
-    h += `<div class=card onclick="menuGo('absences')"><span>📉 Suivi des absences</span><b>›</b></div>`;
-    h += `<div class=card onclick="menuGo('sanctions')"><span>⚖️ Sanctions</span><b>›</b></div>`;
-    h += `<div class=card onclick="menuGo('calendrier')"><span>📅 Calendrier</span><b>›</b></div>`;
-    h += `<div class=card onclick="menuGo('devoirs')"><span>📝 Devoirs</span><b>›</b></div>`;
-    h += `<div class=card onclick="menuGo('emploi_temps')"><span>📅 Emploi du temps</span><b>›</b></div>`;
-    if (dir()) {
-        h += `<h3>Administration</h3>`;
-        h += `<div class=card onclick="yearMenu()"><span>🗓️ Années scolaires</span><b>›</b></div>`;
-        h += `<div class=card onclick="team()"><span>👥 Équipe</span><b>›</b></div>`;
-        h += `<div class=card onclick="journal()"><span>📋 Journal d'activité</span><b>›</b></div>`;
-        h += `<div class=card onclick="exportMenu()"><span>📤 Exports (CSV / PDF)</span><b>›</b></div>`;
-        h += `<div class=card onclick="doBackup()"><span>💾 Sauvegarde complète</span><b>›</b></div>`;
-        h += `<div class=card onclick="monthReport()"><span>🖼️ Rapport mensuel</span><b>›</b></div>`;
-        h += `<h3>Parents & Communication</h3>`;
-        h += `<div class=card onclick="pAdminInbox()"><span>💬 Messages des parents</span><b>›</b></div>`;
-        h += `<div class=card onclick="pAdminJustifs()"><span>📝 Justificatifs d'absence</span><b>›</b></div>`;
-        h += `<div class=card onclick="pAdminAnnonce()"><span>📢 Publier une annonce</span><b>›</b></div>`;
-    }
-    $('#main').innerHTML = h;
-}
-function vImpayes() {
-    S.impcls = S.impcls || ''; S.impf = S.impf || 'all'; S.imps = S.imps || 'anciennete';
-    let l = ys().filter(s => s.balance_cdf > 0);
-    if (S.impcls) l = l.filter(s => s.class_id === S.impcls);
-    if (S.impf === '30j') l = l.filter(s => { const last = s.last_pay ? new Date(s.last_pay).getTime() : 0; return Date.now() - last > 30 * 864e5; });
-    if (S.impf === '60j') l = l.filter(s => { const last = s.last_pay ? new Date(s.last_pay).getTime() : 0; return Date.now() - last > 60 * 864e5; });
-    l.sort((a, b) => { if (S.imps === 'montant') return b.balance_cdf - a.balance_cdf; const la = a.last_pay ? new Date(a.last_pay).getTime() : 0, lb = b.last_pay ? new Date(b.last_pay).getTime() : 0; return la - lb; });
-    const tot = l.reduce((a, s) => a + Number(s.balance_cdf || 0), 0);
-    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Impayés</h3>`;
-    h += `<div class=bar><select id=icl><option value="">Toutes classes</option>${yc().map(c => `<option value="${c.id}" ${S.impcls === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
-    h += `<div class=chips><button class="chip ${S.impf === 'all' ? 'on' : ''}" onclick="S.impf='all';render()">Tous</button><button class="chip ${S.impf === '30j' ? 'on' : ''}" onclick="S.impf='30j';render()">> 30j</button><button class="chip ${S.impf === '60j' ? 'on' : ''}" onclick="S.impf='60j';render()">> 60j</button></div>`;
-    h += `<div class=card><span>${l.length} élève(s)</span><b class=due>${fmt(tot)}</b></div>`;
-    h += `<div class=row><button class=ghost onclick=impayesPDF()>📄 PDF</button>${dir() ? `<button onclick=reminders()>💬 Relancer</button>` : ''}</div>`;
-    h += l.length ? l.map(s => `<div class=card onclick="menu('${s.id}')"><span>${esc(s.name)}<br><small>${esc(cnm(s.class_id))} · ${s.last_pay ? 'Dernier paiement il y a ' + Math.floor((Date.now() - new Date(s.last_pay)) / 864e5) + 'j' : 'Jamais payé'}</small></span><b class=due>${fmt(s.balance_cdf)}</b></div>`).join('') : '<p class=empty>Aucun impayé pour ces critères.</p>';
-    $('#main').innerHTML = h;
-    $('#icl').onchange = e => { S.impcls = e.target.value; render(); };
-}
-function impayesPDF() {
-    let l = ys().filter(s => s.balance_cdf > 0);
-    if (S.impcls) l = l.filter(s => s.class_id === S.impcls);
-    if (S.impf === '30j') l = l.filter(s => { const last = s.last_pay ? new Date(s.last_pay).getTime() : 0; return Date.now() - last > 30 * 864e5; });
-    if (S.impf === '60j') l = l.filter(s => { const last = s.last_pay ? new Date(s.last_pay).getTime() : 0; return Date.now() - last > 60 * 864e5; });
-    l.sort((a, b) => { if (S.imps === 'montant') return b.balance_cdf - a.balance_cdf; const la = a.last_pay ? new Date(a.last_pay).getTime() : 0, lb = b.last_pay ? new Date(b.last_pay).getTime() : 0; return la - lb; });
-    if (!l.length) return toast('Aucun impayé à exporter.');
-    const rows = l.map(s => [s.name, cnm(s.class_id), s.last_pay ? new Date(s.last_pay).toLocaleDateString('fr-FR') : 'Jamais', Math.round(Number(s.balance_cdf))]);
-    const r = { name: 'impayes', title: 'Impayés — ' + S.school.name, sub: stamp() + ' · ' + l.length + ' élèves · montants en FC', head: ['Élève', 'Classe', 'Dernier paiement', 'Reste dû (FC)'], rows, w: [40, 25, 20, 15], r: [3], tot: ['Total', '', '', rows.reduce((t, r) => t + r[3], 0)] };
-    try { dl(new Blob([mkPdf(r)], { type: 'application/pdf' }), fnm(r.name, 'pdf')); toast('PDF enregistré dans Téléchargements'); } catch (e) { toast(e.message); }
-}
-function nextMonth(ym) { const [y, m] = ym.split('-').map(Number), d = new Date(y, m, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
-async function vDepenses() {
-    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
-    const d = new Date(); if (!S.depDate) S.depDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-    const { data, error } = await db.from('expenses').select('*').gte('date', S.depDate + '-01').lt('date', nextMonth(S.depDate) + '-01').order('date', { ascending: false });
-    if (error) return toast(error.message);
-    S.depenses = data;
-    const tot = data.reduce((a, x) => a + Number(x.amount_cdf), 0);
-    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Dépenses</h3>`;
-    h += `<div class=bar><input type=month value="${S.depDate}" id=dpm></div>`;
-    h += `<div class=card><span>Total du mois</span><b class=due>${fmt(tot)}</b></div><button onclick=addExpense()>+ Ajouter une dépense</button>`;
-    h += data.length ? data.map(x => `<div class=card onclick="editExpense('${x.id}')"><span>${esc(x.label)}<br><small>${new Date(x.date + 'T00:00').toLocaleDateString('fr-FR')} · ${x.category}</small></span><b>${nf(x.amount)} ${SYM[x.currency]}</b></div>`).join('') : '<p class=empty>Aucune dépense ce mois-ci.</p>';
-    if (S.tab !== 'depenses') return;
-    $('#main').innerHTML = h;
-    $('#dpm').onchange = e => { S.depDate = e.target.value; vDepenses(); };
-}
-function addExpense() {
-    ask('Nouvelle dépense', [{ n: 'label', l: 'Libellé' }, { n: 'amount', l: 'Montant', t: 'number' }, { n: 'cur', l: 'Devise', o: CUR.map(c => [c, c]), v: S.cur }, { n: 'cat', l: 'Catégorie', o: [['salaires', 'Salaires'], ['loyer', 'Loyer'], ['electricite', 'Électricité/Eau'], ['fournitures', 'Fournitures'], ['transport', 'Transport'], ['entretien', 'Entretien'], ['examens', 'Examens'], ['communication', 'Communication'], ['autre', 'Autre']] }, { n: 'date', l: 'Date', t: 'date', v: tdy() }], async v => {
-        const rate = rateOf(v.cur), amount_cdf = +v.amount * rate;
-        const { error } = await db.from('expenses').insert({ school_id: S.school.id, label: v.label.trim(), amount: +v.amount, currency: v.cur, amount_cdf, rate, category: v.cat, date: v.date });
-        if (error) throw error; await vDepenses(); toast('Dépense ajoutée');
-    });
-}
-function editExpense(id) {
-    const x = S.depenses.find(z => z.id === id);
-    const d = show(`<h3>${esc(x.label)}</h3><p>${nf(x.amount)} ${x.currency} · ${x.category} · ${new Date(x.date + 'T00:00').toLocaleDateString('fr-FR')}</p><div class=col><button id=e1>Modifier</button><button class=ghost id=e2>Supprimer</button><button class=ghost id=e3>Fermer</button></div>`);
-    d.querySelector('#e3').onclick = () => d.close();
-    d.querySelector('#e1').onclick = () => ask('Modifier la dépense', [{ n: 'label', l: 'Libellé', v: x.label }, { n: 'amount', l: 'Montant (' + x.currency + ')', t: 'number', v: x.amount }], async v => {
-        const { error } = await db.from('expenses').update({ label: v.label.trim(), amount: +v.amount, amount_cdf: +v.amount * x.rate }).eq('id', id);
-        if (error) throw error; d.close(); await vDepenses(); toast('Dépense modifiée');
-    });
-    d.querySelector('#e2').onclick = async () => {
-        if (!confirm('Supprimer cette dépense ?')) return;
-        const { error } = await db.from('expenses').delete().eq('id', id);
-        if (error) return toast(error.message); d.close(); await vDepenses(); toast('Dépense supprimée');
-    };
-}
-async function vBilan() {
-    const d = new Date(); if (!S.bilDate) S.bilDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
-    const [y, m] = S.bilDate.split('-').map(Number), a = new Date(y, m - 1, 1), b = new Date(y, m, 1), nk = b.getFullYear() + '-' + String(b.getMonth() + 1).padStart(2, '0') + '-01';
-    const [p, f, ex] = await Promise.all([
-        pageAll(() => db.from('payments').select('amount_cdf,method').gte('created_at', a.toISOString()).lt('created_at', b.toISOString())),
-        pageAll(() => db.from('fee_payments').select('amount_cdf,method').gte('created_at', a.toISOString()).lt('created_at', b.toISOString())),
-        db.from('expenses').select('*').gte('date', S.bilDate + '-01').lt('date', nk)
-    ]);
-    if (p.error || f.error || ex.error) return toast((p.error || f.error || ex.error).message);
-    const enc = p.data.concat(f.data), totEnc = sum(enc), esp = sum(enc.filter(x => x.method === 'especes')), mm = totEnc - esp;
-    const dep = ex.data, totDep = dep.reduce((t, x) => t + Number(x.amount_cdf), 0);
-    const solde = totEnc - totDep;
-    S._bilan = { esp, mm, totEnc, dep, totDep, solde, date: S.bilDate };
-    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Bilan mensuel</h3>`;
-    h += `<div class=bar><input type=month id=bm value="${S.bilDate}"></div>`;
-    h += `<div class=card col"><b>Encaissé</b><span>Espèces : ${fmt(esp)}</span><span>Mobile Money : ${fmt(mm)}</span><b class=ok style="margin-top:6px">Total : ${fmt(totEnc)}</b></div>`;
-    h += `<div class=card col"><b>Dépensé</b>${dep.length ? dep.map(x => `<span style="display:flex;justify-content:space-between"><small>${esc(x.label)}</small><small>${fmt(x.amount_cdf)}</small></span>`).join('') : '<small>Aucune dépense</small>'}<b class=due style="margin-top:6px">Total : ${fmt(totDep)}</b></div>`;
-    h += `<div class="card hero col"><small>SOLDE DU MOIS</small><span class="big" style="color:${solde >= 0 ? 'var(--ok)' : 'var(--bad)'}">${fmt(solde)}</span></div>`;
-    h += `<button class=ghost onclick=bilanPDF()>📄 Exporter en PDF</button>`;
-    if (S.tab !== 'bilan') return;
-    $('#main').innerHTML = h;
-    $('#bm').onchange = e => { S.bilDate = e.target.value; vBilan(); };
-}
-function bilanPDF() {
-    if (!S._bilan) return toast('Ouvrez d\'abord le bilan.');
-    const b = S._bilan;
-    const rows = [['Encaissements espèces', '', b.esp], ['Encaissements Mobile Money', '', b.mm], ['TOTAL ENCAISSÉ', '', b.totEnc]];
-    b.dep.forEach(x => rows.push([x.label, x.category, Number(x.amount_cdf)]));
-    rows.push(['TOTAL DÉPENSÉ', '', b.totDep]);
-    rows.push(['SOLDE DU MOIS', '', b.solde]);
-    const r = { name: 'bilan-' + b.date, title: 'Bilan mensuel — ' + S.school.name, sub: 'Mois : ' + b.date + ' · Montants en FC', head: ['Élément', 'Catégorie', 'Montant (FC)'], rows, w: [50, 30, 20], r: [2], tot: null };
-    try { dl(new Blob([mkPdf(r)], { type: 'application/pdf' }), fnm(r.name, 'pdf')); toast('PDF enregistré'); } catch (e) { toast(e.message); }
-}
-async function vAbsences() {
-    const d = new Date(); if (!S.absM) S.absM = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
-    const [y, m] = S.absM.split('-').map(Number), a = new Date(y, m - 1, 1), b = new Date(y, m, 1);
-    const { data, error } = await db.from('attendance').select('*').eq('status', 'absent').gte('day', a.toISOString().split('T')[0]).lt('day', b.toISOString().split('T')[0]);
-    if (error) return toast(error.message);
-    const abs = data || [], byStu = {}, byCls = {};
-    abs.forEach(x => { byStu[x.student_id] = (byStu[x.student_id] || 0) + 1; const s = S.stu.find(z => z.id === x.student_id); if (s) byCls[s.class_id] = (byCls[s.class_id] || 0) + 1; });
-    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Suivi des absences</h3>`;
-    h += `<div class=bar><input type=month id=am value="${S.absM}"></div>`;
-    const l = Object.entries(byStu).map(([id, n]) => ({ s: S.stu.find(z => z.id === id), n })).filter(x => x.s && x.n >= 3).sort((a, b) => b.n - a.n);
-    h += `<div class=card col"><b>Élèves à surveiller (≥ 3 absences)</b>${l.length ? l.map(x => `<div style="display:flex;justify-content:space-between;margin:4px 0"><span>${esc(x.s.name)} (${esc(cnm(x.s.class_id))})</span><b class=due>${x.n} fois</b></div>`).join('') : '<small>Aucun élève en dessous de la limite.</small>'}</div>`;
-    const c = Object.entries(byCls).map(([id, n]) => ({ c: S.classes.find(z => z.id === id), n })).filter(x => x.c).sort((a, b) => b.n - a.n);
-    h += `<div class="card col"><b>Absences par classe</b>${c.length ? c.map(x => `<div style="display:flex;justify-content:space-between;margin:4px 0"><span>${esc(x.c.name)}</span><b>${x.n} abs.</b></div>`).join('') : '<small>Aucune absence.</small>'}</div>`;
-    if (S.tab !== 'absences') return;
-    $('#main').innerHTML = h;
-    $('#am').onchange = e => { S.absM = e.target.value; vAbsences(); };
-}
-
-async function vSanctions() {
-    const d = new Date(); if (!S.sanM) S.sanM = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
-    const [y, m] = S.sanM.split('-').map(Number), a = new Date(y, m - 1, 1), b = new Date(y, m, 1);
-    const { data, error } = await db.from('sanctions').select('*').gte('day', a.toISOString().split('T')[0]).lt('day', b.toISOString().split('T')[0]).order('day', { ascending: false });
-    if (error) return toast(error.message);
-    const sanc = data || [], byStu = {};
-    sanc.forEach(x => byStu[x.student_id] = (byStu[x.student_id] || 0) + 1);
-    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Vue globale des sanctions</h3>`;
-    h += `<div class=bar><input type=month id=sm value="${S.sanM}"></div>`;
-    const l = Object.entries(byStu).map(([id, n]) => ({ s: S.stu.find(z => z.id === id), n })).filter(x => x.s && x.n >= 3).sort((a, b) => b.n - a.n);
-    h += `<div class="card col"><b>Élèves à dossier (≥ 3 sanctions)</b>${l.length ? l.map(x => `<div style="display:flex;justify-content:space-between;margin:4px 0"><span>${esc(x.s.name)} (${esc(cnm(x.s.class_id))})</span><b class=due>${x.n} fois</b></div>`).join('') : '<small>Aucun élève avec un tel dossier.</small>'}</div>`;
-    h += `<h3>Sanctions du mois (${sanc.length})</h3>`;
-    h += sanc.length ? sanc.map(x => { const s = S.stu.find(z => z.id === x.student_id); return `<div class="card col"><b>${esc(s ? s.name : '?')} · ${esc(x.kind)}</b><small>${esc(cnm(s ? s.class_id : ''))} · ${new Date(x.day + 'T00:00').toLocaleDateString('fr-FR')}${x.note ? ' · ' + esc(x.note) : ''}</small></div>`; }).join('') : '<p class=empty>Aucune sanction enregistrée.</p>';
-    if (S.tab !== 'sanctions') return;
-    $('#main').innerHTML = h;
-    $('#sm').onchange = e => { S.sanM = e.target.value; vSanctions(); };
-}
-
-async function vCalendrier() {
-    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
-    const { data, error } = await db.from('events').select('*').gte('start_date', tdy()).order('start_date');
-    if (error) return toast(error.message);
-    const evs = data || [];
-    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Calendrier scolaire</h3>`;
-    if (dir()) h += `<button onclick=addEvent()>+ Ajouter un événement</button>`;
-    h += evs.length ? evs.map(x => `<div class="card col" onclick="editEvent('${x.id}')"><b>${esc(x.title)}</b><span>${fdate(x.start_date)}${x.end_date ? ' au ' + fdate(x.end_date) : ''}</span><small>${x.type.toUpperCase()}${x.description ? ' · ' + esc(x.description) : ''}</small></div>`).join('') : '<p class=empty data-ic="📅">Aucun événement à venir.</p>';
-    h += `<h3>Exporter</h3><button class=ghost onclick=icsEvents()>📅 Ajouter à mon agenda (.ics)</button>`;
-    if (S.tab !== 'calendrier') return;
-    $('#main').innerHTML = h;
-}
-
-function addEvent() {
-    ask('Nouvel événement', [{ n: 'title', l: 'Titre' }, { n: 'type', l: 'Type', o: [['rentree', 'Rentrée'], ['vacances', 'Vacances'], ['examens', 'Examens'], ['reunion', 'Réunion parents'], ['fete', 'Fête'], ['autre', 'Autre']] }, { n: 'start', l: 'Date de début', t: 'date', v: tdy() }, { n: 'end', l: 'Date de fin (facultatif)', t: 'date', r: false }, { n: 'desc', l: 'Description (facultatif)', t: 'textarea', r: false }], async v => {
-        const { error } = await db.from('events').insert({ school_id: S.school.id, title: v.title.trim(), type: v.type, start_date: v.start, end_date: v.end || null, description: v.desc.trim() || null });
-        if (error) throw error; await load(); vCalendrier(); toast('Événement ajouté');
-    });
-}
-function editEvent(id) {
-    const e = S.events.find(x => x.id === id);
-    const d = show(`<h3>${esc(e.title)}</h3><p>${fdate(e.start_date)}${e.end_date ? ' au ' + fdate(e.end_date) : ''}</p><p><small>${esc(e.description || '')}</small></p><div class=col><button class=ghost id=e2>Supprimer</button><button class=ghost id=e3>Fermer</button></div>`);
-    d.querySelector('#e3').onclick = () => d.close();
-    d.querySelector('#e2').onclick = async () => { if (!confirm('Supprimer ?')) return; const { error } = await db.from('events').delete().eq('id', id); if (error) return toast(error.message); d.close(); await load(); vCalendrier(); toast('Supprimé'); };
-}
-function icsEvents() {
-    if (!S.events || !S.events.length) return toast('Aucun événement.');
-    const p = n => String(n).padStart(2, '0'), stamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//OREA Ecole//FR'];
-    S.events.forEach(e => { const d = e.start_date.split('-'), ds = d[0] + d[1] + d[2]; lines.push('BEGIN:VEVENT', 'UID:' + e.id + '@orea', 'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + ds, 'SUMMARY:' + e.title, 'DESCRIPTION:' + (e.description || ''), 'END:VEVENT'); });
-    lines.push('END:VCALENDAR');
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/calendar' })); a.download = 'calendrier-orea.ics'; a.click();
-                                            }
 /* ========================================================
    PAQUET K5 — Devoirs & Emploi du temps
    ======================================================== */
@@ -1601,14 +1631,18 @@ async function editSlot(id) {
         const { error } = await db.from('timetable').update({ day: +v.day, start_time: v.start, end_time: v.end, subject: v.subject.trim(), room: v.room.trim() || null }).eq('id', id);
         if (error) throw error; toast('Modifié'); drawTT();
     });
-        }
+}
+
+/* ---------- Initialisation finale ---------- */
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 window.addEventListener('online', () => { S.offline ? boot() : qsync(); });
 window.addEventListener('offline', qui);
 setInterval(qsync, 30000);
 boot();
 
-/* ---------- Parents & Communication (intégré) ---------- */
+/* ========================================================
+   PAQUET K2 — Parents & Communication (admin côté école)
+   ======================================================== */
 window.pAdminInbox = async function() {
     const { data } = await db.from('parent_messages').select('*, students(name)').order('created_at', { ascending: false }).limit(50);
     if (!data) return;
@@ -1619,12 +1653,11 @@ window.pAdminInbox = async function() {
     else {
         h += Object.entries(grouped).map(([sid, msgs]) => {
             const sname = msgs[0].students?.name || 'Élève';
-            return `<div class="card col"><b>${esc(sname)}</b>${msgs.slice(0,3).map(m => `<small>${m.sender_role==='parent'?'👤':'🏫'} ${esc(m.content)}</small>`).join('')}<button class=ghost onclick="pAdminReply('${sid}')">Répondre</button></div>`;
+            return `<div class="card col"><b>${esc(sname)}</b>${msgs.slice(0, 3).map(m => `<small>${m.sender_role === 'parent' ? '👤' : '🏫'} ${esc(m.content)}</small>`).join('')}<button class=ghost onclick="pAdminReply('${sid}')">Répondre</button></div>`;
         }).join('');
     }
     $('#main').innerHTML = h;
 };
-
 window.pAdminReply = function(sid) {
     const d = show(`<form method=dialog><h3>Répondre</h3><textarea name=txt rows=3 style="width:100%" required></textarea><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Envoyer</button></div></form>`);
     d.querySelector('form').onsubmit = async e => {
@@ -1633,26 +1666,23 @@ window.pAdminReply = function(sid) {
         const txt = e.target.txt.value.trim();
         const s = S.stu.find(x => x.id === sid);
         if (!s) return;
-        const {data} = await db.from('parent_links').select('parent_id').eq('student_id', sid).limit(1).single();
+        const { data } = await db.from('parent_links').select('parent_id').eq('student_id', sid).limit(1).single();
         if (!data || !data.parent_id) return toast('Aucun parent lié');
         await db.from('parent_messages').insert({ school_id: S.school.id, student_id: sid, parent_id: data.parent_id, sender_role: 'ecole', content: txt });
         d.close(); toast('Envoyé ✓'); pAdminInbox();
     };
 };
-
 window.pAdminJustifs = async function() {
     const { data } = await db.from('absence_justifications').select('*, students(name)').eq('status', 'en_attente').order('created_at');
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Justificatifs en attente</h3>`;
     if (!data || !data.length) h += `<p class=empty>Aucun justificatif à traiter.</p>`;
-    else h += data.map(j => `<div class="card col"><b>${esc(j.students?.name || '')} · ${new Date(j.day+'T00:00').toLocaleDateString('fr-FR')}</b><small>${esc(j.reason)}</small><div class=row><button onclick="pAdminJustifAct('${j.id}','approuve')">Approuver</button><button class=ghost onclick="pAdminJustifAct('${j.id}','refuse')">Refuser</button></div></div>`).join('');
+    else h += data.map(j => `<div class="card col"><b>${esc(j.students?.name || '')} · ${new Date(j.day + 'T00:00').toLocaleDateString('fr-FR')}</b><small>${esc(j.reason)}</small><div class=row><button onclick="pAdminJustifAct('${j.id}','approuve')">Approuver</button><button class=ghost onclick="pAdminJustifAct('${j.id}','refuse')">Refuser</button></div></div>`).join('');
     $('#main').innerHTML = h;
 };
-
 window.pAdminJustifAct = async function(id, st) {
     await db.from('absence_justifications').update({ status: st }).eq('id', id);
     toast('Mis à jour'); pAdminJustifs();
 };
-
 window.pAdminAnnonce = function() {
     const d = show(`<form method=dialog><h3>Nouvelle annonce</h3><label>Titre<input name=titre required></label><label>Contenu<textarea name=txt rows=4 style="width:100%" required></textarea></label><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Publier</button></div></form>`);
     d.querySelector('form').onsubmit = async e => {
