@@ -10,7 +10,7 @@ const CUR = ['CDF', 'USD', 'EUR'];
 const SYM = { CDF: 'FC', USD: '$', EUR: '€' };
 
 const S = {
-    me: null, school: null, classes: [], stu: [], cls: null, sort: 'alpha', tab: 'accueil',
+    me: null, school: null, classes: [], stu: [], cls: null, view: 'grid', sort: 'alpha', tab: 'accueil',
     cur: localStorage.cur || 'CDF', year: null, q: '', ft: 'all', offline: false,
     fees: [], fpaid: {}, terms: {}, depenses: [], depDate: null, bilDate: null,
     impcls: '', impf: 'all', imps: 'anciennete', _bilan: null, events: [], evMonth: null,
@@ -63,6 +63,7 @@ window.addEventListener('popstate', () => {
         d.close();
         return;
     }
+    if (S.me && S.tab === 'eleves' && S.view === 'class') { S.view = 'grid'; S.q = ''; render(); return; }
     if (S.me && !['accueil', 'menu'].includes(S.tab)) {
         if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps'].includes(S.tab)) {
             S.tab = 'menu';
@@ -121,7 +122,16 @@ function pickYear() {
     }
 }
 
-const yc = () => { pickYear(); return S.classes.filter(c => cy(c) === S.year); };
+const clNum = n => { const m = String(n).match(/\d+/); return m ? +m[0] : null; };
+const clLvl = n => { const t = String(n).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); return t.includes('matern') ? 0 : t.includes('primaire') ? 1 : t.includes('human') ? 2 : 3; };
+const classSort = (a, b) => {
+    const x = clNum(a.name), y = clNum(b.name);
+    if (x !== null && y === null) return -1;
+    if (x === null && y !== null) return 1;
+    if (x !== null && x !== y) return x - y;
+    return clLvl(a.name) - clLvl(b.name) || a.name.localeCompare(b.name, 'fr', { numeric: true });
+};
+const yc = () => { pickYear(); return S.classes.filter(c => cy(c) === S.year).sort(classSort); };
 const ys = () => { const ids = new Set(yc().map(c => c.id)); return S.stu.filter(s => ids.has(s.class_id)); };
 
 function setYear(v) {
@@ -385,7 +395,8 @@ async function todayPay(t0) { const q = n => db.from(n).select('amount_cdf,colle
 async function todayFull(t0) { const q = n => db.from(n).select('*').gte('created_at', t0.toISOString()); const [a, b] = await Promise.all([q('payments'), q('fee_payments')]); return { data: a.data ? [...a.data, ...(b.data || [])] : null, error: a.error }; }
 
 function goTab(t) {
-    if (t === S.tab) return;
+    if (t === S.tab) { if (t === 'eleves' && S.view === 'class') backGrid(); return; }
+    if (t === 'eleves') { S.view = 'grid'; S.q = ''; }
     if (t === 'accueil' && history.state && history.state.t) { history.back(); return; }
     if (S.tab === 'accueil' && t !== 'accueil' && !(history.state && history.state.t)) history.pushState({ t: 1 }, '');
     S.tab = t; render();
@@ -501,7 +512,7 @@ function setupView() {
 /* ---------- Écrans ---------- */
 function render() {
     $('#nav').hidden = false; subBanner();
-    const R = S.me.role, tabs = [['accueil', 'Accueil'], ['eleves', 'Élèves'], ['menu', 'Menu'], ['reglages', 'Réglages']];
+    const R = S.me.role, tabs = [['accueil', 'Accueil'], ['eleves', 'École'], ['menu', 'Menu'], ['reglages', 'Réglages']];
     const SUB = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps'];
     if (!tabs.some(x => x[0] === S.tab) && !SUB.includes(S.tab)) S.tab = 'accueil';
     let activeTab = SUB.includes(S.tab) ? 'menu' : S.tab;
@@ -521,37 +532,139 @@ const sorts = {
     solde: (a, b) => b.balance_cdf - a.balance_cdf,
     retard: (a, b) => { const k = s => s.balance_cdf > 0 ? (s.last_pay ? +new Date(s.last_pay) : 0) : 9e15; return k(a) - k(b); }
 };
+/* ---------- Onglet École : grille de classes ---------- */
+document.head.insertAdjacentHTML('beforeend', '<style>'
+    + '.cgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}'
+    + '.ccard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 6px 12px;text-align:center;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0;-webkit-tap-highlight-color:transparent}'
+    + '.ccard:active{transform:scale(.97);border-color:var(--gold)}'
+    + '.ccard b{font-family:var(--serif);font-size:16px;color:var(--tx);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+    + '.ccard small{font-size:11.5px}'
+    + '.ccard .cd{font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums}'
+    + '.csum{justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-size:13.5px}'
+    + '.ctitle{font-family:var(--serif);font-size:18px;color:var(--gold);align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}'
+    + '</style>');
+
+function openClass(id) {
+    const c = S.classes.find(x => x.id === id); if (!c) return;
+    if (cy(c) !== S.year) { S.year = cy(c); localStorage['orea_year_' + S.school.id] = S.year; }
+    S.cls = id; S.view = 'class'; S.q = ''; S.ft = 'all'; S.sort = 'alpha'; S.tab = 'eleves';
+    if (!(history.state && history.state.cls)) history.pushState({ cls: 1 }, '');
+    render();
+}
+function backGrid() {
+    if (history.state && history.state.cls) { history.back(); return; }
+    S.view = 'grid'; S.q = ''; render();
+}
 function vEleves() {
-    const cl = yc(); let h = ybar();
+    const cl = yc();
+    if (S.view === 'class' && !cl.some(c => c.id === S.cls)) S.view = 'grid';
+    let h = ybar();
     if (!cl.length) h += '<p class=empty data-ic="🏫">Aucune classe pour le moment.</p>';
-    else {
-        if (!cl.some(c => c.id === S.cls)) S.cls = cl[0].id;
+    else if (S.view === 'class') {
+        const c = cl.find(x => x.id === S.cls);
         if (S.ft === 'late' && !hasTerms()) S.ft = 'all';
         const FT = [['all', 'Tous'], ...(hasTerms() ? [['late', 'En retard']] : []), ['due', 'À payer'], ['paid', 'Soldés'], ['nophone', 'Sans n°']];
-        h += `<input id=q type=search placeholder="🔍 Rechercher un élève" value="${esc(S.q)}"><div class=bar><select id=cs>${cl.map(c => `<option value="${c.id}" ${c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select><select id=so><option value=alpha>Alphabétique A → Z</option><option value=solde>Plus grand solde dû</option><option value=retard>Retard de paiement</option></select></div><div class=chips>${FT.map(f => `<button class="chip ${S.ft === f[0] ? 'on' : ''}" data-f=${f[0]}>${f[1]}</button>`).join('')}</div><div id=lst></div>`;
+        h += `<div class=bar><button class=ghost style="width:auto" onclick=backGrid()>← Classes</button><b class=ctitle>${esc(c.name)}</b><button class=ghost style="width:auto;margin-left:auto" onclick=printClass()>🖨 Imprimer</button></div>`
+            + `<input id=q type=search placeholder="🔍 Rechercher dans ${esc(c.name)}" value="${esc(S.q)}">`
+            + `<div class=bar><select id=so><option value=alpha>Alphabétique A → Z</option><option value=solde>Plus grand solde dû</option><option value=retard>Retard de paiement</option></select></div>`
+            + `<div class=chips>${FT.map(f => `<button class="chip ${S.ft === f[0] ? 'on' : ''}" data-f=${f[0]}>${f[1]}</button>`).join('')}</div><div id=lst></div>`;
+    } else {
+        if (!cl.some(c => c.id === S.cls)) S.cls = cl[0].id;
+        h += `<input id=q type=search placeholder="🔍 Rechercher un élève (toutes les classes)" value="${esc(S.q)}"><div id=lst></div>`;
     }
     if (dir()) h += `<div class=row><button class=ghost onclick=addClass()>+ Classe</button>${cl.length ? '<button onclick=addStudent()>+ Élève</button><button class=ghost onclick=bulkAdd()>+ Liste</button>' : ''}</div>`;
     $('#main').innerHTML = h;
-    if ($('#cs')) {
-        $('#so').value = S.sort;
-        $('#cs').onchange = e => { S.cls = e.target.value; drawList(); };
-        $('#so').onchange = e => { S.sort = e.target.value; drawList(); };
+    if ($('#q')) {
         $('#q').oninput = e => { S.q = e.target.value; drawList(); };
-        document.querySelectorAll('.chip').forEach(b => b.onclick = () => { S.ft = b.dataset.f; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); drawList(); });
+        if ($('#so')) {
+            $('#so').value = S.sort;
+            $('#so').onchange = e => { S.sort = e.target.value; drawList(); };
+            document.querySelectorAll('.chip').forEach(b => b.onclick = () => { S.ft = b.dataset.f; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); drawList(); });
+        }
         drawList();
     }
 }
-function drawList() {
-    const cn = Object.fromEntries(S.classes.map(c => [c.id, c.name])), q = nrm(S.q).trim(), qd = q.replace(/\D/g, '');
-    let l = q ? ys() : ys().filter(s => s.class_id === S.cls);
+function drawGrid() {
+    const cl = yc(), st = ys(), by = {};
+    st.forEach(s => { const o = by[s.class_id] || (by[s.class_id] = { n: 0, d: 0 }); o.n++; o.d += Math.max(0, Number(s.balance_cdf || 0)); });
+    const td = st.reduce((t, s) => t + Math.max(0, Number(s.balance_cdf || 0)), 0), u = SYM[S.cur] || '';
+    $('#lst').innerHTML = `<div class="card csum"><span><b>${cl.length}</b> classe${cl.length > 1 ? 's' : ''} · <b>${st.length}</b> élève${st.length > 1 ? 's' : ''}</span><span class="${td ? 'due' : 'ok'}">${td ? short(td) + ' ' + u + ' à recevoir' : '✓ Tout est soldé'}</span></div>`
+        + '<div class=cgrid>' + cl.map(c => {
+            const o = by[c.id] || { n: 0, d: 0 };
+            return `<div class=ccard onclick="openClass('${c.id}')"><b>${esc(c.name)}</b><small>${o.n} élève${o.n > 1 ? 's' : ''}</small><span class="cd ${o.d ? 'due' : 'ok'}">${!o.n ? '—' : o.d ? short(o.d) + ' ' + u : '✓ Soldé'}</span></div>`;
+        }).join('') + '</div>';
+}
+function listNow() {
+    const grid = S.view !== 'class', q = nrm(S.q).trim(), qd = q.replace(/\D/g, '');
+    let l = grid ? ys() : ys().filter(s => s.class_id === S.cls);
     if (q) l = l.filter(s => nrm(s.name).includes(q) || (qd && String(s.parent_phone || '').replace(/\D/g, '').includes(qd)));
-    if (S.ft === 'due') l = l.filter(s => s.balance_cdf > 0);
-    else if (S.ft === 'late') l = l.filter(s => status(s) === 'late');
-    else if (S.ft === 'paid') l = l.filter(s => s.balance_cdf <= 0);
-    else if (S.ft === 'nophone') l = l.filter(s => !s.parent_phone);
-    l.sort(sorts[S.sort]);
+    if (!grid) {
+        if (S.ft === 'due') l = l.filter(s => s.balance_cdf > 0);
+        else if (S.ft === 'late') l = l.filter(s => status(s) === 'late');
+        else if (S.ft === 'paid') l = l.filter(s => s.balance_cdf <= 0);
+        else if (S.ft === 'nophone') l = l.filter(s => !s.parent_phone);
+    }
+    return l.sort(sorts[grid ? 'alpha' : S.sort]);
+}
+function drawList() {
+    const grid = S.view !== 'class', q = nrm(S.q).trim();
+    if (grid && !q) return drawGrid();
+    const cn = Object.fromEntries(S.classes.map(c => [c.id, c.name])), l = listNow();
     const tot = l.reduce((t, s) => t + Number(s.balance_cdf || 0), 0);
-    $('#lst').innerHTML = l.length ? `<small>${l.length} élève(s) · reste dû ${fmt(tot)}</small>` + l.map(s => `<div class=card onclick="menu('${s.id}')"><span><b>${esc(s.name)}</b>${q ? '<br><small>' + esc(cn[s.class_id] || '') + '</small>' : ''}</span>${stTag(s)}</div>`).join('') : `<p class=empty>${q || S.ft !== 'all' ? 'Aucun élève trouvé.' : 'Aucun élève dans cette classe.'}</p>`;
+    $('#lst').innerHTML = l.length ? `<small>${l.length} élève(s) · reste dû ${fmt(tot)}</small>` + l.map(s => `<div class=card onclick="menu('${s.id}')"><span><b>${esc(s.name)}</b>${grid ? '<br><small>' + esc(cn[s.class_id] || '') + '</small>' : ''}</span>${stTag(s)}</div>`).join('') : `<p class=empty>${q || S.ft !== 'all' ? 'Aucun élève trouvé.' : 'Aucun élève dans cette classe.'}</p>`;
+}
+
+/* ---------- Impression d’une classe (PDF / PNG) ---------- */
+function printClass() {
+    const c = S.classes.find(x => x.id === S.cls); if (!c) return;
+    const l = listNow(); if (!l.length) return toast('Aucun élève à imprimer.');
+    const d = show(`<h3>Imprimer · ${esc(c.name)}</h3><div class=col><small>${l.length} élève(s) · selon le tri et le filtre affichés</small><button id=pp>📄 PDF</button><button class=ghost id=pi>🖼 Image PNG</button><button class=ghost id=px>Fermer</button></div>`);
+    d.querySelector('#px').onclick = () => d.close();
+    d.querySelector('#pp').onclick = e => exRun(e.target, () => classPdf(c, l));
+    d.querySelector('#pi').onclick = e => exRun(e.target, () => classPng(c, l));
+}
+const clSlug = n => nrm(n).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+function classPdf(c, l) {
+    const rows = l.map((s, i) => [i + 1, s.name, s.parent_phone || '', Math.round(Number(s.paid_cdf || 0)), Math.round(Number(s.balance_cdf || 0))]);
+    const a = k => rows.reduce((t, r) => t + r[k], 0);
+    const o = { title: c.name + ' — ' + S.school.name, sub: stamp() + ' · ' + rows.length + ' élèves · montants en FC', head: ['N°', 'Élève', 'Téléphone parent', 'Payé (FC)', 'Reste (FC)'], rows, w: [6, 40, 22, 16, 16], r: [3, 4], tot: ['', 'Total', '', a(3), a(4)] };
+    dl(new Blob([mkPdf(o)], { type: 'application/pdf' }), fnm('classe-' + clSlug(c.name), 'pdf'));
+    $('#dlg').close(); toast('PDF enregistré dans Téléchargements');
+}
+async function classPng(c, l) {
+    const PP = 40, N = Math.ceil(l.length / PP), W = 720, RH = 44, files = [], tot = l.reduce((t, s) => t + Math.max(0, Number(s.balance_cdf || 0)), 0);
+    const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = 'logo-light.png'; });
+    for (let p = 0; p < N; p++) {
+        const rows = l.slice(p * PP, (p + 1) * PP), last = p === N - 1, H = 190 + rows.length * RH + (last ? 130 : 70);
+        const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
+        x.fillStyle = '#fffdf6'; x.fillRect(0, 0, W, H);
+        const gg = x.createLinearGradient(0, 0, W, H); gg.addColorStop(0, '#e9cf86'); gg.addColorStop(.5, '#b08a30'); gg.addColorStop(1, '#8a6a1f');
+        x.strokeStyle = gg; x.lineWidth = 4; x.strokeRect(14, 14, W - 28, H - 28); x.lineWidth = 1; x.strokeRect(24, 24, W - 48, H - 48);
+        if (im) x.drawImage(im, 44, 44, 70, 70);
+        x.textAlign = 'left'; x.fillStyle = '#111211'; x.font = 'bold 28px Georgia,serif'; x.fillText(c.name, 130, 74);
+        x.fillStyle = '#6b6a60'; x.font = '17px sans-serif'; x.fillText(S.school.name + ' · ' + (S.year || '—'), 130, 101);
+        x.fillText(l.length + ' élève' + (l.length > 1 ? 's' : '') + (N > 1 ? ' · page ' + (p + 1) + '/' + N : ''), 130, 125);
+        x.fillStyle = gg; x.fillRect(50, 148, W - 100, 2);
+        const cut = (t, w) => { if (x.measureText(t).width <= w) return t; while (t.length > 1 && x.measureText(t + '…').width > w) t = t.slice(0, -1); return t + '…'; };
+        rows.forEach((s, i) => {
+            const yy = 190 + i * RH;
+            if (i % 2) { x.fillStyle = '#f7f1e0'; x.fillRect(40, yy - 26, W - 80, RH); }
+            x.textAlign = 'left'; x.fillStyle = '#6b6a60'; x.font = '15px sans-serif'; x.fillText(String(p * PP + i + 1), 50, yy);
+            x.fillStyle = '#111211'; x.font = '17px sans-serif'; x.fillText(cut(s.name, 275), 90, yy);
+            x.fillStyle = '#6b6a60'; x.font = '15px sans-serif'; x.fillText(cut(s.parent_phone || '', 140), 380, yy);
+            const due = Number(s.balance_cdf || 0) > 0; x.textAlign = 'right'; x.font = 'bold 16px sans-serif'; x.fillStyle = due ? '#a85a4e' : '#3f7a5c'; x.fillText(due ? fmt(s.balance_cdf) : '✓ Soldé', W - 50, yy);
+        });
+        x.textAlign = 'left';
+        if (last) { const yt = 190 + rows.length * RH + 20; x.fillStyle = gg; x.fillRect(50, yt - 22, W - 100, 2); x.fillStyle = '#111211'; x.font = 'bold 18px Georgia,serif'; x.fillText('Total dû', 50, yt + 12); x.textAlign = 'right'; x.fillText(fmt(tot), W - 50, yt + 12); }
+        x.textAlign = 'center'; x.fillStyle = '#6b6a60'; x.font = '14px sans-serif'; x.fillText('Édité le ' + new Date().toLocaleDateString('fr-FR') + ' — ORÉA École', W / 2, H - 44);
+        const blob = await new Promise(r => cv.toBlob(r, 'image/png')), fn = fnm('classe-' + clSlug(c.name) + (N > 1 ? '-p' + (p + 1) : ''), 'png');
+        files.push({ blob, fn, url: URL.createObjectURL(blob), file: new File([blob], fn, { type: 'image/png' }) });
+    }
+    const fl = files.map(f => f.file), can = !!(navigator.canShare && navigator.canShare({ files: fl }));
+    const d = show(`<h3>${esc(c.name)} · ${N} image${N > 1 ? 's' : ''}</h3><div class=col><button id=ps>📤 Partager</button><button class=ghost id=pd>Télécharger</button><button class=ghost id=pc>Fermer</button></div>${files.map(f => `<img src="${f.url}" alt="">`).join('')}`);
+    d.querySelector('#pc').onclick = () => d.close();
+    d.querySelector('#pd').onclick = () => { files.forEach(f => dl(f.blob, f.fn)); toast('Image' + (N > 1 ? 's enregistrées' : ' enregistrée') + ' dans Téléchargements'); };
+    d.querySelector('#ps').onclick = async () => { if (can) { try { await navigator.share({ files: fl, text: c.name + ' — ' + S.school.name }); } catch (e) { if (e.name !== 'AbortError') toast('Partage impossible.'); } } else { files.forEach(f => dl(f.blob, f.fn)); toast('Image enregistrée.'); } };
 }
 function addClass(yr) {
     ask('Nouvelle classe', [{ n: 'name', l: 'Nom (ex : 3e A)' }, { n: 'year', l: 'Année scolaire', v: yr || S.year || '' }, { n: 't1', l: 'Frais 1er trimestre', t: 'number' }, { n: 't2', l: 'Frais 2e trimestre', t: 'number' }, { n: 't3', l: 'Frais 3e trimestre', t: 'number' }, { n: 'cur', l: 'Devise des frais', o: CUR.map(c => [c, c]), v: S.cur }], async v => {
@@ -1037,7 +1150,7 @@ function vReglages() {
         h += `<div class="card col"><b>Dates des trimestres</b><small>${hasTerms() ? 'T1 dès le ' + fdate(tm.t1) + ' · T2 dès le ' + fdate(tm.t2) + ' · T3 dès le ' + fdate(tm.t3) : 'Non réglées : le statut « en retard » est désactivé.'}</small><button class=ghost onclick=setTerms()>Régler les dates · ${esc(S.year || '—')}</button></div>`;
         h += `<div class="card col"><b>Modèles de messages</b><small>Personnalise les messages WhatsApp (frais).</small><button class=ghost onclick=editTemplates()>✏️ Modifier les modèles</button></div>`;
     }
-    h += `<details><summary>Guide rapide</summary><p><b>Encaisser</b> : Élèves → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu.<br><b>Clôture</b> : Menu → Caisse → Clôturer.<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel.<br><b>Correction</b> : Élève → Historique et reçus → Corriger.</p></details><button class=ghost id=lo>Déconnexion</button>`;
+    h += `<details><summary>Guide rapide</summary><p><b>Encaisser</b> : École → ouvre la classe → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu.<br><b>Clôture</b> : Menu → Caisse → Clôturer.<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel.<br><b>Correction</b> : Élève → Historique et reçus → Corriger.</p></details><button class=ghost id=lo>Déconnexion</button>`;
     $('#main').innerHTML = h;
     $('#lo').onclick = out;
     $('#cu').onchange = e => { S.cur = e.target.value; localStorage.cur = S.cur; toast('Devise : ' + S.cur); };
@@ -1097,7 +1210,7 @@ async function doGlobalSearch(q) {
     }
     const cls = S.classes.filter(c => nrm(c.name).includes(q));
     if (cls.length) {
-        h += '<h3>🏫 Classes</h3>' + cls.map(c => `<div class="card" onclick="closeSearch();S.cls='${c.id}';S.tab='eleves';render()"><span>${esc(c.name)}</span><small>${cy(c)}</small></div>`).join('');
+        h += '<h3>🏫 Classes</h3>' + cls.map(c => `<div class="card" onclick="closeSearch();openClass('${c.id}')"><span>${esc(c.name)}</span><small>${cy(c)}</small></div>`).join('');
     }
     const isRec = q.startsWith('rec') || /^\d+$/.test(q);
     if (!h) res.innerHTML = '<p class=empty>Recherche...</p>';
