@@ -659,14 +659,23 @@ function lockView() {
     $('#main').innerHTML = `<div class=auth><h2>Abonnement expiré</h2><p>L’accès de ${esc(S.school.name)} est suspendu. Contacte l’administrateur.</p>${ADMIN_WA ? `<a class=btn style="text-align:center;text-decoration:none" href="https://wa.me/${ADMIN_WA}?text=${encodeURIComponent('Bonjour, je souhaite renouveler l’abonnement de ' + S.school.name)}">Contacter l’administrateur</a>` : ''}<button class=ghost onclick=out()>Déconnexion</button></div>`;
 }
 async function adminView() {
+    try { await adminDraw(); }
+    catch (e) {
+        console.error('adminView', e);
+        $('#main').innerHTML = '<div class=auth><h2>Administration</h2><p>Impossible d’afficher la page : ' + esc(String((e && e.message) || e)) + '</p><button onclick=adminView()>Réessayer</button><button class=ghost onclick=out()>Déconnexion</button></div>';
+    }
+}
+async function adminDraw() {
     $('#nav').hidden = true;
-    const [{ data, error }, { data: pays = [] }] = await Promise.all([db.rpc('admin_list_schools'), db.from('sub_payments').select('amount,currency,created_at')]);
-    if (error) return toast(error.message);
-    const now = Date.now(), act = data.filter(s => new Date(s.sub_until) > now).length;
+    $('#main').innerHTML = SK;
+    let [{ data, error }, { data: pays }] = await Promise.all([db.rpc('admin_list_schools'), db.from('sub_payments').select('amount,currency,created_at')]);
+    if (error) throw error;
+    data = data || []; pays = pays || [];
+    const now = Date.now(), nd = new Date(), act = data.filter(s => new Date(s.sub_until) > now).length;
     const m0 = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const thisMonth = pays.filter(p => new Date(p.created_at) >= m0);
     const totCur = list => { const m = {}; list.forEach(p => { m[p.currency] = (m[p.currency] || 0) + Number(p.amount); }); return Object.entries(m).filter(x => x[1] > 0).map(x => nf(x[1]) + ' ' + SYM[x[0]]).join(' · ') || '0 FC'; };
-    const ms = []; for (let i = 5; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); ms.push({ k: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), l: d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', ''), v: 0 }); }
+    const ms = []; for (let i = 5; i >= 0; i--) { const d = new Date(nd.getFullYear(), nd.getMonth() - i, 1); ms.push({ k: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), l: d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', ''), v: 0 }); }
     pays.forEach(p => { if (p.currency === 'USD') { const d = new Date(p.created_at), k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), m = ms.find(x => x.k === k); if (m) m.v += Number(p.amount); } });
     const mx = Math.max(...ms.map(x => x.v), 1);
     let h = `<h3>Espace administrateur</h3><div class=card><span>Écoles actives / total</span><b>${act} / ${data.length}</b></div><div class=card><span>Revenus ce mois</span><b>${totCur(thisMonth)}</b></div>`;
