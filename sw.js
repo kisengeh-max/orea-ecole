@@ -1,7 +1,7 @@
-const V='orea-v26',CDN='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js',F=['./','index.html','style.css','app.js','ambassadeur.js','ambadmin.js','reminders.js','notes.js','config.js','manifest.json','logo-dark.png','logo-light.png','icon-192.png',CDN];
+const V='orea-v28',CDN='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js',F=['./','index.html','style.css','app.js','ambassadeur.js','ambadmin.js','reminders.js','notes.js','scan.js','config.js','manifest.json','logo-dark.png','logo-light.png','icon-192.png',CDN,'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js','https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(V).then(c=>Promise.all(F.map(u=>c.add(u).catch(()=>{})))).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==V).map(x=>caches.delete(x)))).then(()=>self.clients.claim())));
-self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||(u.origin!==location.origin&&u.href!==CDN))return;
+self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||(u.origin!==location.origin&&u.href!==CDN&&!u.href.includes('qrcode')&&!u.href.includes('html5-qrcode')))return;
 const c=new AbortController(),t=setTimeout(()=>c.abort(),6000);
 e.respondWith(fetch(e.request,{signal:c.signal}).then(r=>{clearTimeout(t);if(r.ok||r.type==='opaque'){const k=r.clone();caches.open(V).then(x=>x.put(e.request,k))}return r}).catch(()=>{clearTimeout(t);return caches.match(e.request,{ignoreSearch:true})}))});
 self.addEventListener('push',e=>{let d={};try{d=e.data.json()}catch{}e.waitUntil(self.registration.showNotification(d.title||'ORÉA École',{body:d.body||'',icon:'icon-192.png',badge:'icon-192.png',tag:d.tag||'orea'}))});
