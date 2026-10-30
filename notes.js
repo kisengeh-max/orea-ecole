@@ -48,7 +48,7 @@ window.vMenu = function() {
     $('#main').innerHTML = h;
 };
 
-// --- Interception du routeur ---
+// --- Interception du routeur ET de la bannière ---
 const _origRender = window.render;
 window.render = function() {
     if (['saisie_notes', 'bulletins'].includes(S.tab)) {
@@ -58,10 +58,27 @@ window.render = function() {
         S.tab = realTab;
         if (realTab === 'saisie_notes') routeSaisieNotes();
         else vBulletins();
-        return;
+    } else {
+        _origRender();
     }
-    _origRender();
+
+    // --- CORRECTION BANNIÈRE IMPAYÉS ---
+    // Si on a cliqué sur "Voir", on cache la bannière #exb quoi qu'il arrive
+    if (sessionStorage.getItem('hide_impayes_banner')) {
+        const b = document.getElementById('exb');
+        if (b) b.hidden = true;
+    }
 };
+
+// Écouteur pour intercepter le clic sur la bannière
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('#exb a, #exb button, #exb [onclick]');
+    if (btn) {
+        sessionStorage.setItem('hide_impayes_banner', '1');
+        const b = document.getElementById('exb');
+        if (b) b.hidden = true;
+    }
+}, true); // Le "true" permet d'intercepter le clic avant que l'application ne change de page
 
 function routeSaisieNotes() {
     if (S.notesView === 'classes') vNotesClasses();
@@ -320,31 +337,4 @@ async function genBulletin() {
         dl(new Blob([pdfData], { type: 'application/pdf' }), fnm(r.name, 'pdf'));
         toast('Bulletin généré');
     } catch (e) { toast('Erreur PDF : ' + e.message); }
-}
-
-// ==========================================
-// CORRECTIF : Masquer la bannière d'impayés au clic
-// ==========================================
-document.addEventListener('click', function(e) {
-    // Si on clique sur un lien/bouton dans la bannière #exb
-    const btn = e.target.closest('#exb a, #exb button');
-    if (btn) {
-        // On mémorise qu'on a cliqué pour cette session
-        sessionStorage.setItem('hide_impayes_banner', '1');
-        // On cache la bannière immédiatement
-        const b = document.getElementById('exb');
-        if (b) b.hidden = true;
-    }
-});
-
-// On surcharge la fonction subBanner de app.js pour qu'elle respecte notre choix
-const _origSubBanner = window.subBanner;
-if (_origSubBanner) {
-    window.subBanner = function() {
-        _origSubBanner();
-        if (sessionStorage.getItem('hide_impayes_banner')) {
-            const b = document.getElementById('exb');
-            if (b) b.hidden = true;
         }
-    };
-}
