@@ -1,3 +1,6 @@
+// ORÉA École — Correctif Splash Screen (n'afficher que le logo noir)
+document.head.insertAdjacentHTML('beforeend', '<style>#sp .ll { display: none !important; } #sp .ld { display: block !important; }</style>');
+
 // ORÉA École — Module NOTES V2 (Saisie ultra-rapide + Assistant IA)
 
 S.notesView = 'classes';
@@ -63,14 +66,12 @@ window.render = function() {
     }
 
     // --- CORRECTION BANNIÈRE IMPAYÉS ---
-    // Si on a cliqué sur "Voir", on cache la bannière #exb quoi qu'il arrive
     if (sessionStorage.getItem('hide_impayes_banner')) {
         const b = document.getElementById('exb');
         if (b) b.hidden = true;
     }
 };
 
-// Écouteur pour intercepter le clic sur la bannière
 document.addEventListener('click', function(e) {
     const btn = e.target.closest('#exb a, #exb button, #exb [onclick]');
     if (btn) {
@@ -78,7 +79,7 @@ document.addEventListener('click', function(e) {
         const b = document.getElementById('exb');
         if (b) b.hidden = true;
     }
-}, true); // Le "true" permet d'intercepter le clic avant que l'application ne change de page
+}, true);
 
 function routeSaisieNotes() {
     if (S.notesView === 'classes') vNotesClasses();
@@ -337,4 +338,4 @@ async function genBulletin() {
         dl(new Blob([pdfData], { type: 'application/pdf' }), fnm(r.name, 'pdf'));
         toast('Bulletin généré');
     } catch (e) { toast('Erreur PDF : ' + e.message); }
-        }
+                      }
