@@ -1,7 +1,12 @@
-// ORÉA École — Correctif Splash Screen (n'afficher que le logo noir)
-document.head.insertAdjacentHTML('beforeend', '<style>#sp .ll { display: none !important; } #sp .ld { display: block !important; }</style>');
+// ORÉA École — Correctif Splash Screen (supprimer le logo blanc)
+function removeLightLogo() {
+    const ll = document.querySelector('#sp .ll');
+    if (ll) ll.remove();
+}
+removeLightLogo();
+new MutationObserver(removeLightLogo).observe(document.documentElement, { childList: true, subtree: true });
 
-// ORÉA École — Module NOTES V2 (Saisie ultra-rapide + Assistant IA)
+// ORÉA École — Module NOTES V2
 
 S.notesView = 'classes';
 S.notesTerm = 1;
@@ -65,7 +70,6 @@ window.render = function() {
         _origRender();
     }
 
-    // --- CORRECTION BANNIÈRE IMPAYÉS ---
     if (sessionStorage.getItem('hide_impayes_banner')) {
         const b = document.getElementById('exb');
         if (b) b.hidden = true;
@@ -338,4 +342,4 @@ async function genBulletin() {
         dl(new Blob([pdfData], { type: 'application/pdf' }), fnm(r.name, 'pdf'));
         toast('Bulletin généré');
     } catch (e) { toast('Erreur PDF : ' + e.message); }
-                      }
+}
