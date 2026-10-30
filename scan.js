@@ -5,7 +5,6 @@ let html5QrCode = null;
 const _origMenuScan = window.vMenu;
 window.vMenu = function() {
     _origMenuScan();
-    // On ajoute le bouton Scanner juste après "Présences"
     const main = document.getElementById('main');
     if (main) {
         const btnPresence = main.querySelector('[onclick*="presences"]');
@@ -17,7 +16,7 @@ window.vMenu = function() {
     }
 };
 
-// Interception du routeur pour la vue Scanner
+// Interception du routeur
 const _origRenderScan = window.render;
 window.render = function() {
     if (S.tab === 'scan_qr') {
@@ -44,7 +43,6 @@ window.menu = function(id) {
                 btn.className = 'ghost';
                 btn.innerHTML = '📇 Imprimer Carte Scolaire';
                 btn.onclick = () => { d.close(); printCard(id); };
-                // L'insérer juste avant le bouton "Fermer"
                 col.insertBefore(btn, col.lastElementChild);
             }
         }
@@ -52,7 +50,7 @@ window.menu = function(id) {
 };
 
 // ==========================================
-// GÉNÉRATION DE LA CARTE SCOLAIRE
+// GÉNÉRATION DE LA CARTE SCOLAIRE (CORRIGÉ)
 // ==========================================
 async function printCard(id) {
     const s = S.stu.find(x => x.id === id);
@@ -60,18 +58,17 @@ async function printCard(id) {
     
     show('<h3>Génération de la carte...</h3><div style="text-align:center;padding:20px"><div class=sk></div></div>');
     
-    // Créer un div temporaire pour générer le QR
     const tmp = document.createElement('div');
     tmp.style.display = 'none';
     document.body.appendChild(tmp);
     new QRCode(tmp, { text: s.id, width: 256, height: 256, correctLevel: QRCode.CorrectLevel.H });
     
-    // Attendre que le QR soit dessiné
+    // On attend 300ms que le canvas soit généré
     setTimeout(async () => {
+        // qrcodejs génère parfois une balise <canvas> ou <img>. On prend ce qui est dispo.
+        const qrCanvas = tmp.querySelector('canvas');
         const qrImg = tmp.querySelector('img');
-        if (!qrImg) { $('#dlg').close(); return toast('Erreur QR'); }
         
-        // Créer le Canvas de la carte
         const cv = document.createElement('canvas');
         cv.width = 600; cv.height = 380;
         const x = cv.getContext('2d');
@@ -97,9 +94,14 @@ async function printCard(id) {
         if (s.parent_phone) x.fillText('Contact : ' + s.parent_phone, 40, 190);
         x.fillText('Année : ' + (S.year || '—'), 40, 220);
         
-        // QR Code
+        // QR Code (Correction ici)
         x.fillStyle = '#fff'; x.fillRect(380, 90, 180, 180);
-        x.drawImage(qrImg, 390, 100, 160, 160);
+        if (qrCanvas) {
+            x.drawImage(qrCanvas, 390, 100, 160, 160);
+        } else if (qrImg) {
+            x.drawImage(qrImg, 390, 100, 160, 160);
+        }
+        
         x.textAlign = 'center'; x.fillStyle = '#6b6a60'; x.font = '14px sans-serif';
         x.fillText('Scannez pour identifier', 470, 290);
         
@@ -121,7 +123,7 @@ async function printCard(id) {
             </div>`;
         
         tmp.remove();
-    }, 200);
+    }, 300); // Augmenté à 300ms pour être sûr
 }
 
 // ==========================================
@@ -142,7 +144,6 @@ function vScanQR() {
     </div>`;
     $('#main').innerHTML = h;
     
-    // Initialisation du scanner
     if (html5QrCode) html5QrCode.clear();
     html5QrCode = new Html5Qrcode("qr-reader");
     
@@ -152,12 +153,11 @@ function vScanQR() {
         { facingMode: "environment" },
         config,
         (decodedText) => {
-            // Succès : on arrête le scan et on traite
             html5QrCode.stop().then(() => {
-                processScan(decodedText, 'payer'); // Par défaut, mode paiement
+                processScan(decodedText, 'payer');
             });
         },
-        (errorMessage) => { /* Ignorer les erreurs de scan en cours */ }
+        (errorMessage) => { /* Ignorer */ }
     ).catch(err => {
         $('#qr-reader').innerHTML = `<div class="card col" style="text-align:center;padding:20px;color:var(--bad)">
             <b>Caméra inaccessible</b>
@@ -165,7 +165,6 @@ function vScanQR() {
         </div>`;
     });
     
-    // Boutons Mode Gardien
     $('#btn_entree').onclick = () => startGuardMode('entree');
     $('#btn_sortie').onclick = () => startGuardMode('sortie');
 }
@@ -189,17 +188,15 @@ async function processScan(studentId, mode, type = null) {
     const s = S.stu.find(x => x.id === studentId);
     if (!s) {
         toast('Élève introuvable dans cette école.');
-        return vScanQR(); // Relancer le scan
+        return vScanQR();
     }
     
     if (mode === 'gardien') {
-        // Enregistrement entrée/sortie
         const { error } = await db.from('attendance_logs').insert({
             school_id: S.school.id, student_id: s.id, type, scanned_by: S.me.id
         });
         if (error) return toast('Erreur: ' + error.message);
         
-        // Confirmation visuelle
         show(`<h3 style="color:var(--ok);text-align:center;margin-top:20px">✓ ${type === 'entree' ? 'Entrée' : 'Sortie'} enregistrée</h3>
             <div class="card col" style="text-align:center;margin-top:20px">
                 <b style="font-size:20px">${esc(s.name)}</b>
@@ -211,8 +208,7 @@ async function processScan(studentId, mode, type = null) {
                 <button onclick="this.closest('dialog').close(); S.tab='menu';render();">Terminer</button>
             </div>`);
     } else {
-        // Mode Paiement : ouvrir la fiche élève
-        vScanQR(); // Réinitialiser en arrière-plan
-        menu(s.id); // Ouvre le menu de l'élève
+        vScanQR();
+        menu(s.id);
     }
 }
