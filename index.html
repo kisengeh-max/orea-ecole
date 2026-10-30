@@ -9,6 +9,12 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="style.css">
+<style>
+  /* Styles pour le scanner */
+  #qr-reader { border: none !important; border-radius: 12px; overflow: hidden; }
+  #qr-reader video { border-radius: 12px; object-fit: cover; }
+  #qr-reader__dashboard_section_csr button { background: var(--gl) !important; color: #111 !important; border: none !important; border-radius: 8px; padding: 8px 16px; font-weight: bold; }
+</style>
 </head>
 <body>
 <header><img src="icon-192.png" alt=""><b id="hs">ORÉA École</b></header>
@@ -21,11 +27,14 @@
 <dialog id="dlg"></dialog>
 <div id="toast" hidden></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 <script src="ambassadeur.js"></script>
 <script src="ambadmin.js"></script>
 <script src="notes.js"></script>
+<script src="scan.js"></script>
 <script src="reminders.js"></script>
 </body>
 </html>
