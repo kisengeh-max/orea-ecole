@@ -690,6 +690,7 @@ nav button:not(.on) svg{opacity:.75}
 #sp.out{opacity:0;pointer-events:none}
 #sp > div{text-align:center}
 #sp img{width:180px;border-radius:20px;display:block;margin:0 auto 20px}
+#sp img.ll{display:none !important} /* AJOUT : Cache le logo blanc au démarrage */
 #sp i{
   display:block;
   width:60px;
@@ -773,4 +774,4 @@ nav button:not(.on) svg{opacity:.75}
 /* ---------- Accessibilité : animations réduites ---------- */
 @media(prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
-  }
+                                                        }
