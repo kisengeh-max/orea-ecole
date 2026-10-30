@@ -113,14 +113,14 @@ async function vNotesCourses() {
     $('#main').innerHTML = h + SK;
 
     const { data: cs } = await db.from('class_subjects').select('subject_id, subjects(name)').eq('class_id', S.noteClass);
-    const list = cs || [];
+    S.notesCoursesList = cs || [];
 
     h += `<div class=bar style="margin-bottom:10px"><button class=ghost onclick="manageClassCourses()">⚙️ Gérer les cours de cette classe</button></div>`;
     
-    if (!list.length) {
+    if (!S.notesCoursesList.length) {
         h += `<p class=empty>Aucun cours assigné à cette classe.</p>`;
     } else {
-        h += `<div class=cgrid>` + list.map(x => {
+        h += `<div class=cgrid>` + S.notesCoursesList.map(x => {
             return `<div class=ccard onclick="askNoteParams('${x.subject_id}', '${esc(x.subjects.name)}')">
                 <b style="font-size:14px; white-space:normal">${esc(x.subjects.name)}</b>
             </div>`;
@@ -131,7 +131,7 @@ async function vNotesCourses() {
 
 function askNoteParams(subjId, subjName) {
     S.noteSubject = subjId;
-    const d = show(`<h3>${esc(subjName)}</h3>
+    show(`<h3>${esc(subjName)}</h3>
         <div class="card col" style="padding:15px">
             <label>Type d'évaluation</label>
             <select id=np_type>
@@ -140,30 +140,43 @@ function askNoteParams(subjId, subjName) {
                 <option value="Examen">Examen</option>
             </select>
             <label style="margin-top:10px">Base (note maximale)</label>
-            <select id=np_base">
+            <select id=np_base>
                 <option value="5">Sur 5</option>
                 <option value="10">Sur 10</option>
                 <option value="20" selected>Sur 20</option>
                 <option value="100">Sur 100</option>
             </select>
             <label style="margin-top:10px">Trimestre</label>
-            <select id=np_term">
+            <select id=np_term>
                 <option value="1">Trimestre 1</option>
                 <option value="2">Trimestre 2</option>
                 <option value="3">Trimestre 3</option>
             </select>
         </div>
-        <div class=row><button class=ghost onclick="this.closest('dialog').close()">Annuler</button><button onclick="startCotation()">Continuer →</button></div>
+        <div class=row><button class=ghost onclick="this.closest('dialog').close()">Annuler</button><button onclick="window.startCotation()">Continuer →</button></div>
     `);
 }
 
-function startCotation() {
-    S.noteType = $('#np_type').value;
-    S.noteBase = parseFloat($('#np_base').value);
-    S.notesTerm = parseInt($('#np_term').value);
-    $('#dlg').close();
-    S.notesView = 'cotation';
-    render();
+// Correction du bug de fermeture / rafraîchissement
+window.startCotation = function() {
+    try {
+        S.noteType = document.getElementById('np_type').value;
+        S.noteBase = parseFloat(document.getElementById('np_base').value);
+        S.notesTerm = parseInt(document.getElementById('np_term').value);
+        
+        // On ferme la fenêtre
+        const dlg = document.getElementById('dlg');
+        if (dlg) dlg.close();
+        
+        // On change de vue
+        S.notesView = 'cotation';
+        
+        // On laisse 100ms au navigateur pour fermer la fenêtre proprement, puis on rafraîchit
+        setTimeout(() => { render(); }, 100);
+    } catch (e) {
+        console.error(e);
+        toast('Erreur: ' + e.message);
+    }
 }
 
 // ==========================================
@@ -189,6 +202,8 @@ async function vNotesCotation() {
     
     const gMap = Object.fromEntries((grades || []).map(g => [g.student_id, g.grade]));
     const st = S.stu.filter(s => s.class_id === S.noteClass).sort((a,b) => a.name.localeCompare(b.name, 'fr'));
+
+    if (!st.length) { $('#main').innerHTML = h + `<p class=empty>Aucun élève dans cette classe.</p>`; return; }
 
     h += `<div id=nc_list>` + st.map((s, i) => {
         const val = gMap[s.id] !== undefined ? gMap[s.id] : '';
@@ -230,7 +245,6 @@ async function saveNote(sid, val) {
     if (existing) await db.from('grades').update({ grade, max_grade: S.noteBase }).eq('id', existing.id);
     else await db.from('grades').insert(payload);
     
-    // Toast discret pour ne pas gêner la saisie
     const t = $('#toast'); if(t){ t.textContent = '✓ Enregistré'; t.hidden = false; setTimeout(()=>t.hidden=true, 1000); }
 }
 
@@ -242,7 +256,7 @@ async function manageClassCourses() {
     const { data: assigned } = await db.from('class_subjects').select('subject_id').eq('class_id', S.noteClass);
     const assignedIds = new Set((assigned || []).map(a => a.subject_id));
 
-    const d = show(`<h3>Cours de la classe</h3>
+    show(`<h3>Cours de la classe</h3>
         <div style="max-height:50vh; overflow-y:auto; margin-bottom:15px">
             ${allSubj.map(sub => `
                 <div class="card" style="padding:10px;margin:5px 0">
@@ -269,7 +283,7 @@ async function toggleClassCourse(subjId, isAssigned) {
         await db.from('class_subjects').insert({ school_id: S.school.id, class_id: S.noteClass, subject_id: subjId });
     }
     $('#dlg').close();
-    setTimeout(() => manageClassCourses(), 50); // Rouvre le dialogue
+    setTimeout(() => manageClassCourses(), 50); 
 }
 
 async function addNewSubject() {
@@ -281,7 +295,7 @@ async function addNewSubject() {
 }
 
 // ==========================================
-// BULLETINS (Mise à jour pour le format sans coefficient)
+// BULLETINS
 // ==========================================
 async function vBulletins() {
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Bulletins</h3>`;
@@ -319,7 +333,6 @@ async function previewBulletin() {
     const { data: grades } = await db.from('grades').select('*, subjects(name)').eq('student_id', S.bulStu).eq('term', S.bulTerm);
     if (!grades || !grades.length) { el.innerHTML = `<p class=empty>Aucune note pour ce trimestre.</p>`; return; }
     
-    // Regroupement par cours
     const bySubj = {};
     grades.forEach(g => { 
         const sName = g.subjects?.name || 'Inconnu';
@@ -332,7 +345,6 @@ async function previewBulletin() {
     
     Object.keys(bySubj).sort().forEach(subName => {
         const list = bySubj[subName];
-        // On ramène chaque note sur 20
         let totalOn20 = 0;
         list.forEach(g => { totalOn20 += (g.grade / g.max_grade) * 20; });
         const avg = totalOn20 / list.length;
