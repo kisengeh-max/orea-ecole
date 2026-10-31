@@ -1,35 +1,12 @@
 // ORÉA École — Module NOTES pour l'Espace Parent (Lecture & Bulletins)
 
-// 1) Ajout de l'onglet "Notes" dans la navigation du parent
-const _origNavView = window.navView;
-window.navView = function() {
-    let html = _origNavView();
-    // On ajoute l'onglet Notes avant l'onglet Scolarité
-    if (html.includes('Scolarité')) {
-        const notesTab = `<button style="flex:1;background:none;border:none;padding:10px 0;color:${P.tab === 'notes' ? 'var(--gold,#b08a30)' : 'var(--muted,#a8a495)'};font-size:10.5px;font-weight:${P.tab === 'notes' ? 'bold' : 'normal'};cursor:pointer" onclick="P.tab='notes';render()"><div style="font-size:19px;margin-bottom:2px">📝</div>Notes</button>`;
-        // On insère avant le bouton Scolarité
-        html = html.replace(/<button[^>]*onclick="P\.tab='scolarite'[^>]*>.*?<\/button>/s, notesTab + '$&');
-    }
-    return html;
-};
-
-// 2) Interception du routeur pour afficher la vue Notes
-const _origRenderParent = window.render;
-window.render = function() {
-    if (P.tab === 'notes') {
-        parentNotesView();
-        return;
-    }
-    _origRenderParent();
-};
-
-// 3) Vue principale des notes pour le parent
+// 1) Vue principale des notes pour le parent
 async function parentNotesView() {
     let h = `<h2 style="color:var(--gold);margin:10px 0">📝 Notes & Bulletins</h2>`;
     
     if (!P.children.length) {
         h += `<div class=p-empty>Ajoutez un enfant pour voir ses notes.</div>`;
-        $('#pmain').innerHTML = h + navView() + '<div style="height:80px"></div>';
+        $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
         return;
     }
 
@@ -48,7 +25,7 @@ async function parentNotesView() {
         </div>`;
 
         h += `<div id="p_notes_list">${SK}</div>`;
-        $('#pmain').innerHTML = h + navView() + '<div style="height:80px"></div>';
+        $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
         
         drawParentNotes(kid.id, P.noteTerm);
         return;
@@ -62,10 +39,10 @@ async function parentNotesView() {
         </div>
     `).join('');
 
-    $('#pmain').innerHTML = h + navView() + '<div style="height:80px"></div>';
+    $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
 }
 
-// 4) Affichage des notes et calcul des moyennes
+// 2) Affichage des notes et calcul des moyennes
 async function drawParentNotes(studentId, term) {
     const el = $('#p_notes_list');
     if (!el) return;
@@ -114,7 +91,7 @@ async function drawParentNotes(studentId, term) {
     S.parentBulletinData = { studentId, term, bySubj, genAvg, name: P.children.find(c => c.id === studentId).name };
 }
 
-// 5) Fonctions utilitaires pour le PDF (copiées de app.js)
+// 3) Fonctions utilitaires pour le PDF (copiées de app.js)
 const _pWin = { '€': 128, '…': 133, '‘': 145, '’': 146, '“': 147, '”': 148, '–': 150, '—': 151, 'œ': 156, 'Œ': 140 };
 const _pWenc = s => String(s ?? '').replace(/[\u202f\u00a0\u2009]/g, ' ').replace(/[\s\S]/g, c => { const k = c.charCodeAt(0); return _pWin[c] ? String.fromCharCode(_pWin[c]) : k < 32 ? ' ' : k < 256 ? c : '?'; }).replace(/[\\()]/g, '\\$&');
 const _pDl = (blob, name) => { const u = URL.createObjectURL(blob), a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 5000); };
@@ -161,7 +138,7 @@ function _pMkPdf(o) {
     return u;
 }
 
-// 6) Génération du PDF côté Parent
+// 4) Génération du PDF côté Parent
 function parentGenBulletin(studentId, term) {
     const data = S.parentBulletinData;
     if (!data || data.studentId !== studentId) return toast('Données introuvables');
@@ -192,4 +169,4 @@ function parentGenBulletin(studentId, term) {
         _pDl(new Blob([pdfData], { type: 'application/pdf' }), _pFnm(r.name, 'pdf'));
         toast('Bulletin téléchargé');
     } catch (e) { toast('Erreur PDF'); }
-           }
+        }
