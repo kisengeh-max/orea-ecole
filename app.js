@@ -227,7 +227,8 @@ function promote() {
         d.close(); S.year = tg; localStorage['orea_year_' + S.school.id] = tg; S.cls = null; await load(); render();
         toast(rows.length + ' élève(s) inscrit(s) en ' + tg + (rep ? ' · ' + rep + ' impayé(s) reporté(s)' : ''));
     };
-                                            }
+}
+
 /* ---------- Hors connexion ---------- */
 function saveSnap() { try { localStorage.orea_snap = JSON.stringify({ uid: S.me.id, me: S.me, school: S.school, classes: S.classes, stu: S.stu, fees: S.fees, fpaid: S.fpaid, terms: S.terms, at: Date.now() }); } catch { } }
 function readSnap() { try { return JSON.parse(localStorage.orea_snap || 'null'); } catch { return null; } }
@@ -404,7 +405,7 @@ function goTab(t) {
 function menuGo(t) {
     if (S.tab === 'accueil' && !(history.state && history.state.t)) history.pushState({ t: 1 }, '');
     S.tab = t; render();
-    }
+}
 const SK = '<div class=sk></div>'.repeat(4);
 const ICON = {
     accueil: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/>',
@@ -532,6 +533,8 @@ const sorts = {
     solde: (a, b) => b.balance_cdf - a.balance_cdf,
     retard: (a, b) => { const k = s => s.balance_cdf > 0 ? (s.last_pay ? +new Date(s.last_pay) : 0) : 9e15; return k(a) - k(b); }
 };
+
+
 /* ---------- Onglet École : grille de classes ---------- */
 document.head.insertAdjacentHTML('beforeend', '<style>'
     + '.cgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}'
@@ -691,7 +694,7 @@ function menu(id) {
         btn.textContent = '🔑 Code : ' + data.access_code + ' (toucher pour copier)';
         btn.onclick = () => { (navigator.clipboard ? navigator.clipboard.writeText(data.access_code) : Promise.reject()).then(() => toast('Code copié !')).catch(() => toast('Code : ' + data.access_code)); };
     });
-        }
+}
 /* ---------- Trimestres et WhatsApp ---------- */
 const COUNTRY = '243';
 const trims = s => [1, 2, 3].map(i => { const due = Number(s['due' + i + '_cdf'] || 0), paid = Number(s['p' + i + '_cdf'] || 0); return [i, Math.max(0, due - paid), due, paid]; });
@@ -920,6 +923,7 @@ async function journal() {
     const d = show(`<h3>Journal d’activité</h3>${a.length ? a.map(r => `<div class="card col"><b>${T[r.tbl] || r.tbl} ${esc(line(r))}</b><small>${new Date(r.created_at).toLocaleString('fr-FR')} · ${esc(nm[r.user_id] || '?')}</small></div>`).join('') : '<p class=empty data-ic="📋">Aucune activité.</p>'}<button class=ghost id=jc>Fermer</button>`);
     d.querySelector('#jc').onclick = () => d.close();
 }
+
 async function receipt(p, sid) {
     const s = S.stu.find(x => x.id === sid), c = S.classes.find(x => x.id === s.class_id);
     const cv = document.createElement('canvas'); cv.width = 640; cv.height = 900; const x = cv.getContext('2d');
@@ -1015,7 +1019,8 @@ async function vAccueil() {
     if (S.tab !== 'accueil') return;
     $('#main').innerHTML = h;
     if (R === 'directeur') monthChart();
-        }
+}
+
 /* ---------- Présences ---------- */
 async function vPresences() {
     if (!yc().length) { $('#main').innerHTML = ybar() + `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><p class=empty>Crée d’abord une classe.</p>`; return; }
@@ -1161,6 +1166,9 @@ function vReglages() {
         if (error) return toast(error.message); S.school = data; await load(); toast('Taux enregistrés');
     };
 }
+
+// --- DÉBUT DE LA TRANCHE 7 (FINALE) ---
+
 function editTemplates() {
     const t = S.school.message_templates || {};
     let cu = (t.custom || []).map(c => ({ ...c })), fr = t.frais || feeMsg({ name: '{eleve}', class_id: '', balance_cdf: 0 });
@@ -1639,7 +1647,7 @@ async function reportImg(key, label) {
     const d = show(`<h3>Rapport · ${esc(label)}</h3><div class=col><button id=ps>📤 Partager</button><a class="btn ghost" download="${fn}" href="${url}">Télécharger PNG</a><button class=ghost id=pc>Fermer</button></div><img src="${url}" alt="Rapport">`);
     d.querySelector('#pc').onclick = () => d.close();
     d.querySelector('#ps').onclick = async () => { if (can) { try { await navigator.share({ files: [file], text: 'Rapport ' + label + ' — ' + S.school.name }); } catch (e) { if (e.name !== 'AbortError') toast('Partage impossible.'); } } else { dl(blob, fn); toast('Image enregistrée.'); } };
-        }
+}
 /* ========================================================
    PAQUET K5 — Devoirs & Emploi du temps
    ======================================================== */
@@ -1794,24 +1802,340 @@ window.pAdminReply = function(sid) {
         d.close(); toast('Envoyé ✓'); pAdminInbox();
     };
 };
+
+// --- MODIFICATION : Affichage détaillé des justificatifs ---
 window.pAdminJustifs = async function() {
     const { data } = await db.from('absence_justifications').select('*, students(name)').eq('status', 'en_attente').order('created_at');
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Justificatifs en attente</h3>`;
     if (!data || !data.length) h += `<p class=empty>Aucun justificatif à traiter.</p>`;
-    else h += data.map(j => `<div class="card col"><b>${esc(j.students?.name || '')} · ${new Date(j.day + 'T00:00').toLocaleDateString('fr-FR')}</b><small>${esc(j.reason)}</small><div class=row><button onclick="pAdminJustifAct('${j.id}','approuve')">Approuver</button><button class=ghost onclick="pAdminJustifAct('${j.id}','refuse')">Refuser</button></div></div>`).join('');
+    else h += data.map(j => {
+        const typeLabel = j.type === 'absence' ? 'Absence' : j.type === 'retard' ? 'Retard' : j.type === 'depart' ? 'Départ anticipé' : 'Autre';
+        const timeTxt = j.time ? ` à ${j.time}` : '';
+        const endTxt = j.end_date ? ` (jusqu'au ${new Date(j.end_date + 'T00:00').toLocaleDateString('fr-FR')})` : '';
+        return `<div class="card col"><b>${esc(j.students?.name || '')} · ${typeLabel} · ${new Date(j.day + 'T00:00').toLocaleDateString('fr-FR')}${timeTxt}${endTxt}</b><small>${esc(j.reason)}</small><div class=row><button onclick="pAdminJustifAct('${j.id}','approuve', '${j.student_id}', '${j.day}', '${j.end_date || ''}')">Approuver</button><button class=ghost onclick="pAdminJustifAct('${j.id}','refuse')">Refuser</button></div></div>`;
+    }).join('');
     $('#main').innerHTML = h;
 };
-window.pAdminJustifAct = async function(id, st) {
+
+// --- MODIFICATION : Mise à jour de l'appel si approuvé ---
+window.pAdminJustifAct = async function(id, st, studentId, day, endDate) {
     await db.from('absence_justifications').update({ status: st }).eq('id', id);
-    toast('Mis à jour'); pAdminJustifs();
+    if (st === 'approuve' && studentId && day) {
+        // Mise à jour automatique de l'appel
+        const dates = [day];
+        if (endDate) {
+            let d = new Date(day + 'T00:00');
+            const end = new Date(endDate + 'T00:00');
+            while (d < end) {
+                d.setDate(d.getDate() + 1);
+                if (d <= end) dates.push(d.toLocaleDateString('sv-SE'));
+            }
+        }
+        const rows = dates.map(d => ({ school_id: S.school.id, student_id: studentId, day: d, status: 'present' }));
+        await db.from('attendance').upsert(rows, { onConflict: 'student_id,day' });
+        toast('Justificatif accepté et présence mise à jour ✓');
+    } else {
+        toast('Mis à jour');
+    }
+    pAdminJustifs();
 };
+
+// --- MODIFICATION : Date de fin pour les annonces ---
 window.pAdminAnnonce = function() {
-    const d = show(`<form method=dialog><h3>Nouvelle annonce</h3><label>Titre<input name=titre required></label><label>Contenu<textarea name=txt rows=4 style="width:100%" required></textarea></label><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Publier</button></div></form>`);
+    const d = show(`<form method=dialog><h3>Nouvelle annonce</h3><label>Titre<input name=titre required></label><label>Contenu<textarea name=txt rows=4 style="width:100%" required></textarea></label><label>Date de fin (facultatif)<input type="date" name=end></label><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Publier</button></div></form>`);
     d.querySelector('form').onsubmit = async e => {
         if (e.submitter.value !== 'ok') return;
         e.preventDefault();
         const f = e.target;
-        await db.from('announcements').insert({ school_id: S.school.id, author_id: S.me.id, title: f.titre.value.trim(), content: f.txt.value.trim() });
+        await db.from('announcements').insert({ school_id: S.school.id, author_id: S.me.id, title: f.titre.value.trim(), content: f.txt.value.trim(), end_date: f.end.value || null });
         d.close(); toast('Annonce publiée ✓');
     };
 };
+
+/* ---------- Rapport mensuel (image PNG partageable) ---------- */
+const cnm2 = id => { const c = S.classes.find(x => x.id === id); return c ? c.name + (yrs().length > 1 ? ' · ' + cy(c) : '') : '—'; };
+function monthReport() {
+    const now = new Date(), ms = [];
+    for (let i = 0; i < 12; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1), l = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }); ms.push([d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), l.charAt(0).toUpperCase() + l.slice(1)]); }
+    const d = show(`<h3>Rapport mensuel</h3><div class=col><label>Mois<select id=rm>${ms.map(m => `<option value="${m[0]}">${m[1]}</option>`).join('')}</select></label><small>Montants affichés en ${S.cur}. L’état actuel concerne l’année ${esc(S.year || '—')}.</small><button id=rg>Générer le rapport</button><button class=ghost id=rx>Fermer</button></div>`);
+    d.querySelector('#rx').onclick = () => d.close();
+    d.querySelector('#rg').onclick = e => { const k = d.querySelector('#rm').value; exRun(e.currentTarget, () => reportImg(k, ms.find(m => m[0] === k)[1])); };
+}
+async function reportImg(key, label) {
+    const [y, m] = key.split('-').map(Number), a = new Date(y, m - 1, 1), b = new Date(y, m, 1), nk = b.getFullYear() + '-' + String(b.getMonth() + 1).padStart(2, '0') + '-01';
+    const q = n => pageAll(() => db.from(n).select('student_id,amount_cdf,method,created_at').gte('created_at', a.toISOString()).lt('created_at', b.toISOString()));
+    const [p, f, c] = await Promise.all([q('payments'), q('fee_payments'), db.from('closures').select('expected_cash,declared_cash').gte('day', key + '-01').lt('day', nk)]);
+    const er = p.error || f.error; if (er) throw new Error(er.message);
+    const rows = p.data.concat(f.data), ids = new Map(S.stu.map(s => [s.id, s])), tot = sum(rows), esp = sum(rows.filter(r => r.method === 'especes')), by = {};
+    rows.forEach(r => { const s = ids.get(r.student_id); if (s) by[s.class_id] = (by[s.class_id] || 0) + Number(r.amount_cdf); });
+    const cl = Object.entries(by).map(([id, v]) => [cnm2(id), v]).sort((u, v) => v[1] - u[1]).slice(0, 8), mx = Math.max(...cl.map(z => z[1]), 1);
+    const cs = c.data || [], ecart = cs.reduce((t, k) => t + Number(k.declared_cash) - Number(k.expected_cash), 0);
+    const st = ys(), sm = k => st.reduce((t, s) => t + Number(s[k] || 0), 0), exp = sm('due1_cdf') + sm('due2_cdf') + sm('due3_cdf') + sm('fee_exp_cdf'), due = sm('balance_cdf'), pct = exp > 0 ? Math.max(0, Math.min(100, Math.round(100 * (1 - due / exp)))) : 0, owe = st.filter(s => s.balance_cdf > 0).length;
+    const R = [['Taux de recouvrement', pct + ' %'], ['Reste à encaisser', fmt(due)], ['Élèves avec un solde', owe + ' / ' + st.length]];
+    if (hasTerms()) R.push(['Élèves en retard', String(st.filter(s => status(s) === 'late').length)]);
+    if (cs.length) R.push(['Écart de caisse (' + cs.length + ' clôture' + (cs.length > 1 ? 's' : '') + ')', fmt(ecart)]);
+    const W = 720, CH = Math.max(cl.length, 1), y0 = 545, yS = y0 + CH * 50 + 30, yF = yS + 45 + (R.length - 1) * 44 + 70, H = yF + 40;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
+    x.fillStyle = '#fffdf6'; x.fillRect(0, 0, W, H);
+    const gg = x.createLinearGradient(0, 0, W, H); gg.addColorStop(0, '#e9cf86'); gg.addColorStop(.5, '#b08a30'); gg.addColorStop(1, '#8a6a1f');
+    x.strokeStyle = gg; x.lineWidth = 4; x.strokeRect(14, 14, W - 28, H - 28); x.lineWidth = 1; x.strokeRect(24, 24, W - 48, H - 48);
+    const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = 'logo-light.png'; });
+    if (im) x.drawImage(im, 295, 44, 130, 130);
+    x.textAlign = 'center'; x.fillStyle = '#111211'; x.font = 'bold 30px Georgia,serif'; x.fillText(S.school.name, W / 2, 215);
+    x.fillStyle = '#6b6a60'; x.font = '20px Georgia,serif'; x.fillText('Rapport d’activité · ' + label, W / 2, 248);
+    x.fillStyle = gg; x.fillRect(W / 2 - 130, 268, 260, 2);
+    x.fillStyle = '#6b6a60'; x.font = '18px sans-serif'; x.fillText('Encaissé ce mois', W / 2, 330);
+    const big = fmt(tot); let fs = 58; x.font = '600 ' + fs + 'px Georgia,serif'; while (x.measureText(big).width > 600 && fs > 30) { fs -= 2; x.font = '600 ' + fs + 'px Georgia,serif'; }
+    x.fillStyle = '#9a7a2c'; x.fillText(big, W / 2, 400);
+    x.fillStyle = '#111211'; x.font = '17px sans-serif'; x.fillText(rows.length + ' paiement' + (rows.length > 1 ? 's' : '') + ' · Espèces ' + fmt(esp) + ' · Mobile Money ' + fmt(tot - esp), W / 2, 440);
+    x.textAlign = 'left'; x.fillStyle = '#111211'; x.font = 'bold 22px Georgia,serif'; x.fillText('Encaissements par classe', 50, 500);
+    if (!cl.length) { x.fillStyle = '#6b6a60'; x.font = '17px sans-serif'; x.fillText('Aucun paiement ce mois-ci.', 50, y0 + 10); }
+    cl.forEach((r, i) => { const yy = y0 + i * 50; x.textAlign = 'left'; x.fillStyle = '#111211'; x.font = '18px sans-serif'; x.fillText(r[0], 50, yy); x.textAlign = 'right'; x.font = 'bold 18px Georgia,serif'; x.fillText(fmt(r[1]), W - 50, yy); x.fillStyle = '#e8e0cc'; x.fillRect(50, yy + 10, W - 100, 8); x.fillStyle = gg; x.fillRect(50, yy + 10, Math.max(4, (W - 100) * r[1] / mx), 8); });
+    x.textAlign = 'left'; x.fillStyle = '#111211'; x.font = 'bold 22px Georgia,serif'; x.fillText('État actuel · ' + (S.year || '—'), 50, yS);
+    R.forEach((r, i) => { const yy = yS + 45 + i * 44; x.strokeStyle = '#e0d8c4'; x.lineWidth = 1; x.beginPath(); x.moveTo(50, yy + 14); x.lineTo(W - 50, yy + 14); x.stroke(); x.textAlign = 'left'; x.fillStyle = '#6b6a60'; x.font = '18px sans-serif'; x.fillText(r[0], 50, yy); x.textAlign = 'right'; x.fillStyle = '#111211'; x.font = 'bold 19px Georgia,serif'; x.fillText(r[1], W - 50, yy); });
+    x.textAlign = 'center'; x.fillStyle = '#6b6a60'; x.font = '15px sans-serif'; x.fillText('Édité le ' + new Date().toLocaleDateString('fr-FR') + ' — ORÉA École', W / 2, yF);
+    const blob = await new Promise(r => cv.toBlob(r, 'image/png')), url = URL.createObjectURL(blob), fn = 'rapport-' + key + '.png', file = new File([blob], fn, { type: 'image/png' }), can = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+    const d = show(`<h3>Rapport · ${esc(label)}</h3><div class=col><button id=ps>📤 Partager</button><a class="btn ghost" download="${fn}" href="${url}">Télécharger PNG</a><button class=ghost id=pc>Fermer</button></div><img src="${url}" alt="Rapport">`);
+    d.querySelector('#pc').onclick = () => d.close();
+    d.querySelector('#ps').onclick = async () => { if (can) { try { await navigator.share({ files: [file], text: 'Rapport ' + label + ' — ' + S.school.name }); } catch (e) { if (e.name !== 'AbortError') toast('Partage impossible.'); } } else { dl(blob, fn); toast('Image enregistrée.'); } };
+}
+/* ========================================================
+   PAQUET K5 — Devoirs & Emploi du temps
+   ======================================================== */
+function vDevoirs() {
+    const R = S.me.role;
+    if (!yc().length) { $('#main').innerHTML = ybar() + `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><p class=empty>Crée d'abord une classe.</p>`; return; }
+    if (!yc().some(c => c.id === S.cls)) S.cls = yc()[0].id;
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Devoirs</h3>` + ybar();
+    h += `<div class=bar><select id=dvc>${yc().map(c => `<option value="${c.id}" ${c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
+    if (R === 'directeur' || R === 'enseignant') h += `<button onclick=addAssignment()>+ Nouveau devoir</button>`;
+    h += `<div id=dvl><div class=sk></div><div class=sk></div><div class=sk></div></div>`;
+    $('#main').innerHTML = h;
+    $('#dvc').onchange = e => { S.cls = e.target.value; drawDevoirs(); };
+    drawDevoirs();
+}
+async function drawDevoirs() {
+    const { data, error } = await db.from('assignments').select('*').eq('class_id', S.cls).order('due_date', { ascending: false });
+    if (S.tab !== 'devoirs') return;
+    const el = $('#dvl'); if (!el) return;
+    if (error) { el.innerHTML = `<p class=empty>${esc(error.message)}</p>`; return; }
+    const R = S.me.role, l = data || [];
+    if (!l.length) { el.innerHTML = `<p class=empty data-ic="📝">Aucun devoir pour cette classe.</p>`; return; }
+    const today = tdy();
+    el.innerHTML = l.map(a => {
+        const late = String(a.due_date) < today;
+        const can = R === 'directeur' || R === 'enseignant';
+        return `<div class="card col" style="${late ? 'border-left:3px solid var(--bad)' : 'border-left:3px solid var(--gold)'}"><b>${esc(a.subject)}</b><small>${late ? '⚠ Rendu' : 'À rendre'} le ${fdate(a.due_date)}</small><span>${esc(a.description)}</span>${can ? `<div class=row><button class=ghost data-e="${a.id}">✏️ Modifier</button><button class=ghost data-x="${a.id}">🗑</button></div>` : ''}</div>`;
+    }).join('');
+    el.querySelectorAll('[data-e]').forEach(b => b.onclick = () => editAssignment(b.dataset.e));
+    el.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => { if (!confirm('Supprimer ce devoir ?')) return; const { error } = await db.from('assignments').delete().eq('id', b.dataset.x); if (error) return toast(error.message); toast('Supprimé'); drawDevoirs(); });
+}
+function addAssignment() {
+    if (!S.cls) return toast('Sélectionne une classe');
+    const cn = (S.classes.find(c => c.id === S.cls) || {}).name || '';
+    ask('Nouveau devoir — ' + esc(cn), [
+        { n: 'subject', l: 'Matière / titre court' },
+        { n: 'description', l: 'Description', t: 'textarea' },
+        { n: 'due', l: 'À rendre le', t: 'date', v: tdy() }
+    ], async v => {
+        const { error } = await db.from('assignments').insert({ school_id: S.school.id, class_id: S.cls, subject: v.subject.trim(), description: v.description.trim(), due_date: v.due, year: S.year || '', created_by: S.me.id });
+        if (error) throw error; toast('Devoir ajouté'); drawDevoirs();
+    });
+}
+async function editAssignment(id) {
+    const { data: a, error } = await db.from('assignments').select('*').eq('id', id).single();
+    if (error || !a) return toast('Introuvable');
+    ask('Modifier le devoir', [
+        { n: 'subject', l: 'Matière / titre', v: a.subject },
+        { n: 'description', l: 'Description', t: 'textarea', v: a.description },
+        { n: 'due', l: 'À rendre le', t: 'date', v: a.due_date }
+    ], async v => {
+        const { error } = await db.from('assignments').update({ subject: v.subject.trim(), description: v.description.trim(), due_date: v.due }).eq('id', id);
+        if (error) throw error; toast('Modifié'); drawDevoirs();
+    });
+}
+
+const hhmmP = t => t ? String(t).slice(0, 5) : '';
+function vEmploiTemps() {
+    const R = S.me.role;
+    if (!yc().length) { $('#main').innerHTML = ybar() + `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><p class=empty>Crée d'abord une classe.</p>`; return; }
+    if (!yc().some(c => c.id === S.cls)) S.cls = yc()[0].id;
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Emploi du temps</h3>` + ybar();
+    h += `<div class=bar><select id=ttc>${yc().map(c => `<option value="${c.id}" ${c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
+    if (R === 'directeur' || R === 'enseignant') h += `<button onclick=addSlot()>+ Créneau</button>`;
+    h += `<div id=ttl><div class=sk></div><div class=sk></div><div class=sk></div></div>`;
+    $('#main').innerHTML = h;
+    $('#ttc').onchange = e => { S.cls = e.target.value; drawTT(); };
+    drawTT();
+}
+async function drawTT() {
+    const { data, error } = await db.from('timetable').select('*').eq('class_id', S.cls).order('day').order('start_time');
+    if (S.tab !== 'emploi_temps') return;
+    const el = $('#ttl'); if (!el) return;
+    if (error) { el.innerHTML = `<p class=empty>${esc(error.message)}</p>`; return; }
+    const l = data || [], R = S.me.role;
+    if (!l.length) { el.innerHTML = `<p class=empty data-ic="📅">Aucun créneau pour cette classe.</p>`; return; }
+    const byDay = {}; l.forEach(t => (byDay[t.day] = byDay[t.day] || []).push(t));
+    const days = Object.keys(byDay).map(Number).sort((a, b) => a - b);
+    el.innerHTML = days.map(d => `<h3>${['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'][d] || ''}</h3>` + byDay[d].map(t => {
+        const can = R === 'directeur' || R === 'enseignant';
+        return `<div class=card><span><b>${esc(t.subject)}</b><br><small>${hhmmP(t.start_time)} – ${hhmmP(t.end_time)}${t.room ? ' · ' + esc(t.room) : ''}</small></span>${can ? `<div class=row style="margin:0"><button class=ghost data-e="${t.id}" style="width:auto;min-height:36px;padding:6px 10px">✏️</button><button class=ghost data-x="${t.id}" style="width:auto;min-height:36px;padding:6px 10px">🗑</button></div>` : ''}</div>`;
+    }).join('')).join('');
+    el.querySelectorAll('[data-e]').forEach(b => b.onclick = () => editSlot(b.dataset.e));
+    el.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => { if (!confirm('Supprimer ce créneau ?')) return; const { error } = await db.from('timetable').delete().eq('id', b.dataset.x); if (error) return toast(error.message); toast('Supprimé'); drawTT(); });
+}
+function addSlot() {
+    if (!S.cls) return toast('Sélectionne une classe');
+    ask('Nouveau créneau — ' + esc((S.classes.find(c => c.id === S.cls) || {}).name || ''), [
+        { n: 'day', l: 'Jour', o: [['1', 'Lundi'], ['2', 'Mardi'], ['3', 'Mercredi'], ['4', 'Jeudi'], ['5', 'Vendredi'], ['6', 'Samedi'], ['0', 'Dimanche']], v: '1' },
+        { n: 'start', l: 'Heure début', t: 'time', v: '08:00' },
+        { n: 'end', l: 'Heure fin', t: 'time', v: '09:00' },
+        { n: 'subject', l: 'Matière' },
+        { n: 'room', l: 'Salle (facultatif)', r: false }
+    ], async v => {
+        if (v.end <= v.start) throw Error("L'heure de fin doit être après le début");
+        const { error } = await db.from('timetable').insert({ school_id: S.school.id, class_id: S.cls, year: S.year || '', day: +v.day, start_time: v.start, end_time: v.end, subject: v.subject.trim(), room: v.room.trim() || null });
+        if (error) throw error; toast('Créneau ajouté'); drawTT();
+    });
+}
+async function editSlot(id) {
+    const { data: t, error } = await db.from('timetable').select('*').eq('id', id).single();
+    if (error || !t) return toast('Introuvable');
+    ask('Modifier le créneau', [
+        { n: 'day', l: 'Jour', o: [['1', 'Lundi'], ['2', 'Mardi'], ['3', 'Mercredi'], ['4', 'Jeudi'], ['5', 'Vendredi'], ['6', 'Samedi'], ['0', 'Dimanche']], v: String(t.day) },
+        { n: 'start', l: 'Heure début', t: 'time', v: hhmmP(t.start_time) },
+        { n: 'end', l: 'Heure fin', t: 'time', v: hhmmP(t.end_time) },
+        { n: 'subject', l: 'Matière', v: t.subject },
+        { n: 'room', l: 'Salle', r: false, v: t.room || '' }
+    ], async v => {
+        if (v.end <= v.start) throw Error("L'heure de fin doit être après le début");
+        const { error } = await db.from('timetable').update({ day: +v.day, start_time: v.start, end_time: v.end, subject: v.subject.trim(), room: v.room.trim() || null }).eq('id', id);
+        if (error) throw error; toast('Modifié'); drawTT();
+    });
+}
+
+/* ---------- Initialisation finale ---------- */
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+window.addEventListener('online', () => { S.offline ? boot() : qsync(); });
+window.addEventListener('offline', qui);
+setInterval(qsync, 30000);
+boot();
+
+/* ========================================================
+   PAQUET K2 — Parents & Communication (admin côté école)
+   ======================================================== */
+window.pAdminInbox = async function() {
+    const { data } = await db.from('parent_messages').select('*, students(name)').order('created_at', { ascending: false }).limit(50);
+    if (!data) return;
+    const grouped = {};
+    data.forEach(m => { if (!grouped[m.student_id]) grouped[m.student_id] = []; grouped[m.student_id].push(m); });
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Messages Parents</h3>`;
+    if (!Object.keys(grouped).length) h += `<p class=empty>Aucun message.</p>`;
+    else {
+        h += Object.entries(grouped).map(([sid, msgs]) => {
+            const sname = msgs[0].students?.name || 'Élève';
+            return `<div class="card col"><b>${esc(sname)}</b>${msgs.slice(0, 3).map(m => `<small>${m.sender_role === 'parent' ? '👤' : '🏫'} ${esc(m.content)}</small>`).join('')}<button class=ghost onclick="pAdminReply('${sid}')">Répondre</button></div>`;
+        }).join('');
+    }
+    $('#main').innerHTML = h;
+};
+window.pAdminReply = function(sid) {
+    const d = show(`<form method=dialog><h3>Répondre</h3><textarea name=txt rows=3 style="width:100%" required></textarea><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Envoyer</button></div></form>`);
+    d.querySelector('form').onsubmit = async e => {
+        if (e.submitter.value !== 'ok') return;
+        e.preventDefault();
+        const txt = e.target.txt.value.trim();
+        const s = S.stu.find(x => x.id === sid);
+        if (!s) return;
+        const { data } = await db.from('parent_links').select('parent_id').eq('student_id', sid).limit(1).single();
+        if (!data || !data.parent_id) return toast('Aucun parent lié');
+        await db.from('parent_messages').insert({ school_id: S.school.id, student_id: sid, parent_id: data.parent_id, sender_role: 'ecole', content: txt });
+        d.close(); toast('Envoyé ✓'); pAdminInbox();
+    };
+};
+
+// --- MODIFICATION : Affichage détaillé des justificatifs ---
+window.pAdminJustifs = async function() {
+    const { data } = await db.from('absence_justifications').select('*, students(name)').eq('status', 'en_attente').order('created_at');
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Justificatifs en attente</h3>`;
+    if (!data || !data.length) h += `<p class=empty>Aucun justificatif à traiter.</p>`;
+    else h += data.map(j => {
+        const typeLabel = j.type === 'absence' ? 'Absence' : j.type === 'retard' ? 'Retard' : j.type === 'depart' ? 'Départ anticipé' : 'Autre';
+        const timeTxt = j.time ? ` à ${j.time}` : '';
+        const endTxt = j.end_date ? ` (jusqu'au ${new Date(j.end_date + 'T00:00').toLocaleDateString('fr-FR')})` : '';
+        return `<div class="card col"><b>${esc(j.students?.name || '')} · ${typeLabel} · ${new Date(j.day + 'T00:00').toLocaleDateString('fr-FR')}${timeTxt}${endTxt}</b><small>${esc(j.reason)}</small><div class=row><button onclick="pAdminJustifAct('${j.id}','approuve', '${j.student_id}', '${j.day}', '${j.end_date || ''}')">Approuver</button><button class=ghost onclick="pAdminJustifAct('${j.id}','refuse')">Refuser</button></div></div>`;
+    }).join('');
+    $('#main').innerHTML = h;
+};
+
+// --- MODIFICATION : Mise à jour de l'appel si approuvé ---
+window.pAdminJustifAct = async function(id, st, studentId, day, endDate) {
+    await db.from('absence_justifications').update({ status: st }).eq('id', id);
+    if (st === 'approuve' && studentId && day) {
+        // Mise à jour automatique de l'appel
+        const dates = [day];
+        if (endDate) {
+            let d = new Date(day + 'T00:00');
+            const end = new Date(endDate + 'T00:00');
+            while (d < end) {
+                d.setDate(d.getDate() + 1);
+                if (d <= end) dates.push(d.toLocaleDateString('sv-SE'));
+            }
+        }
+        const rows = dates.map(d => ({ school_id: S.school.id, student_id: studentId, day: d, status: 'present' }));
+        await db.from('attendance').upsert(rows, { onConflict: 'student_id,day' });
+        toast('Justificatif accepté et présence mise à jour ✓');
+    } else {
+        toast('Mis à jour');
+    }
+    pAdminJustifs();
+};
+
+// --- MODIFICATION : Date de fin pour les annonces ---
+window.pAdminAnnonce = function() {
+    const d = show(`<form method=dialog><h3>Nouvelle annonce</h3><label>Titre<input name=titre required></label><label>Contenu<textarea name=txt rows=4 style="width:100%" required></textarea></label><label>Date de fin (facultatif)<input type="date" name=end></label><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Publier</button></div></form>`);
+    d.querySelector('form').onsubmit = async e => {
+        if (e.submitter.value !== 'ok') return;
+        e.preventDefault();
+        const f = e.target;
+        await db.from('announcements').insert({ school_id: S.school.id, author_id: S.me.id, title: f.titre.value.trim(), content: f.txt.value.trim(), end_date: f.end.value || null });
+        d.close(); toast('Annonce publiée ✓');
+    };
+};
+
+// --- MODIFICATION : Mise à jour de l'appel si approuvé ---
+window.pAdminJustifAct = async function(id, st, studentId, day, endDate) {
+    await db.from('absence_justifications').update({ status: st }).eq('id', id);
+    if (st === 'approuve' && studentId && day) {
+        // Mise à jour automatique de l'appel
+        const dates = [day];
+        if (endDate) {
+            let d = new Date(day + 'T00:00');
+            const end = new Date(endDate + 'T00:00');
+            while (d < end) {
+                d.setDate(d.getDate() + 1);
+                if (d <= end) dates.push(d.toLocaleDateString('sv-SE'));
+            }
+        }
+        const rows = dates.map(d => ({ school_id: S.school.id, student_id: studentId, day: d, status: 'present' }));
+        await db.from('attendance').upsert(rows, { onConflict: 'student_id,day' });
+        toast('Justificatif accepté et présence mise à jour ✓');
+    } else {
+        toast('Mis à jour');
+    }
+    pAdminJustifs();
+};
+
+// --- MODIFICATION : Date de fin pour les annonces ---
+window.pAdminAnnonce = function() {
+    const d = show(`<form method=dialog><h3>Nouvelle annonce</h3><label>Titre<input name=titre required></label><label>Contenu<textarea name=txt rows=4 style="width:100%" required></textarea></label><label>Date de fin (facultatif)<input type="date" name=end></label><div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Publier</button></div></form>`);
+    d.querySelector('form').onsubmit = async e => {
+        if (e.submitter.value !== 'ok') return;
+        e.preventDefault();
+        const f = e.target;
+        await db.from('announcements').insert({ school_id: S.school.id, author_id: S.me.id, title: f.titre.value.trim(), content: f.txt.value.trim(), end_date: f.end.value || null });
+        d.close(); toast('Annonce publiée ✓');
+    };
+};
+
+// --- FIN DU FICHIER APP.JS ---
