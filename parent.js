@@ -33,7 +33,8 @@ document.head.insertAdjacentHTML('beforeend', `<style>
     .p-chat-bubble.other { align-self: flex-start; background: var(--card, #1c1d1a); border: 1px solid var(--line, #33342e); border-bottom-left-radius: 4px; }
     .p-chat-meta { font-size: 10.5px; color: var(--muted, #a8a495); margin-bottom: 6px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
     .p-chat-time { font-size: 10px; font-weight: normal; opacity: 0.8; }
-    .p-chat-input-bar { position: fixed; bottom: 74px; left: 0; right: 0; background: var(--bg, #111211); padding: 10px 15px; border-top: 1px solid var(--line, #33342e); z-index: 90; display: flex; gap: 8px; align-items: flex-end; }
+    /* Correction : remonter la barre au dessus de la grille (environ 130px de haut) */
+    .p-chat-input-bar { position: fixed; bottom: 125px; left: 0; right: 0; background: var(--bg, #111211); padding: 10px 15px; border-top: 1px solid var(--line, #33342e); z-index: 100; display: flex; gap: 8px; align-items: flex-end; }
     .p-chat-input { flex: 1; padding: 10px 12px; background: var(--card, #1c1d1a); border: 1px solid var(--line, #33342e); border-radius: 20px; color: var(--text, #fff); font-size: 14px; resize: none; max-height: 100px; font-family: inherit; }
     .p-chat-input:focus { outline: none; border-color: var(--gold, #b08a30); }
     .p-chat-send { background: var(--gold, #b08a30); color: #111; border: none; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
@@ -183,7 +184,7 @@ function msgView() {
     }
     h += `</div>`;
 
-    // Barre de saisie fixe
+        // Barre de saisie fixe
     h += `<div class="p-chat-input-bar">
         <textarea id="chat_input" class="p-chat-input" rows="1" placeholder="Votre message..."></textarea>
         <button class="p-chat-send" onclick="sendMsg()">
@@ -191,7 +192,7 @@ function msgView() {
         </button>
     </div>`;
 
-    $('#pmain').innerHTML = h + navView() + '<div style="height:120px"></div>';
+    $('#pmain').innerHTML = h + navView() + '<div style="height:180px"></div>'; // Augmenté pour scroller au dessus de la barre de saisie
     
     $('#msg_child_select').onchange = e => {
         P.msgChild = e.target.value;
@@ -208,8 +209,6 @@ async function sendMsg() {
     $('#chat_input').value = '';
     await loadK2(); msgView(); toast('Envoyé ✓');
 }
-
-// ... (Le reste des fonctions reste inchangé : ecoleView, scolariteView, etc.)
 
 function ecoleView() {
     let h = `<h2 style="color:var(--gold);margin:10px 0">🏫 L'école</h2>`;
