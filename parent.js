@@ -33,7 +33,6 @@ document.head.insertAdjacentHTML('beforeend', `<style>
     .p-chat-bubble.other { align-self: flex-start; background: var(--card, #1c1d1a); border: 1px solid var(--line, #33342e); border-bottom-left-radius: 4px; }
     .p-chat-meta { font-size: 10.5px; color: var(--muted, #a8a495); margin-bottom: 6px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
     .p-chat-time { font-size: 10px; font-weight: normal; opacity: 0.8; }
-    /* Correction : remonter la barre au dessus de la grille (environ 130px de haut) */
     .p-chat-input-bar { position: fixed; bottom: 125px; left: 0; right: 0; background: var(--bg, #111211); padding: 10px 15px; border-top: 1px solid var(--line, #33342e); z-index: 100; display: flex; gap: 8px; align-items: flex-end; }
     .p-chat-input { flex: 1; padding: 10px 12px; background: var(--card, #1c1d1a); border: 1px solid var(--line, #33342e); border-radius: 20px; color: var(--text, #fff); font-size: 14px; resize: none; max-height: 100px; font-family: inherit; }
     .p-chat-input:focus { outline: none; border-color: var(--gold, #b08a30); }
@@ -184,7 +183,7 @@ function msgView() {
     }
     h += `</div>`;
 
-        // Barre de saisie fixe
+    // Barre de saisie fixe
     h += `<div class="p-chat-input-bar">
         <textarea id="chat_input" class="p-chat-input" rows="1" placeholder="Votre message..."></textarea>
         <button class="p-chat-send" onclick="sendMsg()">
@@ -192,7 +191,7 @@ function msgView() {
         </button>
     </div>`;
 
-    $('#pmain').innerHTML = h + navView() + '<div style="height:180px"></div>'; // Augmenté pour scroller au dessus de la barre de saisie
+    $('#pmain').innerHTML = h + navView() + '<div style="height:180px"></div>';
     
     $('#msg_child_select').onchange = e => {
         P.msgChild = e.target.value;
@@ -212,15 +211,138 @@ async function sendMsg() {
 
 function ecoleView() {
     let h = `<h2 style="color:var(--gold);margin:10px 0">🏫 L'école</h2>`;
-    h += `<div class=p-sec><h4>📝 Justificatif d'absence</h4><select id=j_child style="width:100%;padding:10px;margin-bottom:8px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px">${P.children.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><input type="date" id=j_day style="width:100%;padding:10px;margin-bottom:8px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px" value="${tdy()}"><textarea id=j_txt rows=2 style="width:100%;padding:10px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px" placeholder="Motif (maladie, rendez-vous...)"></textarea><button class=p-btn style="margin-top:8px" onclick=sendJustif()>Envoyer à l'école</button></div>`;
-    if (P.convocs.length) {
-        h += `<div class=p-sec><h4>📢 Convocations</h4>${P.convocs.map(c => { const ch = P.children.find(x => x.id === c.student_id); return `<div class="p-row" style="flex-direction:column;align-items:flex-start;gap:4px"><b>${fdate(c.day)} · ${esc(ch ? ch.name : '')}</b><span>${esc(c.reason)}</span><span class="${c.status === 'confirmee' ? 'p-ok' : 'p-due'}">${c.status === 'confirmee' ? '✓ Confirmée' : '⏳ À confirmer'}</span>${c.status !== 'confirmee' ? `<button class=p-btn style="padding:6px;margin-top:4px" onclick="confirmConv('${c.id}')">Confirmer ma présence</button>` : ''}</div>`; }).join('')}</div>`;
+    const today = tdy();
+
+    // --- BLOC 1 : ANNONCES (en haut) ---
+    h += `<div class=p-sec><h4>📣 Annonces de l'école</h4>`;
+    // On filtre les annonces périmées
+    const validAnnonces = P.annonces.filter(a => !a.end_date || a.end_date >= today);
+    if (validAnnonces.length) {
+        h += validAnnonces.map(a => `<div style="margin-bottom:10px;padding:10px;border-bottom:1px solid var(--line)"><b>${esc(a.title)}</b><div style="font-size:14px;margin-top:4px">${esc(a.content)}</div><small style="color:var(--muted)">${new Date(a.created_at).toLocaleDateString('fr-FR')}</small></div>`).join('');
+    } else {
+        h += `<div class=p-empty style="padding:10px 0">Aucune annonce pour le moment.</div>`;
     }
-    if (P.annonces.length) {
-        h += `<div class=p-sec><h4>📣 Annonces de l'école</h4>${P.annonces.map(a => `<div style="margin-bottom:10px;padding:10px;border-bottom:1px solid var(--line)"><b>${esc(a.title)}</b><div style="font-size:14px;margin-top:4px">${esc(a.content)}</div><small style="color:var(--muted)">${new Date(a.created_at).toLocaleDateString('fr-FR')}</small></div>`).join('')}</div>`;
+    h += `</div>`;
+
+    // --- BLOC 2 : CONVOCATIONS ---
+    h += `<div class=p-sec><h4>📢 Convocations</h4>`;
+    // On n'affiche que celles qui ne sont pas archivées
+    const activeConvocs = P.convocs.filter(c => c.status !== 'archivee');
+    if (activeConvocs.length) {
+        h += activeConvocs.map(c => { 
+            const ch = P.children.find(x => x.id === c.student_id); 
+            return `<div class="p-row" style="flex-direction:column;align-items:flex-start;gap:4px;margin-bottom:10px;border-bottom:1px solid var(--line);padding-bottom:10px">
+                <b>${fdate(c.day)} · ${esc(ch ? ch.name : '')}</b>
+                <span>${esc(c.reason)}</span>
+                <span class="${c.status === 'confirmee' ? 'p-ok' : 'p-due'}">${c.status === 'confirmee' ? '✓ Confirmée' : '⏳ À confirmer'}</span>
+                <div class="row" style="margin-top:6px; width:100%;">
+                    ${c.status !== 'confirmee' ? `<button class=p-btn style="flex:1; padding:8px;" onclick="confirmConv('${c.id}')">Confirmer</button>` : `<button class="ghost" style="flex:1; padding:8px;" onclick="archiveConv('${c.id}')">🗑 Supprimer</button>`}
+                </div>
+            </div>`; 
+        }).join('');
+    } else {
+        h += `<div class=p-empty style="padding:10px 0">Aucune convocation.</div>`;
     }
-    if (!P.convocs.length && !P.annonces.length) h += `<div class=p-empty>Aucune info pour le moment.</div>`;
+    h += `</div>`;
+
+    // --- BLOC 3 : JUSTIFICATIFS (en bas) ---
+    h += `<div class=p-sec>
+        <h4>📝 Envoyer un justificatif</h4>
+        <select id="j_type" style="width:100%;padding:10px;margin-bottom:8px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px" onchange="toggleJustifFields(this.value)">
+            <option value="absence">Absence</option>
+            <option value="retard">Retard</option>
+            <option value="depart">Départ anticipé</option>
+            <option value="autre">Autre motif</option>
+        </select>
+
+        <!-- Champs dynamiques -->
+        <div id="box_absence_duration" style="display:block; margin-bottom:8px;">
+            <select id="j_duration" style="width:100%;padding:10px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px" onchange="document.getElementById('box_absence_end').style.display = this.value === 'multi' ? 'block' : 'none'">
+                <option value="single">Aujourd'hui seulement</option>
+                <option value="multi">Plusieurs jours</option>
+            </select>
+            <div id="box_absence_end" style="display:none; margin-top:8px">
+                <label style="font-size:12px;color:var(--muted)">Date de fin</label>
+                <input type="date" id="j_end_date" style="width:100%;padding:10px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px">
+            </div>
+        </div>
+
+        <div id="box_time" style="display:none; margin-bottom:8px">
+            <label style="font-size:12px;color:var(--muted)">Heure</label>
+            <input type="time" id="j_time" style="width:100%;padding:10px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px">
+        </div>
+
+        <select id="j_child" style="width:100%;padding:10px;margin-bottom:8px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px">
+            ${P.children.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+        </select>
+        
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Date de début</label>
+        <input type="date" id="j_day" style="width:100%;padding:10px;margin-bottom:8px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px" value="${tdy()}">
+        
+        <textarea id="j_txt" rows="3" style="width:100%;padding:10px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px" placeholder="Motif (maladie, rendez-vous...)"></textarea>
+        
+        <button class=p-btn style="margin-top:10px" onclick="sendJustif()">Envoyer à l'école</button>
+    </div>`;
+
     $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
+}
+
+// Fonction pour afficher/masquer les champs
+window.toggleJustifFields = function(val) {
+    document.getElementById('box_absence_duration').style.display = val === 'absence' ? 'block' : 'none';
+    document.getElementById('box_time').style.display = (val === 'retard' || val === 'depart') ? 'block' : 'none';
+    if (val !== 'absence') {
+        document.getElementById('j_duration').value = 'single';
+        document.getElementById('box_absence_end').style.display = 'none';
+    }
+};
+
+async function sendJustif() {
+    const type = $('#j_type').value;
+    const sid = $('#j_child').value;
+    const day = $('#j_day').value;
+    const time = $('#j_time') ? $('#j_time').value : null;
+    const txt = $('#j_txt').value.trim();
+    
+    let end_date = null;
+    if (type === 'absence' && $('#j_duration').value === 'multi') {
+        end_date = $('#j_end_date').value;
+    }
+
+    if (!txt || !day) return toast('Remplissez la date et le motif');
+    if (type === 'absence' && $('#j_duration').value === 'multi' && !end_date) return toast('Précisez la date de fin');
+    
+    const { error } = await db.from('absence_justifications').insert({ 
+        school_id: P.school_id || P.school?.id, 
+        student_id: sid, 
+        parent_id: P.me.id, 
+        day, 
+        reason: txt,
+        type: type,
+        time: time || null,
+        end_date: end_date || null
+    });
+    
+    if (error) return toast(error.message);
+    toast('Justificatif envoyé ✓'); 
+    $('#j_txt').value = '';
+    if($('#j_time')) $('#j_time').value = '';
+    if($('#j_end_date')) $('#j_end_date').value = '';
+    if($('#j_duration')) $('#j_duration').value = 'single';
+    if($('#box_absence_end')) $('#box_absence_end').style.display = 'none';
+}
+
+async function confirmConv(id) {
+    const { error } = await db.from('convocations').update({ status: 'confirmee' }).eq('id', id);
+    if (error) return toast(error.message);
+    await loadK2(); ecoleView(); toast('Confirmé ✓');
+}
+
+async function archiveConv(id) {
+    if (!confirm('Supprimer cette convocation de votre liste ?')) return;
+    const { error } = await db.from('convocations').update({ status: 'archivee' }).eq('id', id);
+    if (error) return toast(error.message);
+    await loadK2(); ecoleView(); toast('Convocation archivée');
 }
 
 function scolariteView() {
@@ -248,19 +370,6 @@ function scolariteView() {
     }
     h += `</div>`;
     $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
-}
-
-async function sendJustif() {
-    const sid = $('#j_child').value, day = $('#j_day').value, txt = $('#j_txt').value.trim();
-    if (!txt || !day) return toast('Remplissez tous les champs');
-    const { error } = await db.from('absence_justifications').insert({ school_id: P.school_id || P.school?.id, student_id: sid, parent_id: P.me.id, day, reason: txt });
-    if (error) return toast(error.message);
-    toast('Justificatif envoyé ✓'); $('#j_txt').value = '';
-}
-async function confirmConv(id) {
-    const { error } = await db.from('convocations').update({ status: 'confirmee' }).eq('id', id);
-    if (error) return toast(error.message);
-    await loadK2(); ecoleView(); toast('Confirmé ✓');
 }
 
 function calView() {
