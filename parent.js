@@ -15,8 +15,41 @@ const tdy = () => new Date().toLocaleDateString('sv-SE');
 const DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 const hhmm = t => t ? String(t).slice(0, 5) : '';
 
-const P = { me: null, school: null, school_id: null, children: [], tab: 'accueil', msgs: [], annonces: [], convocs: [], justifs: [], events: [], assign: [], tt: [] };
+const P = { me: null, school: null, school_id: null, children: [], tab: 'accueil', msgs: [], annonces: [], convocs: [], justifs: [], events: [], assign: [], tt: [], msgChild: null };
 document.documentElement.dataset.theme = localStorage.theme || 'dark';
+
+// --- Injection CSS pour la nouvelle navigation et le chat ---
+document.head.insertAdjacentHTML('beforeend', `<style>
+    .p-nav-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--card, #1c1d1a); border-top: 1px solid var(--line, #33342e); padding: 8px 6px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); position: fixed; bottom: 0; left: 0; right: 0; z-index: 99; }
+    .p-nav-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 0; border-radius: 8px; border: none; background: none; color: var(--muted, #a8a495); cursor: pointer; transition: .2s; }
+    .p-nav-btn.on { color: var(--gold, #b08a30); background: rgba(176,138,48,.1); }
+    .p-nav-ic { width: 22px; height: 22px; margin-bottom: 3px; }
+    .p-nav-lbl { font-size: 10px; font-weight: 500; }
+    .p-nav-btn.on .p-nav-lbl { font-weight: bold; }
+    .p-chat-container { display: flex; flex-direction: column; gap: 12px; padding: 10px 0 20px 0; }
+    .p-chat-date { text-align: center; font-size: 11.5px; color: var(--muted, #a8a495); margin: 10px 0; font-weight: bold; }
+    .p-chat-bubble { max-width: 82%; padding: 10px 14px; border-radius: 16px; position: relative; font-size: 14.5px; line-height: 1.4; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+    .p-chat-bubble.mine { align-self: flex-end; background: rgba(176,138,48,.15); border: 1px solid var(--gold, #b08a30); border-bottom-right-radius: 4px; }
+    .p-chat-bubble.other { align-self: flex-start; background: var(--card, #1c1d1a); border: 1px solid var(--line, #33342e); border-bottom-left-radius: 4px; }
+    .p-chat-meta { font-size: 10.5px; color: var(--muted, #a8a495); margin-bottom: 6px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+    .p-chat-time { font-size: 10px; font-weight: normal; opacity: 0.8; }
+    .p-chat-input-bar { position: fixed; bottom: 74px; left: 0; right: 0; background: var(--bg, #111211); padding: 10px 15px; border-top: 1px solid var(--line, #33342e); z-index: 90; display: flex; gap: 8px; align-items: flex-end; }
+    .p-chat-input { flex: 1; padding: 10px 12px; background: var(--card, #1c1d1a); border: 1px solid var(--line, #33342e); border-radius: 20px; color: var(--text, #fff); font-size: 14px; resize: none; max-height: 100px; font-family: inherit; }
+    .p-chat-input:focus { outline: none; border-color: var(--gold, #b08a30); }
+    .p-chat-send { background: var(--gold, #b08a30); color: #111; border: none; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+    .p-chat-send svg { width: 20px; height: 20px; transform: translateX(1px); }
+</style>`);
+
+// --- SVG Icons ---
+const SVG_ICONS = {
+    accueil: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/>',
+    messages: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    ecole: '<path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M16 14v3"/>',
+    notes: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>',
+    scolarite: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+    agenda: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>'
+};
+const svgI = k => `<svg class="p-nav-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${SVG_ICONS[k] || ''}</svg>`;
 
 // ---- Auth ----
 function authView() {
@@ -62,16 +95,30 @@ async function loadK5() {
     P.assign = as.data || []; P.tt = tt.data || [];
 }
 
-// ---- Navigation ----
+// ---- Navigation (Grille 2x3) ----
 function navView() {
-    const tabs = [['accueil', '🏠', 'Enfants'], ['messages', '💬', 'Messages'], ['ecole', '🏫', 'École'], ['scolarite', '📚', 'Scolarité'], ['calendrier', '📅', 'Agenda']];
-    return `<div style="position:fixed;bottom:0;left:0;right:0;background:var(--card,#1c1d1a);border-top:1px solid var(--line,#33342e);display:flex;z-index:99;padding-bottom:env(safe-area-inset-bottom)">${tabs.map(t => `<button style="flex:1;background:none;border:none;padding:10px 0;color:${P.tab === t[0] ? 'var(--gold,#b08a30)' : 'var(--muted,#a8a495)'};font-size:10.5px;font-weight:${P.tab === t[0] ? 'bold' : 'normal'};cursor:pointer" onclick="P.tab='${t[0]}';render()"><div style="font-size:19px;margin-bottom:2px">${t[1]}</div>${t[2]}</button>`).join('')}</div>`;
+    const tabs = [
+        ['accueil', 'Enfants'], 
+        ['messages', 'Messages'], 
+        ['ecole', 'École'], 
+        ['notes', 'Notes'], 
+        ['scolarite', 'Scolarité'], 
+        ['calendrier', 'Agenda']
+    ];
+    return `<div class="p-nav-grid">${tabs.map(t => `
+        <button class="p-nav-btn ${P.tab === t[0] ? 'on' : ''}" onclick="P.tab='${t[0]}';render()">
+            ${svgI(t[0])}
+            <span class="p-nav-lbl">${t[1]}</span>
+        </button>
+    `).join('')}</div>`;
 }
+
 function render() {
     $('#hs').textContent = P.school?.name || 'ORÉA École';
     if (P.tab === 'accueil') homeView();
     else if (P.tab === 'messages') msgView();
     else if (P.tab === 'ecole') ecoleView();
+    else if (P.tab === 'notes' && typeof parentNotesView === 'function') parentNotesView();
     else if (P.tab === 'scolarite') scolariteView();
     else if (P.tab === 'calendrier') calView();
     window.scrollTo(0, 0);
@@ -90,29 +137,79 @@ function homeView() {
         }).join('');
         h += `<div class=p-actions><button class=p-btn onclick=addChildView()>+ Ajouter un autre enfant</button><button class=ghost style="padding:12px;background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:10px" onclick=logout()>Se déconnecter</button></div>`;
     }
-    $('#pmain').innerHTML = h + navView() + '<div style="height:80px"></div>';
+    $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
 }
 
 function msgView() {
     let h = `<h2 style="color:var(--gold);margin:10px 0">💬 Messages</h2>`;
-    if (!P.children.length) h += `<div class=p-empty>Ajoutez un enfant pour discuter.</div>`;
-    else {
-        h += `<div class=p-sec><h4>Nouveau message</h4><select id=m_child style="width:100%;padding:10px;margin-bottom:8px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px">${P.children.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><textarea id=m_txt rows=2 style="width:100%;padding:10px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px" placeholder="Votre message..."></textarea><button class=p-btn style="margin-top:8px" onclick=sendMsg()>Envoyer</button></div>`;
-        const uniqueMsgs = P.msgs.filter(m => P.children.some(c => c.id === m.student_id));
-        if (uniqueMsgs.length) {
-            h += `<div class=p-sec><h4>Historique</h4>${uniqueMsgs.map(m => { const ch = P.children.find(c => c.id === m.student_id); return `<div style="margin-bottom:10px;padding:10px;border-radius:8px;background:${m.sender_role === 'parent' ? 'rgba(176,138,48,.15)' : 'rgba(255,255,255,.05)'};border:1px solid ${m.sender_role === 'parent' ? 'var(--gold)' : 'var(--line)'}"><small style="color:var(--muted);font-size:11px">${esc(ch ? ch.name : '')} · ${m.sender_role === 'parent' ? 'Moi' : 'École'} · ${new Date(m.created_at).toLocaleString('fr-FR')}</small><div style="margin-top:4px;font-size:14px">${esc(m.content)}</div></div>`; }).join('')}</div>`;
-        } else h += `<div class=p-empty>Aucun message.</div>`;
+    if (!P.children.length) {
+        h += `<div class=p-empty>Ajoutez un enfant pour discuter.</div>`;
+        $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
+        return;
     }
-    $('#pmain').innerHTML = h + navView() + '<div style="height:80px"></div>';
+
+    // Sélection de l'enfant
+    if (!P.msgChild || !P.children.some(c => c.id === P.msgChild)) P.msgChild = P.children[0].id;
+    
+    h += `<select id="msg_child_select" style="width:100%;padding:10px;margin-bottom:15px;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px">
+        ${P.children.map(c => `<option value="${c.id}" ${c.id === P.msgChild ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+    </select>`;
+
+    // Filtrer les messages pour cet enfant
+    const myMsgs = P.msgs.filter(m => m.student_id === P.msgChild).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+
+    h += `<div class="p-chat-container">`;
+    if (!myMsgs.length) {
+        h += `<div class=p-empty style="padding:20px 0">Aucun message avec l'école.</div>`;
+    } else {
+        let lastDate = '';
+        myMsgs.forEach(m => {
+            const d = new Date(m.created_at);
+            const dateStr = d.toLocaleDateString('fr-FR');
+            if (dateStr !== lastDate) {
+                h += `<div class="p-chat-date">${dateStr}</div>`;
+                lastDate = dateStr;
+            }
+            const isMe = m.sender_role === 'parent';
+            const timeStr = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+            h += `<div class="p-chat-bubble ${isMe ? 'mine' : 'other'}">
+                <div class="p-chat-meta">
+                    <span>${isMe ? 'Moi' : 'École'}</span>
+                    <span class="p-chat-time">${timeStr}</span>
+                </div>
+                <div>${esc(m.content)}</div>
+            </div>`;
+        });
+    }
+    h += `</div>`;
+
+    // Barre de saisie fixe
+    h += `<div class="p-chat-input-bar">
+        <textarea id="chat_input" class="p-chat-input" rows="1" placeholder="Votre message..."></textarea>
+        <button class="p-chat-send" onclick="sendMsg()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
+    </div>`;
+
+    $('#pmain').innerHTML = h + navView() + '<div style="height:120px"></div>';
+    
+    $('#msg_child_select').onchange = e => {
+        P.msgChild = e.target.value;
+        render();
+    };
 }
 
 async function sendMsg() {
-    const sid = $('#m_child').value, txt = $('#m_txt').value.trim();
-    if (!txt) return toast('Message vide');
+    const txt = $('#chat_input').value.trim();
+    if (!txt) return;
+    const sid = P.msgChild;
     const { error } = await db.from('parent_messages').insert({ school_id: P.school_id || P.school?.id, student_id: sid, parent_id: P.me.id, sender_role: 'parent', content: txt });
     if (error) return toast(error.message);
+    $('#chat_input').value = '';
     await loadK2(); msgView(); toast('Envoyé ✓');
 }
+
+// ... (Le reste des fonctions reste inchangé : ecoleView, scolariteView, etc.)
 
 function ecoleView() {
     let h = `<h2 style="color:var(--gold);margin:10px 0">🏫 L'école</h2>`;
@@ -124,13 +221,13 @@ function ecoleView() {
         h += `<div class=p-sec><h4>📣 Annonces de l'école</h4>${P.annonces.map(a => `<div style="margin-bottom:10px;padding:10px;border-bottom:1px solid var(--line)"><b>${esc(a.title)}</b><div style="font-size:14px;margin-top:4px">${esc(a.content)}</div><small style="color:var(--muted)">${new Date(a.created_at).toLocaleDateString('fr-FR')}</small></div>`).join('')}</div>`;
     }
     if (!P.convocs.length && !P.annonces.length) h += `<div class=p-empty>Aucune info pour le moment.</div>`;
-    $('#pmain').innerHTML = h + navView() + '<div style="height:80px"></div>';
+    $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
 }
 
 function scolariteView() {
     let h = `<h2 style="color:var(--gold);margin:10px 0">📚 Scolarité</h2>`;
     const kid = P.children[0];
-    if (!kid) { $('#pmain').innerHTML = h + `<div class=p-empty>Ajoutez un enfant pour voir sa scolarité.</div>` + navView() + '<div style="height:80px"></div>'; return; }
+    if (!kid) { $('#pmain').innerHTML = h + `<div class=p-empty>Ajoutez un enfant pour voir sa scolarité.</div>` + navView() + '<div style="height:90px"></div>'; return; }
     const as = P.assign.slice().sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
     const today = tdy();
     const upcoming = as.filter(a => String(a.due_date) >= today);
@@ -151,7 +248,7 @@ function scolariteView() {
         h += days.map(d => `<div class="p-tt-day"><h5>${DAYS[d] || ''}</h5>${byDay[d].sort((a, b) => String(a.start_time).localeCompare(String(b.start_time))).map(t => `<div class="p-tt-row"><span class="p-tt-h">${hhmm(t.start_time)} – ${hhmm(t.end_time)}</span><div><b>${esc(t.subject)}</b>${t.room ? `<small>${esc(t.room)}</small>` : ''}</div></div>`).join('')}</div>`).join('');
     }
     h += `</div>`;
-    $('#pmain').innerHTML = h + navView() + '<div style="height:80px"></div>';
+    $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
 }
 
 async function sendJustif() {
@@ -171,7 +268,7 @@ function calView() {
     let h = `<h2 style="color:var(--gold);margin:10px 0">📅 Calendrier</h2>`;
     if (!P.events.length) h += `<div class=p-empty>Aucun événement à venir.</div>`;
     else h += P.events.map(e => `<div class=p-sec><div class=p-row><b>${esc(e.title)}</b></div><div class=p-row><span>📅 ${fdate(e.start_date)} ${e.end_date ? 'au ' + fdate(e.end_date) : ''}</span></div><div style="font-size:13px;color:var(--muted);margin-top:4px">${esc(e.description || '')}</div></div>`).join('');
-    $('#pmain').innerHTML = h + navView() + '<div style="height:80px"></div>';
+    $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
 }
 
 function addChildView() {
@@ -204,7 +301,7 @@ async function childDetail(id) {
     const all = [...pays.map(p => ({ ...p, _f: 0 })), ...fpays.map(p => ({ ...p, _f: 1 }))].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     if (all.length) h += `<div class=p-sec><h4>🧾 Paiements</h4>${all.slice(0, 10).map(p => `<div class=p-row><span>${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f ? esc(p.fee_name || 'Frais') : 'T' + p.term}</span><b>${nf(p.amount)} ${p.currency}</b></div>`).join('')}</div>`;
     h += `<button class=ghost style="width:100%;padding:12px;background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:10px;margin-top:10px" onclick="P.tab='accueil';render()">← Retour</button>`;
-    $('#pmain').innerHTML = h + navView() + '<div style="height:80px"></div>';
+    $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
 }
 
 async function logout() { if (!confirm('Se déconnecter ?')) return; await db.auth.signOut(); location.reload(); }
