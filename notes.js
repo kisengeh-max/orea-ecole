@@ -1,345 +1,353 @@
-// ORÉA École — Correctif Splash Screen (supprimer le logo blanc)
-function removeLightLogo() {
-    const ll = document.querySelector('#sp .ll');
-    if (ll) ll.remove();
-}
-removeLightLogo();
-new MutationObserver(removeLightLogo).observe(document.documentElement, { childList: true, subtree: true });
+// ORÉA École — Module COTATION & BULLETINS (v40)
+// Dépend de app.js (S, db, show, toast, esc, nf, fdate, tdy, pageAll, curTerm, cy, dir, SK) et de bulletins.js (OB).
 
-// ORÉA École — Module NOTES V2
+S.cotTerm = null; S.cotScreen = 'home'; S.cotEval = null; S.cotSubs = []; S.cotEvals = {}; S.cotRows = {};
+S.bulPeriod = null; S.bulStu = ''; S.bulRows = []; S.bulKey = null;
+S.avg = {}; S.avgKey = null;
+let cotTok = 0;
 
-S.notesView = 'classes';
-S.notesTerm = 1;
-S.noteType = 'Devoir';
-S.noteBase = 20;
+const COT_KINDS = ['Interrogation', 'Devoir', 'Examen'];
+const COT_BASES = [5, 10, 15, 20, 30, 40, 50];
+const cotCls = () => S.classes.find(c => c.id === S.cls);
+const cotStudents = () => S.stu.filter(s => s.class_id === S.cls).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+const cotCurTerm = () => { const c = cotCls(), k = c ? curTerm(cy(c)) : null; return k > 0 ? k : 1; };
+const cotNorm = g => ({ ...g, subject_name: (g.subjects && g.subjects.name) || 'Cours' });
 
-// --- Redéfinition du Menu ---
-window.vMenu = function() {
-    const R = S.me.role; let h = `<h3>Menu</h3>`;
-    h += `<div class=menu-title>Gestion quotidienne</div>`;
-    h += menuCard('presences', 'Présences', null, "menuGo('presences')");
-    if (R !== 'enseignant') h += menuCard('caisse', 'Caisse', null, "menuGo('caisse')");
-    if (R !== 'enseignant') {
-        h += menuCard('impayes', 'Impayés', null, "menuGo('impayes')");
-        if (R === 'directeur') {
-            h += menuCard('depenses', 'Dépenses', null, "menuGo('depenses')");
-            h += menuCard('bilan', 'Bilan mensuel', null, "menuGo('bilan')");
-        }
-    }
-    h += `<div class=menu-title>Pédagogie</div>`;
-    h += menuCard('absences', 'Suivi des absences', null, "menuGo('absences')");
-    h += menuCard('sanctions', 'Sanctions', null, "menuGo('sanctions')");
-    h += menuCard('calendrier', 'Calendrier', null, "menuGo('calendrier')");
-    h += menuCard('devoirs', 'Devoirs', null, "menuGo('devoirs')");
-    h += menuCard('emploi_temps', 'Emploi du temps', null, "menuGo('emploi_temps')");
-    
-    if (R === 'directeur' || R === 'enseignant') {
-        h += menuCard('journal', 'Saisie des notes', 'Coter les élèves par cours', "S.notesView='classes'; menuGo('saisie_notes')");
-    }
-    if (R === 'directeur') {
-        h += menuCard('rapport', 'Bulletins', 'Générer les bulletins PDF', "menuGo('bulletins')");
-    }
+document.head.insertAdjacentHTML('beforeend', '<style>'
+    + '.avgp{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:10px;background:rgba(199,163,75,.16);color:var(--gold);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}'
+    + '.avgp.bad{color:var(--bad);background:rgba(168,90,78,.14)}'
+    + '.cot-sub{font-family:var(--serif);font-size:20px;color:var(--gold);margin:18px 0 6px}'
+    + '.cot-bar{position:sticky;bottom:calc(70px + env(safe-area-inset-bottom));padding:10px 0 4px;background:linear-gradient(transparent,var(--bg) 35%);z-index:5}'
+    + '.cot-bar button{min-height:56px;font-size:17px}'
+    + '.cot-in{margin:0!important;width:84px!important;text-align:center;font-weight:700;font-size:17px!important}'
+    + '.cot-in:disabled{opacity:.55}'
+    + 'input.bad{border-color:var(--bad)!important}'
+    + '.cot-del{color:var(--bad)!important;border-color:var(--bad)!important;margin-top:10px}'
+    + '</style>');
 
-    if (dir()) {
-        h += `<div class=menu-title>Administration</div>`;
-        h += menuCard('annees', 'Années scolaires', null, "yearMenu()");
-        h += menuCard('equipe', 'Équipe', null, "team()");
-        h += menuCard('journal', 'Journal d’activité', null, "journal()");
-        h += menuCard('exports', 'Exports (CSV / PDF)', null, "exportMenu()");
-        h += menuCard('sauvegarde', 'Sauvegarde complète', null, "doBackup()");
-        h += menuCard('rapport', 'Rapport mensuel', null, "monthReport()");
-        h += `<div class=menu-title>Parents & Communication</div>`;
-        h += menuCard('messages', 'Messages des parents', null, "pAdminInbox()");
-        h += menuCard('justificatifs', 'Justificatifs d’absence', null, "pAdminJustifs()");
-        h += menuCard('annonces', 'Publier une annonce', null, "pAdminAnnonce()");
-    }
-    $('#main').innerHTML = h;
+// ---------- Bannière « impayés » masquable + rendu ----------
+const _renderBanner = window.render;
+window.render = function () {
+    _renderBanner();
+    if (sessionStorage.getItem('hide_impayes_banner')) { const b = document.getElementById('exb'); if (b) b.hidden = true; }
 };
-
-// --- Interception du routeur ET de la bannière ---
-const _origRender = window.render;
-window.render = function() {
-    if (['saisie_notes', 'bulletins'].includes(S.tab)) {
-        const realTab = S.tab;
-        S.tab = 'menu'; 
-        _origRender();
-        S.tab = realTab;
-        if (realTab === 'saisie_notes') routeSaisieNotes();
-        else vBulletins();
-    } else {
-        _origRender();
-    }
-
-    if (sessionStorage.getItem('hide_impayes_banner')) {
-        const b = document.getElementById('exb');
-        if (b) b.hidden = true;
-    }
-};
-
-document.addEventListener('click', function(e) {
+document.addEventListener('click', function (e) {
     const btn = e.target.closest('#exb a, #exb button, #exb [onclick]');
-    if (btn) {
-        sessionStorage.setItem('hide_impayes_banner', '1');
-        const b = document.getElementById('exb');
-        if (b) b.hidden = true;
-    }
+    if (btn) { sessionStorage.setItem('hide_impayes_banner', '1'); const b = document.getElementById('exb'); if (b) b.hidden = true; }
 }, true);
 
-function routeSaisieNotes() {
-    if (S.notesView === 'classes') vNotesClasses();
-    else if (S.notesView === 'courses') vNotesCourses();
-    else if (S.notesView === 'cotation') vNotesCotation();
+// ---------- Navigation ----------
+function afterDlg(fn) {
+    let n = 0;
+    const t = () => { if ((!dlgPushed && !ignorePop) || n++ > 20) fn(); else setTimeout(t, 30); };
+    setTimeout(t, 30);
 }
-
-async function seedDefaultCourses() {
-    const defaults = ['Français', 'Anglais', 'Mathématiques', 'Géographie', 'Histoire', 'Civisme', 'Éducation physique', 'Éducation à la vie', 'Éducation civique', 'Chimie', 'Physique'];
-    const rows = defaults.map(name => ({ school_id: S.school.id, name }));
-    const { error } = await db.from('subjects').insert(rows);
-    if (error) return toast('Erreur: ' + error.message);
-    toast('Cours de base créés');
+function openCotation() {
+    if (!['directeur', 'enseignant'].includes(S.me.role)) return;
+    if (S.offline) return toast('Hors connexion : la cotation demande internet.');
+    S.cotScreen = 'home'; S.cotEval = null; S.cotTerm = S.cotTerm || cotCurTerm();
+    history.pushState({ cot: 1 }, ''); S.tab = 'cotation'; render();
+}
+function openBulletins() {
+    if (!dir()) return;
+    if (S.offline) return toast('Hors connexion : les bulletins demandent internet.');
+    S.bulKey = null; history.pushState({ cot: 1 }, ''); S.tab = 'bulletins'; render();
+}
+function cotBack() {
+    if (history.state && history.state.cot) { history.back(); return; }
+    if (S.tab === 'cotation' && S.cotScreen === 'eval') S.cotScreen = 'home'; else S.tab = 'eleves';
     render();
 }
+function cotSetTerm(t) { S.cotTerm = t; render(); }
 
-// ==========================================
-// VUES SAISIE
-// ==========================================
-async function vNotesClasses() {
-    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Notes - Choisir une classe</h3>`;
+// ---------- Cours de la classe ----------
+async function cotSubjects() {
+    const { data } = await db.from('class_subjects').select('subject_id, subjects(name)').eq('class_id', S.cls);
+    S.cotSubs = (data || []).filter(x => x.subjects).map(x => ({ id: x.subject_id, name: x.subjects.name })).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+    return S.cotSubs;
+}
+async function seedDefaultCourses() {
+    const defaults = ['Français', 'Anglais', 'Mathématiques', 'Géographie', 'Histoire', 'Civisme', 'Éducation physique', 'Éducation à la vie', 'Éducation civique', 'Chimie', 'Physique'];
+    const { error } = await db.from('subjects').insert(defaults.map(name => ({ school_id: S.school.id, name })));
+    if (error) return toast('Erreur : ' + error.message);
+    toast('Cours de base créés'); manageClassCourses();
+}
+async function manageClassCourses() {
+    const { data: all } = await db.from('subjects').select('*').order('name');
+    const { data: assigned } = await db.from('class_subjects').select('subject_id').eq('class_id', S.cls);
+    const ids = new Set((assigned || []).map(a => a.subject_id));
+    show(`<h3>Cours de la classe</h3>${(all || []).length ? '' : '<button class=ghost onclick="seedDefaultCourses()">Créer les cours de base (RDC)</button>'}<div style="max-height:50vh;overflow-y:auto;margin:10px 0">${(all || []).map(sub => `<div class=card style="padding:10px;margin:5px 0"><b>${esc(sub.name)}</b><button class="${ids.has(sub.id) ? 'ghost' : ''}" style="width:auto;padding:5px 15px;min-height:30px" onclick="toggleClassCourse('${sub.id}',${ids.has(sub.id)})">${ids.has(sub.id) ? 'Retirer' : 'Ajouter'}</button></div>`).join('')}</div><div class=bar><input id=mc_new placeholder="Nouveau cours…" style="flex:1;margin:0"><button class=ghost style="width:auto" onclick="addNewSubject()">+</button></div><button class=ghost style="margin-top:12px" onclick="this.closest('dialog').close();render()">Fermer</button>`);
+}
+async function toggleClassCourse(subjId, isAssigned) {
+    const r = isAssigned ? await db.from('class_subjects').delete().match({ class_id: S.cls, subject_id: subjId })
+        : await db.from('class_subjects').insert({ school_id: S.school.id, class_id: S.cls, subject_id: subjId });
+    if (r.error) toast(r.error.message);
+    manageClassCourses();
+}
+async function addNewSubject() {
+    const name = $('#mc_new').value.trim(); if (!name) return;
+    const { error } = await db.from('subjects').insert({ school_id: S.school.id, name });
+    if (error) toast(error.message);
+    manageClassCourses();
+}
+
+// ---------- COTATION : accueil (historique par trimestre) ----------
+async function vCotation() {
+    if (S.cotScreen === 'eval') return vCotEval();
+    const c = cotCls(); if (!c) { S.tab = 'eleves'; return render(); }
+    const term = S.cotTerm || 1, tok = ++cotTok;
+    let h = `<div class=bar><button class=ghost style="width:auto" onclick="cotBack()">← ${esc(c.name)}</button><b class=ctitle>Cotation</b></div>`
+        + `<div class=chips>${[1, 2, 3].map(t => `<button class="chip ${t === term ? 'on' : ''}" onclick="cotSetTerm(${t})">Trimestre ${t}</button>`).join('')}</div>`;
     $('#main').innerHTML = h + SK;
-    const { count } = await db.from('subjects').select('*', { count: 'exact', head: true });
-    if (count === 0) {
-        $('#main').innerHTML = h + `<div class="card col" style="text-align:center;padding:20px"><p>Aucun cours configuré.</p><button onclick="seedDefaultCourses()">Créer les cours de base (RDC)</button></div>`;
+    const [subs, gr] = await Promise.all([cotSubjects(), pageAll(() => db.from('grades').select('id,subject_id,kind,num,max_grade,eval_date,created_by').eq('class_id', S.cls).eq('term', term))]);
+    if (tok !== cotTok || S.tab !== 'cotation' || S.cotScreen !== 'home') return;
+    if (gr.error) { $('#main').innerHTML = h + `<p class=empty>${esc(gr.error.message)}</p>`; return; }
+    const total = cotStudents().length, ev = {};
+    gr.data.forEach(g => {
+        const k = g.subject_id + '|' + g.kind + '|' + g.num;
+        const o = ev[k] || (ev[k] = { sid: g.subject_id, kind: g.kind, num: g.num, base: Number(g.max_grade), date: g.eval_date, mine: true, n: 0 });
+        o.n++; if (g.created_by !== S.me.id) o.mine = false;
+    });
+    S.cotEvals = ev;
+    if (!subs.length) {
+        const { count } = await db.from('subjects').select('*', { count: 'exact', head: true });
+        $('#main').innerHTML = h + `<div class="card col" style="text-align:center;padding:20px"><p>${count === 0 ? 'Aucun cours n’existe encore.' : 'Aucun cours dans cette classe.'}</p><button onclick="manageClassCourses()">⚙️ Gérer les cours de cette classe</button></div>`;
         return;
     }
-    const cl = yc();
-    if (!cl.length) return $('#main').innerHTML = h + `<p class=empty>Crée d'abord une classe.</p>`;
-    h += `<div class=cgrid>` + cl.map(c => `<div class=ccard onclick="S.noteClass='${c.id}'; S.notesView='courses'; render();"><b>${esc(c.name)}</b></div>`).join('') + `</div>`;
+    h += `<button onclick="cotNew()">＋ Nouvelle évaluation</button>`;
+    h += subs.map(s => {
+        const list = Object.values(ev).filter(e => e.sid === s.id).sort((a, b) => COT_KINDS.indexOf(a.kind) - COT_KINDS.indexOf(b.kind) || a.num - b.num);
+        return `<div class=cot-sub>${esc(s.name)}</div>` + (list.length ? list.map(e => `<div class=card style="padding:12px 14px" onclick="cotOpen('${s.id}','${e.kind}',${e.num})"><span><b>${e.kind} ${e.num}</b> <small>(Base ${nf(e.base)})${e.date ? ' · ' + fdate(e.date) : ''}</small><br><small>${e.n} / ${total} cotés</small></span><span>${e.mine ? '›' : '🔒'}</span></div>`).join('') : '<small>Aucune évaluation ce trimestre.</small>');
+    }).join('');
+    h += `<button class=ghost style="margin-top:18px" onclick="manageClassCourses()">⚙️ Gérer les cours de cette classe</button>`;
     $('#main').innerHTML = h;
 }
 
-async function vNotesCourses() {
-    const cName = (S.classes.find(c => c.id === S.noteClass) || {}).name || '';
-    let h = `<div class=bar><button class=ghost onclick="S.notesView='classes';render()">← Classes</button><b class=ctitle>${esc(cName)}</b></div><h3>Cours</h3>`;
-    $('#main').innerHTML = h + SK;
-    const { data: cs } = await db.from('class_subjects').select('subject_id, subjects(name)').eq('class_id', S.noteClass);
-    S.notesCoursesList = cs || [];
-    h += `<div class=bar style="margin-bottom:10px"><button class=ghost onclick="manageClassCourses()">⚙️ Gérer les cours de cette classe</button></div>`;
-    if (!S.notesCoursesList.length) h += `<p class=empty>Aucun cours assigné.</p>`;
-    else h += `<div class=cgrid>` + S.notesCoursesList.map(x => `<div class=ccard onclick="askNoteParams('${x.subject_id}', '${esc(x.subjects.name)}')"><b style="font-size:14px; white-space:normal">${esc(x.subjects.name)}</b></div>`).join('') + `</div>`;
-    $('#main').innerHTML = h;
+// ---------- COTATION : nouvelle évaluation ----------
+async function cotNew() {
+    const subs = S.cotSubs.length ? S.cotSubs : await cotSubjects();
+    if (!subs.length) return toast('Ajoute d’abord des cours à cette classe.');
+    const term = S.cotTerm || 1;
+    const d = show(`<h3>Nouvelle évaluation</h3><div class=col>
+        <label>Cours<select id=cn_sub>${subs.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
+        <label>Type<select id=cn_kind>${COT_KINDS.map(k => `<option ${k === 'Devoir' ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
+        <label>Trimestre<select id=cn_term>${[1, 2, 3].map(t => `<option value="${t}" ${t === term ? 'selected' : ''}>Trimestre ${t}</option>`).join('')}</select></label>
+        <label>Base</label>
+        <div class=chips id=cn_bases style="flex-wrap:wrap">${COT_BASES.map(b => `<button class="chip ${b === 20 ? 'on' : ''}" data-b="${b}">Sur ${b}</button>`).join('')}<button class=chip data-b=custom>Personnalisé</button></div>
+        <input id=cn_custom type=number step=any min=1 inputmode=decimal placeholder="Base personnalisée (ex : 25)" hidden>
+        <label>Date<input id=cn_date type=date value="${tdy()}"></label>
+        <small>Le numéro (Devoir 1, Devoir 2…) est attribué automatiquement.</small>
+        <div class=row><button class=ghost id=cn_x>Annuler</button><button id=cn_ok>Continuer →</button></div></div>`);
+    let base = '20';
+    d.querySelectorAll('#cn_bases .chip').forEach(b => b.onclick = () => {
+        base = b.dataset.b;
+        d.querySelectorAll('#cn_bases .chip').forEach(x => x.classList.toggle('on', x === b));
+        const ci = d.querySelector('#cn_custom'); ci.hidden = base !== 'custom'; if (base === 'custom') ci.focus();
+    });
+    d.querySelector('#cn_x').onclick = () => d.close();
+    d.querySelector('#cn_ok').onclick = async () => {
+        let bv = base === 'custom' ? parseFloat(String(d.querySelector('#cn_custom').value).replace(',', '.')) : Number(base);
+        if (!(bv > 0)) return toast('Indique une base valide.');
+        const sid = d.querySelector('#cn_sub').value, kind = d.querySelector('#cn_kind').value, tm = +d.querySelector('#cn_term').value, date = d.querySelector('#cn_date').value || tdy();
+        const btn = d.querySelector('#cn_ok'); btn.disabled = true;
+        const { data, error } = await db.from('grades').select('num').eq('class_id', S.cls).eq('subject_id', sid).eq('term', tm).eq('kind', kind).order('num', { ascending: false }).limit(1);
+        if (error) { btn.disabled = false; return toast(error.message); }
+        const sub = S.cotSubs.find(x => x.id === sid);
+        S.cotEval = { subject_id: sid, subject_name: sub ? sub.name : 'Cours', term: tm, kind, num: ((data && data[0] && data[0].num) || 0) + 1, base: bv, date, isNew: true };
+        S.cotTerm = tm; d.close();
+        afterDlg(() => { S.cotScreen = 'eval'; history.pushState({ cot: 2 }, ''); render(); });
+    };
+}
+function cotOpen(sid, kind, num) {
+    const e = S.cotEvals[sid + '|' + kind + '|' + num], sub = S.cotSubs.find(x => x.id === sid);
+    S.cotEval = { subject_id: sid, subject_name: sub ? sub.name : 'Cours', term: S.cotTerm, kind, num, base: e ? e.base : 20, date: e ? e.date : tdy(), isNew: false };
+    S.cotScreen = 'eval'; history.pushState({ cot: 2 }, ''); render();
 }
 
-function askNoteParams(subjId, subjName) {
-    S.noteSubject = subjId;
-    show(`<h3>${esc(subjName)}</h3><div class="card col" style="padding:15px">
-        <label>Type d'évaluation</label><select id=np_type><option value="Interrogation">Interrogation</option><option value="Devoir" selected>Devoir</option><option value="Examen">Examen</option></select>
-        <label style="margin-top:10px">Base</label><select id=np_base><option value="5">Sur 5</option><option value="10">Sur 10</option><option value="20" selected>Sur 20</option><option value="100">Sur 100</option></select>
-        <label style="margin-top:10px">Trimestre</label><select id=np_term><option value="1">Trimestre 1</option><option value="2">Trimestre 2</option><option value="3">Trimestre 3</option></select>
-    </div><div class=row><button class=ghost onclick="this.closest('dialog').close()">Annuler</button><button onclick="window.startCotation()">Continuer →</button></div>`);
-}
-
-window.startCotation = function() {
-    try {
-        S.noteType = document.getElementById('np_type').value;
-        S.noteBase = parseFloat(document.getElementById('np_base').value);
-        S.notesTerm = parseInt(document.getElementById('np_term').value);
-        document.getElementById('dlg').close();
-        S.notesView = 'cotation';
-        setTimeout(() => { render(); }, 100);
-    } catch (e) { toast('Erreur: ' + e.message); }
-}
-
-async function vNotesCotation() {
-    const cName = (S.classes.find(c => c.id === S.noteClass) || {}).name || '';
-    const sName = (S.notesCoursesList?.find(x => x.subject_id === S.noteSubject)?.subjects?.name) || 'Cours';
-    let h = `<div class=bar><button class=ghost onclick="S.notesView='courses';render()">← Cours</button><b class=ctitle>${esc(cName)} · ${esc(sName)}</b></div><div class="card" style="text-align:center;padding:10px;margin-bottom:15px"><small>${S.noteType} · Base : ${S.noteBase}</small></div>`;
-    $('#main').innerHTML = h + SK;
-    const { data: grades } = await db.from('grades').select('student_id, grade').eq('class_id', S.noteClass).eq('subject_id', S.noteSubject).eq('term', S.notesTerm).eq('label', S.noteType);
-    const gMap = Object.fromEntries((grades || []).map(g => [g.student_id, g.grade]));
-    const st = S.stu.filter(s => s.class_id === S.noteClass).sort((a,b) => a.name.localeCompare(b.name, 'fr'));
-    if (!st.length) { $('#main').innerHTML = h + `<p class=empty>Aucun élève.</p>`; return; }
-    h += `<div id=nc_list>` + st.map((s, i) => {
-        const val = gMap[s.id] !== undefined ? gMap[s.id] : '';
-        const nextId = i < st.length - 1 ? `g_${st[i+1].id}` : '';
-        return `<div class="card" style="padding:10px 14px; margin:5px 0; display:flex; justify-content:space-between; align-items:center;"><b style="font-size:15px">${esc(s.name)}</b><div style="display:flex; align-items:center; gap:5px;"><input id="g_${s.id}" type=number step=any min=0 max="${S.noteBase}" value="${val}" style="margin:0;width:70px;text-align:center;font-weight:bold;font-size:16px" onchange="saveNote('${s.id}', this.value)" onkeydown="if(event.key==='Enter'){ this.blur(); ${nextId ? `document.getElementById('${nextId}').focus();` : ''} }"><small style="color:var(--mut)">/ ${S.noteBase}</small></div></div>`;
-    }).join('') + `</div>`;
-    $('#main').innerHTML = h;
-}
-
-async function saveNote(sid, val) {
-    if (val === '') {
-        await db.from('grades').delete().match({ student_id: sid, subject_id: S.noteSubject, term: S.notesTerm, label: S.noteType });
-        toast('Effacé'); return;
+// ---------- COTATION : saisie des cotes ----------
+async function vCotEval() {
+    const e = S.cotEval, c = cotCls(); if (!e || !c) { S.cotScreen = 'home'; return render(); }
+    $('#main').innerHTML = `<div class=bar><button class=ghost style="width:auto" onclick="cotBack()">← Retour</button><b class=ctitle>${esc(c.name)}</b></div>` + SK;
+    const { data, error } = await db.from('grades').select('id,student_id,grade,created_by,max_grade,eval_date').eq('class_id', S.cls).eq('subject_id', e.subject_id).eq('term', e.term).eq('kind', e.kind).eq('num', e.num);
+    if (S.cotEval !== e || S.tab !== 'cotation') return;
+    if (error) { $('#main').innerHTML = `<p class=empty>${esc(error.message)}</p>`; return; }
+    const rows = data || [];
+    if (rows.length) { e.base = Number(rows[0].max_grade); if (rows[0].eval_date) e.date = rows[0].eval_date; }
+    const locked = rows.some(r => r.created_by !== S.me.id);
+    S.cotRows = Object.fromEntries(rows.map(r => [r.student_id, r]));
+    const st = cotStudents();
+    let h = `<div class=bar><button class=ghost style="width:auto" onclick="cotBack()">← Retour</button><b class=ctitle>${esc(c.name)}</b></div>`
+        + `<div class=cot-sub style="font-size:24px;margin-top:8px">${esc(e.subject_name)}</div>`
+        + `<div class="card col" style="padding:10px 14px"><b>${e.kind} ${e.num} (Base ${nf(e.base)})</b><small>${fdate(e.date)} · Trimestre ${e.term}</small></div>`;
+    if (locked) h += `<div class="card" style="padding:10px 14px">🔒 <small>Cette évaluation a été saisie par un autre utilisateur. Lecture seule.</small></div>`;
+    if (!st.length) { $('#main').innerHTML = h + '<p class=empty>Aucun élève dans cette classe.</p>'; return; }
+    h += st.map((s, i) => {
+        const r = S.cotRows[s.id], val = r ? r.grade : '', nx = i < st.length - 1 ? st[i + 1].id : '';
+        return `<div class=card style="padding:10px 14px;margin:5px 0"><b style="font-size:15px">${esc(s.name)}</b><div style="display:flex;align-items:center;gap:6px">${locked ? '🔒' : ''}<input class=cot-in id="cg_${s.id}" type=number step=any min=0 max="${e.base}" inputmode=decimal value="${val}" ${locked ? 'disabled' : ''} onkeydown="if(event.key==='Enter'){event.preventDefault();${nx ? `document.getElementById('cg_${nx}').focus()` : 'this.blur()'}}"><small>/ ${nf(e.base)}</small></div></div>`;
+    }).join('');
+    if (!locked) {
+        h += `<div class=cot-bar><button id=cot_save onclick="cotSave()">💾 Enregistrer</button></div>`;
+        if (!e.isNew && rows.length) h += `<button class="ghost cot-del" onclick="cotDelete()">🗑 Supprimer cette évaluation</button>`;
     }
-    const grade = parseFloat(val);
-    if (isNaN(grade) || grade < 0 || grade > S.noteBase) return toast('Note invalide');
-    const payload = { school_id: S.school.id, student_id: sid, class_id: S.noteClass, subject_id: S.noteSubject, term: S.notesTerm, label: S.noteType, grade: grade, max_grade: S.noteBase, created_by: S.me.id };
-    const { data: existing } = await db.from('grades').select('id').eq('student_id', sid).eq('subject_id', S.noteSubject).eq('term', S.notesTerm).eq('label', S.noteType).maybeSingle();
-    if (existing) await db.from('grades').update({ grade, max_grade: S.noteBase }).eq('id', existing.id);
-    else await db.from('grades').insert(payload);
-    const t = $('#toast'); if(t){ t.textContent = '✓ Enregistré'; t.hidden = false; setTimeout(()=>t.hidden=true, 1000); }
+    $('#main').innerHTML = h;
+}
+async function cotSave() {
+    const e = S.cotEval; if (!e) return;
+    const up = [], del = []; let bad = null;
+    cotStudents().forEach(s => {
+        const el = document.getElementById('cg_' + s.id); if (!el || el.disabled) return;
+        const raw = String(el.value).trim().replace(',', '.'), old = S.cotRows[s.id];
+        el.classList.remove('bad');
+        if (raw === '') { if (old) del.push(old.id); return; }
+        const v = parseFloat(raw);
+        if (isNaN(v) || v < 0 || v > e.base) { el.classList.add('bad'); if (!bad) bad = s; return; }
+        up.push({ school_id: S.school.id, student_id: s.id, class_id: S.cls, subject_id: e.subject_id, term: e.term, kind: e.kind, num: e.num, label: e.kind + ' ' + e.num, grade: v, max_grade: e.base, eval_date: e.date, created_by: S.me.id });
+    });
+    if (bad) { toast(`Note invalide pour ${bad.name} (de 0 à ${nf(e.base)})`); document.getElementById('cg_' + bad.id).focus(); return; }
+    if (!up.length && !del.length) return toast('Aucune note à enregistrer.');
+    const btn = document.getElementById('cot_save'); if (btn) { btn.disabled = true; btn.textContent = '⏳ Enregistrement…'; }
+    try {
+        if (up.length) { const { error } = await db.from('grades').upsert(up, { onConflict: 'student_id,class_id,subject_id,term,kind,num' }); if (error) throw error; }
+        if (del.length) { const { error } = await db.from('grades').delete().in('id', del); if (error) throw error; }
+    } catch (x) {
+        if (btn) { btn.disabled = false; btn.textContent = '💾 Enregistrer'; }
+        return toast(x.message || 'Erreur d’enregistrement');
+    }
+    S.avgKey = null; S.bulKey = null;
+    toast(`✓ ${up.length} cote(s) enregistrée(s)${del.length ? ' · ' + del.length + ' effacée(s)' : ''}`);
+    S.cotEval = null; cotBack();
+}
+async function cotDelete() {
+    const e = S.cotEval; if (!e) return;
+    if (!confirm(`Supprimer « ${e.kind} ${e.num} » en ${e.subject_name} ? Toutes les cotes de cette évaluation seront effacées.`)) return;
+    const { error } = await db.from('grades').delete().eq('class_id', S.cls).eq('subject_id', e.subject_id).eq('term', e.term).eq('kind', e.kind).eq('num', e.num);
+    if (error) return toast(error.message);
+    S.avgKey = null; S.bulKey = null; S.cotEval = null; toast('Évaluation supprimée'); cotBack();
 }
 
-async function manageClassCourses() {
-    const { data: allSubj } = await db.from('subjects').select('*').order('name');
-    const { data: assigned } = await db.from('class_subjects').select('subject_id').eq('class_id', S.noteClass);
-    const assignedIds = new Set((assigned || []).map(a => a.subject_id));
-    show(`<h3>Cours de la classe</h3><div style="max-height:50vh; overflow-y:auto; margin-bottom:15px">${allSubj.map(sub => `<div class="card" style="padding:10px;margin:5px 0"><b>${esc(sub.name)}</b><button class="${assignedIds.has(sub.id) ? 'ghost' : ''}" style="width:auto;padding:5px 15px;min-height:30px" onclick="toggleClassCourse('${sub.id}', ${assignedIds.has(sub.id)})">${assignedIds.has(sub.id) ? 'Retirer' : 'Ajouter'}</button></div>`).join('')}</div><div class="bar" style="margin-top:10px"><input id=mc_new placeholder="Nouveau cours..." style="flex:1;margin:0"><button class=ghost style="width:auto" onclick="addNewSubject()">+</button></div><button class=ghost style="margin-top:15px" onclick="this.closest('dialog').close(); render();">Fermer</button>`);
+// ---------- Moyennes de la classe (pastilles + tri) ----------
+async function loadClassAvg() {
+    if (!S.me || S.me.role === 'percepteur' || S.offline || S.view !== 'class' || !S.cls) return;
+    const cls = S.cls, c = cotCls(); if (!c) return;
+    let term = curTerm(cy(c)); const key = cls + '|' + (term || 'x');
+    if (S.avgKey === key) return;
+    S.avgKey = key; S.avg = {};
+    if (!(term > 0)) {
+        const { data } = await db.from('grades').select('term').eq('class_id', cls).order('term', { ascending: false }).limit(1);
+        term = data && data[0] ? data[0].term : 0;
+    }
+    if (term) {
+        const r = await pageAll(() => db.from('grades').select('student_id,grade,max_grade').eq('class_id', cls).eq('term', term));
+        if (r.error) { S.avgKey = null; return; }
+        const a = {};
+        r.data.forEach(g => { const o = a[g.student_id] || (a[g.student_id] = { p: 0, m: 0 }); o.p += Number(g.grade); o.m += Number(g.max_grade); });
+        if (S.cls !== cls) return;
+        Object.keys(a).forEach(k => { if (a[k].m > 0) S.avg[k] = a[k].p / a[k].m * 100; });
+    }
+    if (S.cls === cls && S.view === 'class' && S.tab === 'eleves' && $('#lst')) drawList();
 }
 
-async function toggleClassCourse(subjId, isAssigned) {
-    if (isAssigned) await db.from('class_subjects').delete().match({ class_id: S.noteClass, subject_id: subjId });
-    else await db.from('class_subjects').insert({ school_id: S.school.id, class_id: S.noteClass, subject_id: subjId });
-    $('#dlg').close();
-    setTimeout(() => manageClassCourses(), 50); 
+// ---------- BULLETINS ----------
+async function bulLoad() {
+    const key = S.cls + '|' + S.bulPeriod;
+    if (S.bulKey === key) return null;
+    const r = await pageAll(() => { let q = db.from('grades').select('student_id,subject_id,term,grade,max_grade,subjects(name)').eq('class_id', S.cls); if (S.bulPeriod !== 'A') q = q.eq('term', +S.bulPeriod); return q; });
+    if (r.error) return r.error;
+    S.bulRows = r.data.map(cotNorm); S.bulKey = key; return null;
 }
-
-async function addNewSubject() {
-    const name = $('#mc_new').value.trim();
-    if (!name) return;
-    await db.from('subjects').insert({ school_id: S.school.id, name });
-    $('#dlg').close();
-    setTimeout(() => manageClassCourses(), 50);
-}
-
-// ==========================================
-// BULLETINS & ASSISTANT IA
-// ==========================================
-S.bulletinAIData = null;
+const bulMeta = (s, appr) => ({ school: S.school.name, cls: (cotCls() || {}).name, year: cy(cotCls() || {}), name: s.name, appr });
+const bulOf = id => S.bulRows.filter(g => g.student_id === id);
 
 async function vBulletins() {
-    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Bulletins</h3>`;
-    $('#main').innerHTML = h + SK;
-    const cls = yc();
-    if (!cls.length) return $('#main').innerHTML = h + `<p class=empty>Crée d'abord une classe.</p>`;
-    if (!S.bulCls || !cls.some(c => c.id === S.bulCls)) S.bulCls = cls[0].id;
-    if (!S.bulTerm) S.bulTerm = 1;
-    const st = S.stu.filter(s => s.class_id === S.bulCls).sort((a,b) => a.name.localeCompare(b.name, 'fr'));
-    if (!S.bulStu || !st.some(s => s.id === S.bulStu)) S.bulStu = st[0]?.id || '';
-
-    h += `<div class=bar><select id=b_cls style="flex:1">${cls.map(c => `<option value="${c.id}" ${c.id === S.bulCls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select><select id=b_term style="flex:1">${[1,2,3].map(t => `<option value="${t}" ${t === S.bulTerm ? 'selected' : ''}>Trimestre ${t}</option>`).join('')}</select></div>
-    <div class=bar><select id=b_stu>${st.map(s => `<option value="${s.id}" ${s.id === S.bulStu ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
-    <button onclick=genBulletin() style="margin-top:10px">Générer le bulletin PDF</button>
-    <div id=b_prev style="margin-top:20px"></div>`;
-
+    const c = cotCls(); if (!c) { S.tab = 'eleves'; return render(); }
+    const st = cotStudents();
+    if (!S.bulPeriod) S.bulPeriod = String(cotCurTerm());
+    if (!S.bulStu || !st.some(s => s.id === S.bulStu)) S.bulStu = st[0] ? st[0].id : '';
+    let h = `<div class=bar><button class=ghost style="width:auto" onclick="cotBack()">← ${esc(c.name)}</button><b class=ctitle>Bulletins</b></div>`
+        + `<div class=chips>${['1', '2', '3', 'A'].map(p => `<button class="chip ${p === S.bulPeriod ? 'on' : ''}" onclick="bulSet('${p}')">${p === 'A' ? 'Année' : 'Trimestre ' + p}</button>`).join('')}</div>`;
+    if (!st.length) { $('#main').innerHTML = h + '<p class=empty>Aucun élève dans cette classe.</p>'; return; }
+    h += `<select id=b_stu>${st.map(s => `<option value="${s.id}" ${s.id === S.bulStu ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><div id=b_prev>${SK}</div>`;
     $('#main').innerHTML = h;
-    $('#b_cls').onchange = e => { S.bulCls = e.target.value; S.bulStu = ''; render(); };
-    $('#b_term').onchange = e => { S.bulTerm = +e.target.value; render(); };
-    $('#b_stu').onchange = e => { S.bulStu = e.target.value; previewBulletin(); };
-    previewBulletin();
+    $('#b_stu').onchange = e => { S.bulStu = e.target.value; bulPreview(); };
+    const err = await bulLoad();
+    if (S.tab !== 'bulletins') return;
+    if (err) { $('#b_prev').innerHTML = `<p class=empty>${esc(err.message)}</p>`; return; }
+    bulPreview();
 }
-
-async function previewBulletin() {
+function bulSet(p) { S.bulPeriod = p; S.bulKey = null; render(); }
+function bulPreview() {
     const el = $('#b_prev'); if (!el) return;
-    el.innerHTML = SK;
-    if (!S.bulStu) { el.innerHTML = '<p class=empty>Aucun élève.</p>'; return; }
-    
-    const { data: grades } = await db.from('grades').select('*, subjects(name)').eq('student_id', S.bulStu).eq('term', S.bulTerm);
-    if (!grades || !grades.length) { el.innerHTML = `<p class=empty>Aucune note pour ce trimestre.</p>`; return; }
-    
-    const bySubj = {};
-    grades.forEach(g => { 
-        const sName = g.subjects?.name || 'Inconnu';
-        if (!bySubj[sName]) bySubj[sName] = [];
-        bySubj[sName].push(g); 
-    });
-    
-    let html = `<div class="card col"><b>Aperçu des moyennes</b>`;
-    let sumAvg = 0, countSubj = 0;
-    const aiGradesList = [];
-    
-    Object.keys(bySubj).sort().forEach(subName => {
-        const list = bySubj[subName];
-        let totalOn20 = 0;
-        list.forEach(g => { totalOn20 += (g.grade / g.max_grade) * 20; });
-        const avg = totalOn20 / list.length;
-        html += `<div style="display:flex;justify-content:space-between;margin:4px 0"><span>${esc(subName)}</span><b>${nf(avg, 2)} / 20</b></div>`;
-        sumAvg += avg;
-        countSubj++;
-        aiGradesList.push({ matiere: subName, moyenne: nf(avg, 1) });
-    });
-    html += `</div>`;
-    
-    const genAvg = countSubj ? sumAvg / countSubj : 0;
-    const appreciation = genAvg >= 16 ? 'Excellent travail' : genAvg >= 14 ? 'Très bien' : genAvg >= 12 ? 'Bien' : genAvg >= 10 ? 'Passable' : 'Insuffisant';
-    
-    S.bulletinAIData = { eleve: S.stu.find(x => x.id === S.bulStu)?.name, notes: aiGradesList, moyenne: nf(genAvg, 2) };
-    
-    html += `<div class="card col" style="margin-top:10px">
-        <b>Moyenne Générale : ${nf(genAvg, 2)} / 20</b>
-        <label style="margin-top:8px;font-size:12px;color:var(--mut)">Appréciation générale</label>
-        <textarea id=ai_remark rows=3 style="width:100%;margin-top:4px">${appreciation}</textarea>
-        <button id=btn_ia class=ghost onclick="generateAIRemark()" style="margin-top:6px;width:auto;align-self:flex-start">✨ Générer avec l'IA</button>
-    </div>`;
-    el.innerHTML = html;
-}
-
-async function generateAIRemark() {
-    const key = window.OREA_CONFIG?.GEMINI_KEY;
-    if (!key) return toast('Ajoutez votre clé GEMINI_KEY dans config.js');
-    if (!S.bulletinAIData) return;
-    
-    const btn = document.getElementById('btn_ia');
-    const txt = document.getElementById('ai_remark');
-    const oldTxt = btn.innerHTML;
-    
-    btn.innerHTML = '⏳ L\'IA réfléchit...';
-    btn.disabled = true;
-    
-    const prompt = `Tu es un enseignant en RDC. L'élève ${S.bulletinAIData.eleve} a obtenu ces moyennes ce trimestre : ${S.bulletinAIData.notes.map(n => n.matiere + ' : ' + n.moyenne + '/20').join(', ')}. 
-    Sa moyenne générale est de ${S.bulletinAIData.moyenne}/20. 
-    Rédige une appréciation bienveillante mais honnête en 2 phrases maximum pour son bulletin. Sois encourageant. Ne mets pas de guillemets.`;
-
-    try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-        });
-        
-        const data = await res.json();
-        if (data.error) throw new Error(data.error.message);
-        
-        const remark = data.candidates[0].content.parts[0].text.trim();
-        txt.value = remark;
-        toast('Remarque générée !');
-    } catch (e) {
-        console.error(e);
-        toast('Erreur IA : ' + e.message);
-    } finally {
-        btn.innerHTML = oldTxt;
-        btn.disabled = false;
+    const s = S.stu.find(x => x.id === S.bulStu); if (!s) return;
+    const b = OB.make(bulOf(s.id), S.bulPeriod, bulMeta(s)), v = b.view, year = v.mode === 'year';
+    const nAll = cotStudents().filter(x => bulOf(x.id).length).length;
+    let h = '';
+    if (!v.rows.length) h += `<p class=empty data-ic="📝">Aucune note pour cet élève (${OB.NAMES[S.bulPeriod]}).</p>`;
+    else {
+        h += `<div class="card col"><b>${esc(s.name)} · ${OB.NAMES[S.bulPeriod]}</b>`
+            + v.rows.map(r => `<div style="display:flex;justify-content:space-between;margin:3px 0"><span>${esc(r.name)}</span><span><small>${year ? r.cells[3] : r.cells[0] + ' / ' + r.cells[1]}</small> <b class="${r.pct != null && r.pct < 50 ? 'due' : ''}">${OB.pctTxt(r.pct)}</b></span></div>`).join('')
+            + `<div style="display:flex;justify-content:space-between;margin-top:8px;border-top:1px solid var(--line);padding-top:8px"><b>Total : ${OB.num(v.tp)} / ${OB.num(v.tm)}</b><b class="${v.pct != null && v.pct < 50 ? 'due' : 'ok'}" style="font-size:18px">${OB.pctTxt(v.pct)}</b></div></div>`
+            + `<label style="font-size:12px;color:var(--mut)">Appréciation (modifiable)</label><textarea id=b_rem rows=3>${esc(b.appr)}</textarea>`
+            + (window.OREA_CONFIG && OREA_CONFIG.GEMINI_KEY ? `<button id=btn_ia class=ghost onclick="bulAI()" style="margin-bottom:8px">✨ Générer avec l’IA</button>` : '')
+            + `<button onclick="bulOne()">📄 Bulletin PDF de cet élève</button>`;
     }
+    h += `<button class=ghost style="margin-top:10px" onclick="bulAll()">🖨 Générer tous les bulletins (${nAll} élève${nAll > 1 ? 's' : ''} avec notes)</button>`;
+    el.innerHTML = h;
+}
+function bulOne() {
+    const s = S.stu.find(x => x.id === S.bulStu); if (!s) return;
+    if (!bulOf(s.id).length) return toast('Aucune note pour cet élève.');
+    try {
+        const b = OB.make(bulOf(s.id), S.bulPeriod, bulMeta(s, ($('#b_rem') || {}).value));
+        OB.save(OB.pdf([b]), 'bulletin-' + OB.slug(s.name) + '-' + S.bulPeriod + '.pdf'); toast('Bulletin généré');
+    } catch (x) { toast('Erreur PDF : ' + x.message); }
+}
+function bulAll() {
+    const list = cotStudents().filter(s => bulOf(s.id).length);
+    if (!list.length) return toast('Aucune note dans cette classe pour cette période.');
+    try {
+        const pages = list.map(s => OB.make(bulOf(s.id), S.bulPeriod, bulMeta(s)));
+        OB.save(OB.pdf(pages), 'bulletins-' + OB.slug((cotCls() || {}).name) + '-' + S.bulPeriod + '.pdf');
+        toast(`✓ ${pages.length} bulletin(s) dans un seul PDF`);
+    } catch (x) { toast('Erreur PDF : ' + x.message); }
+}
+async function bulAI() {
+    const key = window.OREA_CONFIG && OREA_CONFIG.GEMINI_KEY, s = S.stu.find(x => x.id === S.bulStu); if (!key || !s) return;
+    const v = OB.view(OB.agg(bulOf(s.id)), S.bulPeriod), btn = $('#btn_ia'), txt = $('#b_rem'), old = btn.innerHTML;
+    btn.innerHTML = '⏳ …'; btn.disabled = true;
+    const prompt = `Tu es enseignant en RDC. L'élève ${s.name} a obtenu : ${v.rows.map(r => r.name + ' ' + OB.pctTxt(r.pct)).join(', ')}. Pourcentage général : ${OB.pctTxt(v.pct)}. Rédige une appréciation bienveillante mais honnête en 2 phrases maximum, sans guillemets.`;
+    try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
+        const d = await res.json(); if (d.error) throw new Error(d.error.message);
+        txt.value = d.candidates[0].content.parts[0].text.trim();
+    } catch (x) { toast('Erreur IA : ' + x.message); } finally { btn.innerHTML = old; btn.disabled = false; }
 }
 
-async function genBulletin() {
-    const s = S.stu.find(x => x.id === S.bulStu);
-    if (!s) return toast('Sélectionne un élève');
-    const { data: grades } = await db.from('grades').select('*, subjects(name)').eq('student_id', S.bulStu).eq('term', S.bulTerm);
-    if (!grades || !grades.length) return toast('Aucune note pour ce trimestre');
-    const bySubj = {};
-    grades.forEach(g => { const sName = g.subjects?.name || 'Inconnu'; if (!bySubj[sName]) bySubj[sName] = []; bySubj[sName].push(g); });
-    const rows = []; let sumAvg = 0, countSubj = 0;
-    Object.keys(bySubj).sort().forEach(subName => {
-        const list = bySubj[subName]; let totalOn20 = 0;
-        list.forEach(g => { totalOn20 += (g.grade / g.max_grade) * 20; });
-        const avg = totalOn20 / list.length;
-        rows.push([subName, nf(avg, 2) + ' / 20', '']);
-        sumAvg += avg; countSubj++;
-    });
-    const genAvg = countSubj ? sumAvg / countSubj : 0;
-    const customRemark = $('#ai_remark')?.value || 'Insuffisant';
-    const r = {
-        name: 'bulletin-' + s.name.replace(/\s+/g, '-'),
-        title: 'Bulletin de notes — ' + s.name,
-        sub: 'Classe : ' + (S.classes.find(c => c.id === s.class_id) || {}).name + ' · Trimestre ' + S.bulTerm + ' · Année ' + S.year,
-        head: ['Cours', 'Moyenne / 20', 'Appréciation'],
-        rows: rows, w: [45, 25, 30], r: [1],
-        tot: ['MOYENNE GÉNÉRALE', nf(genAvg, 2) + ' / 20', customRemark]
-    };
-    try {
-        const pdfData = mkPdf(r);
-        dl(new Blob([pdfData], { type: 'application/pdf' }), fnm(r.name, 'pdf'));
-        toast('Bulletin généré');
-    } catch (e) { toast('Erreur PDF : ' + e.message); }
+// ---------- Dossier élève : bouton [ Cotes ] ----------
+async function openStuCotes(id) {
+    const s = S.stu.find(x => x.id === id); if (!s) return;
+    if (S.offline) return toast('Hors connexion : les cotes demandent internet.');
+    show(`<h3>${esc(s.name)} · Cotes</h3>${SK}`);
+    const r = await pageAll(() => db.from('grades').select('subject_id,term,kind,num,grade,max_grade,eval_date,subjects(name)').eq('student_id', id).eq('class_id', s.class_id));
+    if (r.error) { $('#dlg').innerHTML = `<h3>${esc(s.name)}</h3><p class=empty>${esc(r.error.message)}</p><button class=ghost onclick="this.closest('dialog').close()">Fermer</button>`; return; }
+    S.stuG = { id, name: s.name, rows: r.data.map(cotNorm) };
+    stuCotesGrid();
+}
+function stuCotesGrid() {
+    const g = S.stuG; if (!g) return;
+    const by = {};
+    g.rows.forEach(r => { const o = by[r.subject_id] || (by[r.subject_id] = { id: r.subject_id, name: r.subject_name, p: 0, m: 0 }); o.p += Number(r.grade); o.m += Number(r.max_grade); });
+    const list = Object.values(by).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+    show(`<h3>${esc(g.name)} · Cotes</h3>${list.length ? `<div class=cgrid style="max-height:55vh;overflow-y:auto">${list.map(o => `<div class=ccard onclick="stuCotesSubject('${o.id}')"><b style="font-size:13.5px;white-space:normal">${esc(o.name)}</b><small>${OB.pctTxt(OB.pctOf(o.p, o.m))}</small></div>`).join('')}</div>` : '<p class=empty data-ic="📝">Aucune cote enregistrée.</p>'}<button class=ghost style="margin-top:12px" onclick="this.closest('dialog').close()">Fermer</button>`);
+}
+function stuCotesSubject(sid) {
+    const g = S.stuG; if (!g) return;
+    const rows = g.rows.filter(r => r.subject_id === sid), name = rows[0] ? rows[0].subject_name : '';
+    const body = [1, 2, 3].map(t => {
+        const l = rows.filter(r => r.term === t).sort((a, b) => COT_KINDS.indexOf(a.kind) - COT_KINDS.indexOf(b.kind) || a.num - b.num);
+        if (!l.length) return `<div class=cot-sub style="font-size:16px">Trimestre ${t}</div><small>Aucune cote.</small>`;
+        const p = l.reduce((a, r) => a + Number(r.grade), 0), m = l.reduce((a, r) => a + Number(r.max_grade), 0);
+        return `<div class=cot-sub style="font-size:16px">Trimestre ${t} · ${OB.num(p)} / ${OB.num(m)} (${OB.pctTxt(OB.pctOf(p, m))})</div>`
+            + l.map(r => `<div style="display:flex;justify-content:space-between;margin:3px 0"><span>${r.kind} ${r.num} <small>(Base ${nf(r.max_grade)})${r.eval_date ? ' · ' + fdate(r.eval_date) : ''}</small></span><b>${nf(r.grade)} / ${nf(r.max_grade)}</b></div>`).join('');
+    }).join('');
+    show(`<h3>${esc(name)}</h3><div style="max-height:55vh;overflow-y:auto">${body}</div><div class=row><button class=ghost onclick="stuCotesGrid()">← Cours</button><button class=ghost onclick="this.closest('dialog').close()">Fermer</button></div>`);
 }

@@ -63,6 +63,7 @@ window.addEventListener('popstate', () => {
         d.close();
         return;
     }
+    if (S.me && (S.tab === 'cotation' || S.tab === 'bulletins')) { if (S.tab === 'cotation' && S.cotScreen === 'eval') S.cotScreen = 'home'; else S.tab = 'eleves'; render(); return; }
     if (S.me && S.tab === 'eleves' && S.view === 'class') { S.view = 'grid'; S.q = ''; render(); return; }
     if (S.me && !['accueil', 'menu'].includes(S.tab)) {
         if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps'].includes(S.tab)) {
@@ -516,9 +517,9 @@ function setupView() {
 function render() {
     $('#nav').hidden = false; subBanner();
     const R = S.me.role, tabs = [['accueil', 'Accueil'], ['eleves', 'École'], ['menu', 'Menu'], ['reglages', 'Réglages']];
-    const SUB = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps'];
+    const SUB = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'cotation', 'bulletins'];
     if (!tabs.some(x => x[0] === S.tab) && !SUB.includes(S.tab)) S.tab = 'accueil';
-    let activeTab = SUB.includes(S.tab) ? 'menu' : S.tab;
+    let activeTab = ['cotation', 'bulletins'].includes(S.tab) ? 'eleves' : SUB.includes(S.tab) ? 'menu' : S.tab;
     $('#nav').innerHTML = tabs.map(x => `<button data-t=${x[0]}>${svgI(x[0])}<span>${x[1]}</span></button>`).join('');
     document.querySelectorAll('#nav button').forEach(b => { b.classList.toggle('on', b.dataset.t === activeTab); b.onclick = () => goTab(b.dataset.t); });
 
@@ -527,14 +528,16 @@ function render() {
         hs.insertAdjacentHTML('afterend', `<button id="searchBtn" class="ghost" style="width:auto;min-height:40px;padding:8px;margin-left:auto;border:none" onclick="openSearch()">🔍</button>`);
     }
 
-    ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier, devoirs: vDevoirs, emploi_temps: vEmploiTemps })[S.tab]();
+    ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier, devoirs: vDevoirs, emploi_temps: vEmploiTemps, cotation: () => vCotation(), bulletins: () => vBulletins() })[S.tab]();
     qui();
 }
 const sorts = {
     alpha: (a, b) => a.name.localeCompare(b.name, 'fr'),
     solde: (a, b) => b.balance_cdf - a.balance_cdf,
-    retard: (a, b) => { const k = s => s.balance_cdf > 0 ? (s.last_pay ? +new Date(s.last_pay) : 0) : 9e15; return k(a) - k(b); }
+    retard: (a, b) => { const k = s => s.balance_cdf > 0 ? (s.last_pay ? +new Date(s.last_pay) : 0) : 9e15; return k(a) - k(b); },
+    moyenne: (a, b) => { const v = s => S.avg && S.avg[s.id] != null ? S.avg[s.id] : -1; return v(b) - v(a) || a.name.localeCompare(b.name, 'fr'); }
 };
+const avgPill = s => { const v = S.avg && S.avg[s.id]; return v == null ? '' : `<span class="avgp ${v < 50 ? 'bad' : ''}">${nf(v, 1)} %</span>`; };
 
 // --- FIN DE LA TRANCHE 3. La tranche suivante commencera par : /* ---------- Onglet École : grille de classes ---------- */ ---
 /* ---------- Onglet École : grille de classes ---------- */
@@ -571,7 +574,8 @@ function vEleves() {
         const FT = [['all', 'Tous'], ...(hasTerms() ? [['late', 'En retard']] : []), ['due', 'À payer'], ['paid', 'Soldés'], ['nophone', 'Sans n°']];
         h += `<div class=bar><button class=ghost style="width:auto" onclick=backGrid()>← Classes</button><b class=ctitle>${esc(c.name)}</b><button class=ghost style="width:auto;margin-left:auto" onclick=printClass()>🖨 Imprimer</button></div>`
             + `<input id=q type=search placeholder="🔍 Rechercher dans ${esc(c.name)}" value="${esc(S.q)}">`
-            + `<div class=bar><select id=so><option value=alpha>Alphabétique A → Z</option><option value=solde>Plus grand solde dû</option><option value=retard>Retard de paiement</option></select></div>`
+            + (['directeur', 'enseignant'].includes(S.me.role) ? `<div class=bar><button class=ghost style="flex:1;width:auto" onclick=openCotation()>📝 Cotation</button>${dir() ? '<button style="flex:1;width:auto" onclick=openBulletins()>📄 Bulletins</button>' : ''}</div>` : '')
+            + `<div class=bar><select id=so><option value=alpha>Alphabétique A → Z</option><option value=solde>Plus grand solde dû</option><option value=retard>Retard de paiement</option><option value=moyenne>Tri par moyenne</option></select></div>`
             + `<div class=chips>${FT.map(f => `<button class="chip ${S.ft === f[0] ? 'on' : ''}" data-f=${f[0]}>${f[1]}</button>`).join('')}</div><div id=lst></div>`;
     } else {
         if (!cl.some(c => c.id === S.cls)) S.cls = cl[0].id;
@@ -588,6 +592,7 @@ function vEleves() {
         }
         drawList();
     }
+    if (S.view === 'class' && typeof loadClassAvg === 'function') loadClassAvg();
 }
 function drawGrid() {
     const cl = yc(), st = ys(), by = {};
@@ -616,7 +621,7 @@ function drawList() {
     if (grid && !q) return drawGrid();
     const cn = Object.fromEntries(S.classes.map(c => [c.id, c.name])), l = listNow();
     const tot = l.reduce((t, s) => t + Number(s.balance_cdf || 0), 0);
-    $('#lst').innerHTML = l.length ? `<small>${l.length} élève(s) · reste dû ${fmt(tot)}</small>` + l.map(s => `<div class=card onclick="menu('${s.id}')"><span><b>${esc(s.name)}</b>${grid ? '<br><small>' + esc(cn[s.class_id] || '') + '</small>' : ''}</span>${stTag(s)}</div>`).join('') : `<p class=empty>${q || S.ft !== 'all' ? 'Aucun élève trouvé.' : 'Aucun élève dans cette classe.'}</p>`;
+    $('#lst').innerHTML = l.length ? `<small>${l.length} élève(s) · reste dû ${fmt(tot)}</small>` + l.map(s => `<div class=card onclick="menu('${s.id}')"><span><b>${esc(s.name)}</b>${grid ? '' : avgPill(s)}${grid ? '<br><small>' + esc(cn[s.class_id] || '') + '</small>' : ''}</span>${stTag(s)}</div>`).join('') : `<p class=empty>${q || S.ft !== 'all' ? 'Aucun élève trouvé.' : 'Aucun élève dans cette classe.'}</p>`;
 }
 
 /* ---------- Impression d’une classe (PDF / PNG) ---------- */
@@ -683,11 +688,17 @@ function addStudent() {
         if (error) throw error; S.cls = v.cls; await load(); render();
     });
 }
+function termSolde(s) {
+    const c = S.classes.find(x => x.id === s.class_id), k = c ? curTerm(cy(c)) : null;
+    if (!(k > 0)) return `<p>${stTag(s)}</p>`;
+    const t = trims(s)[k - 1];
+    return `<p><b>Solde du trimestre ${k}</b> : ${t[1] > 0 ? `<span class=due>${fmt(t[1])} à payer</span>` : '<span class=ok>✓ Soldé</span>'}</p>`;
+}
 function menu(id) {
     const s = S.stu.find(x => x.id === id), R = S.me.role;
-    const d = show(`<h3>${esc(s.name)}</h3><p>${stTag(s)}</p><p><small>${trims(s).map(t => 'T' + t[0] + ' : ' + (t[2] > 0 ? (t[1] > 0 ? 'reste ' + fmt(t[1]) : '✓') : '—')).join(' · ')}</small></p>${fees4(s).length ? '<p><small>' + fees4(s).map(f => esc(f.name) + ' : ' + (feeRem(s, f) > 0 ? 'reste ' + fmt(feeRemCdf(s, f)) : '✓')).join(' · ') + '</small></p>' : ''}<div class=col>${R !== 'enseignant' ? '<button id=m1>Encaisser un paiement</button><button class=ghost id=m2>Historique et reçus</button>' : ''}${R !== 'percepteur' ? '<button class=ghost id=m7>Sanctions</button>' : ''}${dir() ? '<button class=ghost id=m6>Message WhatsApp au parent</button><button class=ghost id=m8>🔑 Voir le code Parent</button><button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>' : ''}<button class=ghost id=m3>Fermer</button></div>`);
+    const d = show(`<h3>${esc(s.name)}</h3>${termSolde(s)}<p><small>${trims(s).map(t => 'T' + t[0] + ' : ' + (t[2] > 0 ? (t[1] > 0 ? 'reste ' + fmt(t[1]) : '✓') : '—')).join(' · ')}</small></p>${fees4(s).length ? '<p><small>' + fees4(s).map(f => esc(f.name) + ' : ' + (feeRem(s, f) > 0 ? 'reste ' + fmt(feeRemCdf(s, f)) : '✓')).join(' · ') + '</small></p>' : ''}<div class=col>${R !== 'enseignant' ? '<button id=m1>Encaisser un paiement</button><button class=ghost id=m2>Historique et reçus</button>' : ''}${R !== 'percepteur' ? '<button class=ghost id=m7>Sanctions</button>' : ''}${R === 'directeur' || R === 'enseignant' ? '<button class=ghost id=m9>📊 Cotes</button>' : ''}${dir() ? '<button class=ghost id=m6>Message WhatsApp au parent</button><button class=ghost id=m8>🔑 Voir le code Parent</button><button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>' : ''}<button class=ghost id=m3>Fermer</button></div>`);
     const b = (k, f) => { const e = d.querySelector('#' + k); if (e) e.onclick = f; };
-    b('m1', () => pay(id)); b('m2', () => hist(id)); b('m3', () => d.close()); b('m4', () => editStudent(id)); b('m5', () => { d.close(); delStudent(id); }); b('m6', () => wa(id)); b('m7', () => sanc(id));
+    b('m1', () => pay(id)); b('m2', () => hist(id)); b('m3', () => d.close()); b('m4', () => editStudent(id)); b('m5', () => { d.close(); delStudent(id); }); b('m6', () => wa(id)); b('m7', () => sanc(id)); b('m9', () => { if (typeof openStuCotes === 'function') openStuCotes(id); });
     b('m8', async () => {
         const btn = d.querySelector('#m8');
         btn.textContent = '⏳ Chargement...';
