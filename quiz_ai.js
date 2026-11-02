@@ -2,6 +2,7 @@
    ORÉA École v40 — quiz_ai.js
    UNIQUE point d'appel Gemini. Génère des questions par lots (15-25),
    JSON strict, validation, 1 nouvelle tentative si JSON invalide.
+   Ajout d'un verrou anti-doublon pour économiser le quota (audit).
    À charger APRÈS quiz_storage.js, AVANT quiz_engine.js et quiz_ui.js.
    ===================================================================== */
 (function () {
@@ -10,6 +11,10 @@
     const BATCH_MIN = 15, BATCH_MAX = 25;
     const DEFAULT_MODEL = 'gemini-3.8-flash';
     const ORIGINES = { rdc: 0.40, afrique: 0.30, monde: 0.30 };
+
+    // Variables du verrou (empêche 2 générations simultanées)
+    let isGenerating = false;
+    let generationPromise = null;
 
     const key = () => (window.OREA_CONFIG && OREA_CONFIG.GEMINI_KEY) || '';
     const model = () => (window.OREA_CONFIG && OREA_CONFIG.GEMINI_MODEL) || DEFAULT_MODEL;
@@ -24,9 +29,11 @@
             case 'notfound':   return 'Modèle introuvable. Vérifie GEMINI_MODEL dans config.js.';
             case 'badjson':    return 'La réponse de Gemini n’était pas au format attendu. Une nouvelle tentative a été faite.';
             case 'refused':    return 'Gemini a refusé la génération. Réessaie avec un autre thème.';
+            case 'busy':       return 'Une génération de questions est déjà en cours. Merci de patienter quelques secondes.';
             default:           return 'Erreur IA : ' + (detail || 'inconnue');
         }
     }
+    
     function classifyHttp(status, body) {
         const t = String(body || '').toLowerCase();
         if (status === 0) return 'network';
@@ -37,7 +44,7 @@
         return 'other';
     }
 
-    // Prompt strict, en français, instructions claires sur le format
+    // Prompt strict, en français
     function buildPrompt(opts) {
         const n = Math.max(BATCH_MIN, Math.min(BATCH_MAX, opts.count || 20));
         const diff = Math.max(1, Math.min(5, opts.niveau_difficulte || 2));
@@ -73,7 +80,7 @@ FORMAT ATTENDU (un tableau JSON strict) :
 Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
     }
 
-    // Extraction robuste : le modèle peut entourer de ```json ... ```
+    // Extraction robuste du JSON
     function extractJson(text) {
         let s = String(text || '').trim();
         s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
@@ -82,7 +89,6 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         const raw = s.slice(first, last + 1);
         try { return JSON.parse(raw); }
         catch (_) {
-            // tentative : retire les virgules traînantes
             const cleaned = raw.replace(/,\s*([}\]])/g, '$1');
             return JSON.parse(cleaned);
         }
@@ -126,6 +132,7 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
                 })
             });
         } catch (_) { throw new Error('network'); }
+        
         const txt = await res.text();
         if (!res.ok) {
             const kind = classifyHttp(res.status, txt);
@@ -134,6 +141,7 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         let body;
         try { body = JSON.parse(txt); } catch (_) { throw new Error('badjson'); }
         if (body && body.promptFeedback && body.promptFeedback.blockReason) throw new Error('refused');
+        
         const cand = body && body.candidates && body.candidates[0];
         const parts = cand && cand.content && cand.content.parts;
         const text = parts && parts.map(p => p.text || '').join('') || '';
@@ -141,34 +149,46 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         return text;
     }
 
-    // Fonction principale : génère un lot, réessaie une fois si JSON invalide.
+    // Fonction principale : génère un lot
     async function generateBatch(opts) {
         if (isKeyMissing()) throw new Error('nokey');
+        
+        // VERROU : si une génération est déjà en cours, on refuse
+        if (isGenerating) throw new Error('busy');
+        isGenerating = true;
+
         const prompt = buildPrompt(opts);
-        for (let attempt = 1; attempt <= 2; attempt++) {
-            try {
-                const raw = await callGemini(prompt);
-                const list = validate(extractJson(raw));
-                if (!list.length) throw new Error('badjson');
-                return list.slice(0, Math.min(BATCH_MAX, list.length));
-            } catch (e) {
-                const code = String(e.message || '');
-                if (code === 'nokey' || code === 'network' || code === 'quota' || code === 'notfound' || code === 'refused') throw e;
-                if (attempt === 2) throw new Error('badjson');
+        try {
+            for (let attempt = 1; attempt <= 2; attempt++) {
+                try {
+                    const raw = await callGemini(prompt);
+                    const list = validate(extractJson(raw));
+                    if (!list.length) throw new Error('badjson');
+                    return list.slice(0, Math.min(BATCH_MAX, list.length));
+                } catch (e) {
+                    const code = String(e.message || '');
+                    if (code === 'nokey' || code === 'network' || code === 'quota' || code === 'notfound' || code === 'refused') throw e;
+                    if (attempt === 2) throw new Error('badjson');
+                }
             }
+            throw new Error('badjson');
+        } finally {
+            // On libère TOUJOURS le verrou, même en cas d'erreur
+            isGenerating = false;
         }
-        throw new Error('badjson');
     }
 
-    // Remplit le cache jusqu'à avoir assez de questions pour le niveau demandé.
-    // (Pioche d'abord dans le cache, sinon appelle Gemini par lots de 20.)
+    // Remplit le cache
     async function ensureCache(opts) {
         const need = Math.max(1, opts.need || 20);
         const got = await QuizStorage.cacheCount(opts.school_id, opts.niveau_scolaire);
         if (got >= need) return { from: 'cache', have: got };
+        
         const manque = need - got;
         const lots = Math.ceil(manque / 20);
         let total = 0;
+        
+        // Si on demande plusieurs lots, on les fait un par un (le verrou bloque les autres)
         for (let i = 0; i < lots; i++) {
             try {
                 const list = await generateBatch({
@@ -179,7 +199,6 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
                 });
                 total += await QuizStorage.insertBatch(opts.school_id, opts.niveau_scolaire, list);
             } catch (e) {
-                // On laisse remonter les erreurs bloquantes, mais on rend le total si partiel
                 if (i === 0) throw e;
                 break;
             }
