@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v40 — quiz_ui.js
+   ORÉA École v40 — quiz_ui.js (Partie 1/2)
    Interface animateur du Génie en Herbe.
    ===================================================================== */
 (function () {
@@ -160,159 +160,164 @@
     async function keepAwake() {
         try { if ('wakeLock' in navigator) QUIZ.wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
     }
-async function openNewGame() {
-    initAudio();
-    showOverlay(`<div class="qz-head"><button class="qz-btn-icon" onclick="history.back()">←</button><b>Nouvelle partie</b></div><div class="qz-body qz-form" id="qz-cfg-body"><p style="text-align:center;color:var(--mut)">Chargement...</p></div>`);
 
-    const classes = S.classes.filter(c => cy(c) === S.year).sort(classSort);
-    if (classes.length < 2) {
-        $('#qz-cfg-body').innerHTML = `<p class="empty">Il faut au moins 2 classes pour lancer une partie.</p><button class="ghost" style="margin-top:10px" onclick="history.back()">Retour</button>`;
-        return;
-    }
+    async function openNewGame() {
+        initAudio();
+        showOverlay(`<div class="qz-head"><button class="qz-btn-icon" onclick="history.back()">←</button><b>Nouvelle partie</b></div><div class="qz-body qz-form" id="qz-cfg-body"><p style="text-align:center;color:var(--mut)">Chargement...</p></div>`);
 
-    $('#qz-cfg-body').innerHTML = `
-        <label>Niveau scolaire</label>
-        <div class="qz-choices" id="qz-lvl"><button class="qz-ch" data-v="primaire">Primaire</button><button class="qz-ch on" data-v="secondaire">Secondaire</button></div>
-        <label>Équipe A (Classe)</label>
-        <select id="qz-cls-a">${classes.map((c, i) => `<option value="${c.id}" ${i===0?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
-        <label>Équipe B (Classe)</label>
-        <select id="qz-cls-b">${classes.map((c, i) => `<option value="${c.id}" ${i===1?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
-        <label>Chronomètre par question</label>
-        <div class="qz-choices" id="qz-tm"><button class="qz-ch" data-v="30">30 s</button><button class="qz-ch on" data-v="45">45 s</button><button class="qz-ch" data-v="60">1 min</button></div>
-        <div id="qz-pl-area" style="margin-top:20px"></div>
-        <div class="qz-btn-bottom"><button id="qz-start" disabled>Lancer le Quiz</button></div>
-    `;
+        const classes = S.classes.filter(c => cy(c) === S.year).sort(classSort);
+        if (classes.length < 2) {
+            $('#qz-cfg-body').innerHTML = `<p class="empty">Il faut au moins 2 classes pour lancer une partie.</p><button class="ghost" style="margin-top:10px" onclick="history.back()">Retour</button>`;
+            return;
+        }
 
-    let niveau = 'secondaire', timer = 45;
-    $('#qz-lvl').onclick = e => { if (!e.target.classList.contains('qz-ch')) return; [...$('#qz-lvl').children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); niveau = e.target.dataset.v; };
-    $('#qz-tm').onclick = e => { if (!e.target.classList.contains('qz-ch')) return; [...$('#qz-tm').children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); timer = +e.target.dataset.v; };
+        $('#qz-cfg-body').innerHTML = `
+            <label>Niveau scolaire</label>
+            <div class="qz-choices" id="qz-lvl"><button class="qz-ch" data-v="primaire">Primaire</button><button class="qz-ch on" data-v="secondaire">Secondaire</button></div>
+            <label>Équipe A (Classe)</label>
+            <select id="qz-cls-a">${classes.map((c, i) => `<option value="${c.id}" ${i===0?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
+            <label>Équipe B (Classe)</label>
+            <select id="qz-cls-b">${classes.map((c, i) => `<option value="${c.id}" ${i===1?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
+            <label>Chronomètre par question</label>
+            <div class="qz-choices" id="qz-tm"><button class="qz-ch" data-v="30">30 s</button><button class="qz-ch on" data-v="45">45 s</button><button class="qz-ch" data-v="60">1 min</button></div>
+            <div id="qz-pl-area" style="margin-top:20px"></div>
+            <div class="qz-btn-bottom"><button id="qz-start" disabled>Lancer le Quiz</button></div>
+        `;
 
-    function renderPlayers() {
-        const ca = S.classes.find(c => c.id === $('#qz-cls-a').value);
-        const cb = S.classes.find(c => c.id === $('#qz-cls-b').value);
-        if (!ca || !cb || ca.id === cb.id) { $('#qz-pl-area').innerHTML = `<p class="due" style="text-align:center">Choisissez deux classes différentes.</p>`; $('#qz-start').disabled = true; return; }
-        const stA = S.stu.filter(s => s.class_id === ca.id).sort((a,b)=>a.name.localeCompare(b.name));
-        const stB = S.stu.filter(s => s.class_id === cb.id).sort((a,b)=>a.name.localeCompare(b.name));
-        $('#qz-pl-area').innerHTML = `
-            <div class="qz-players">
-                <div class="qz-pl-card"><b style="color:#3b82f6;margin-bottom:8px;display:block">${esc(ca.name)}</b>${stA.slice(0, 5).map(s => `<label><input type="checkbox" class="plA" value="${s.id}" checked> ${esc(s.name)}</label>`).join('')}</div>
-                <div class="qz-pl-card"><b style="color:#ef4444;margin-bottom:8px;display:block">${esc(cb.name)}</b>${stB.slice(0, 5).map(s => `<label><input type="checkbox" class="plB" value="${s.id}" checked> ${esc(s.name)}</label>`).join('')}</div>
-            </div><p style="font-size:12px;color:var(--mut);margin-top:8px;text-align:center">Décochez un élève pour ne pas le faire jouer. 5 élèves par équipe recommandés.</p>`;
-        const check = () => { const na = document.querySelectorAll('.plA:checked').length; const nb = document.querySelectorAll('.plB:checked').length; $('#qz-start').disabled = !(na > 0 && nb > 0 && na <= 5 && nb <= 5); };
-        $('#qz-pl-area').onchange = check; check();
-    }
+        let niveau = 'secondaire', timer = 45;
+        $('#qz-lvl').onclick = e => { if (!e.target.classList.contains('qz-ch')) return; [...$('#qz-lvl').children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); niveau = e.target.dataset.v; };
+        $('#qz-tm').onclick = e => { if (!e.target.classList.contains('qz-ch')) return; [...$('#qz-tm').children].forEach(b => b.classList.remove('on')); e.target.classList.add('on'); timer = +e.target.dataset.v; };
 
-    $('#qz-cls-a').onchange = renderPlayers; $('#qz-cls-b').onchange = renderPlayers; renderPlayers();
-
-    $('#qz-start').onclick = async e => {
-        const btn = e.target; btn.textContent = 'Préparation...'; btn.disabled = true;
-        try {
+        function renderPlayers() {
             const ca = S.classes.find(c => c.id === $('#qz-cls-a').value);
             const cb = S.classes.find(c => c.id === $('#qz-cls-b').value);
-            const plA = [...document.querySelectorAll('.plA:checked')].map(i => ({ id: i.value, name: i.nextSibling.textContent.trim() }));
-            const plB = [...document.querySelectorAll('.plB:checked')].map(i => ({ id: i.value, name: i.nextSibling.textContent.trim() }));
-            const res = await QuizEngine.createGame({ school_id: S.school.id, created_by: S.me.id, niveau_scolaire: niveau, timer_seconds: timer, class_a: ca, class_b: cb, team_a_players: plA, team_b_players: plB });
-            QUIZ.game = res.game; QUIZ.players = res.players; QUIZ.state = res.game.state; startGameScreen();
-        } catch (err) { alert(err.message); btn.textContent = 'Lancer le Quiz'; btn.disabled = false; }
-    };
-}
+            if (!ca || !cb || ca.id === cb.id) { $('#qz-pl-area').innerHTML = `<p class="due" style="text-align:center">Choisissez deux classes différentes.</p>`; $('#qz-start').disabled = true; return; }
+            const stA = S.stu.filter(s => s.class_id === ca.id).sort((a,b)=>a.name.localeCompare(b.name));
+            const stB = S.stu.filter(s => s.class_id === cb.id).sort((a,b)=>a.name.localeCompare(b.name));
+            
+            // MODIFICATION 1 : Le mot "checked" a été retiré pour que les élèves ne soient pas cochés d'office.
+            $('#qz-pl-area').innerHTML = `
+                <div class="qz-players">
+                    <div class="qz-pl-card"><b style="color:#3b82f6;margin-bottom:8px;display:block">${esc(ca.name)}</b>${stA.slice(0, 5).map(s => `<label><input type="checkbox" class="plA" value="${s.id}"> ${esc(s.name)}</label>`).join('')}</div>
+                    <div class="qz-pl-card"><b style="color:#ef4444;margin-bottom:8px;display:block">${esc(cb.name)}</b>${stB.slice(0, 5).map(s => `<label><input type="checkbox" class="plB" value="${s.id}"> ${esc(s.name)}</label>`).join('')}</div>
+                </div><p style="font-size:12px;color:var(--mut);margin-top:8px;text-align:center">Cochez 5 élèves par équipe pour lancer la partie.</p>`;
+            
+            // MODIFICATION 2 : Vérifie qu'il y a exactement 5 élèves par équipe.
+            const check = () => { const na = document.querySelectorAll('.plA:checked').length; const nb = document.querySelectorAll('.plB:checked').length; $('#qz-start').disabled = !(na === 5 && nb === 5); };
+            $('#qz-pl-area').onchange = check; check();
+        }
 
-async function startGameScreen() {
-    if (QUIZ.game.status !== 'en_cours') QUIZ.game.status = 'en_cours';
-    showOverlay(`
-        <div class="qz-game">
-            <div class="qz-head"><button class="qz-btn-icon" id="qz-btn-pause">⏸</button><b>Niveau <span id="qz-h-lvl">1</span> · <span id="qz-h-name">Échauffement</span></b><button class="qz-btn-icon" id="qz-btn-snd">${QUIZ.soundOn ? '🔊' : '🔇'}</button></div>
-            <div class="qz-top"><div class="A" id="qz-h-a">${esc(QUIZ.game.class_a_name)} <span class="qz-scores">0</span></div><div class="B" id="qz-h-b">${esc(QUIZ.game.class_b_name)} <span class="qz-scores">0</span></div></div>
-            <div class="qz-q-box" id="qz-main-area"><div class="sk" style="width:80%;height:80px"></div></div>
-        </div>
-    `);
-    keepAwake();
-    $('#qz-btn-pause').onclick = pauseGame;
-    $('#qz-btn-snd').onclick = e => { QUIZ.soundOn = !QUIZ.soundOn; localStorage.setItem('orea_quiz_sound', QUIZ.soundOn ? 'on' : 'off'); e.target.textContent = QUIZ.soundOn ? '🔊' : '🔇'; };
-    loadNextStep();
-}
+        $('#qz-cls-a').onchange = renderPlayers; $('#qz-cls-b').onchange = renderPlayers; renderPlayers();
 
-function updateScores() {
-    if (!QUIZ.state) return;
-    $('#qz-h-a .qz-scores').textContent = QUIZ.state.scores.A;
-    $('#qz-h-b .qz-scores').textContent = QUIZ.state.scores.B;
-    const n = QUIZ.state.level;
-    $('#qz-h-lvl').textContent = n;
-    $('#qz-h-name').textContent = QuizEngine.LEVELS.find(l => l.n === n)?.nom || '';
-}
-
-async function loadNextStep() {
-    const main = $('#qz-main-area');
-    main.innerHTML = `<div class="sk" style="width:80%;height:80px"></div>`;
-    try {
-        const step = await QuizEngine.nextQuestion({ game: QUIZ.game, players: QUIZ.players, state: QUIZ.state });
-        if (step.finished) return endGame(step.winner);
-        if (step.tie) return showTieScreen();
-        if (step.error) throw new Error(step.error);
-        updateScores(); renderQuestion(step);
-    } catch (e) { main.innerHTML = `<p class="due" style="text-align:center;padding:20px">Erreur : ${esc(e.message)}</p><button class="ghost" style="margin-top:10px" onclick="history.back()">Quitter</button>`; }
-}
-
-function renderQuestion(step) {
-    QUIZ.currentStep = step; QUIZ.currentQ = step.q;
-    const q = step.q, tm = QUIZ.game.timer_seconds, main = $('#qz-main-area');
-    const teamColor = step.team === 'A' ? '#3b82f6' : '#ef4444';
-    const teamName = step.team === 'A' ? QUIZ.game.class_a_name : QUIZ.game.class_b_name;
-    const letters = ['A', 'B', 'C', 'D'];
-    main.innerHTML = `
-        <div style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:10px 20px">
-            <div style="color:${teamColor};font-weight:800;font-size:14px">👤 ${esc(step.player.name)} <small>(${esc(teamName)})</small></div>
-            <div class="qz-timer" id="qz-timer"><svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="40"></circle><circle class="fg" cx="50" cy="50" r="40" id="qz-circle" stroke-dasharray="251.2" stroke-dashoffset="0"></circle></svg><span id="qz-txt-time">${tm}</span></div>
-        </div>
-        <div class="qz-q-box" style="flex:1;padding-top:0">
-            <div class="qz-theme">${esc(q.theme || 'Culture Générale')} · Niveau ${QUIZ.state.level}</div>
-            <div class="qz-question">${esc(q.question)}</div>
-            <div class="qz-choices-grid" id="qz-grid">${q.choix.map((c, i) => `<div class="qz-ans" data-i="${i}"><span>${letters[i]}</span> ${esc(c)}</div>`).join('')}</div>
-        </div>`;
-    if (QUIZ.state.level !== 5) {
-        const jokers = QUIZ.state.jokers_used[step.team];
-        main.insertAdjacentHTML('beforeend', `<div class="qz-jokers"><button class="qz-jk" id="jk-ami" ${jokers.ami || QUIZ.isAnswering ? 'disabled' : ''}>📞 Appel à un ami (${jokers.ami ? 'utilisé' : '1'})</button><button class="qz-jk" id="jk-50" ${jokers.cinquante || QUIZ.isAnswering ? 'disabled' : ''}>50/50 (${jokers.cinquante ? 'utilisé' : '1'})</button></div>`);
-        if (!jokers.ami) $('#jk-ami').onclick = () => useJoker('ami', step, q);
-        if (!jokers.cinquante) $('#jk-50').onclick = () => useJoker('cinquante', step, q);
+        $('#qz-start').onclick = async e => {
+            const btn = e.target; btn.textContent = 'Préparation...'; btn.disabled = true;
+            try {
+                const ca = S.classes.find(c => c.id === $('#qz-cls-a').value);
+                const cb = S.classes.find(c => c.id === $('#qz-cls-b').value);
+                const plA = [...document.querySelectorAll('.plA:checked')].map(i => ({ id: i.value, name: i.nextSibling.textContent.trim() }));
+                const plB = [...document.querySelectorAll('.plB:checked')].map(i => ({ id: i.value, name: i.nextSibling.textContent.trim() }));
+                const res = await QuizEngine.createGame({ school_id: S.school.id, created_by: S.me.id, niveau_scolaire: niveau, timer_seconds: timer, class_a: ca, class_b: cb, team_a_players: plA, team_b_players: plB });
+                QUIZ.game = res.game; QUIZ.players = res.players; QUIZ.state = res.game.state; startGameScreen();
+            } catch (err) { alert(err.message); btn.textContent = 'Lancer le Quiz'; btn.disabled = false; }
+        };
     }
-    QUIZ.isAnswering = false; QUIZ.timeLeft = tm; QUIZ.startTime = Date.now();
-    $('#qz-grid').querySelectorAll('.qz-ans').forEach(el => { el.onclick = () => submitAnswer(+el.dataset.i, step, q); });
-    const circle = $('#qz-circle'), perimeter = 251.2;
-    if (QUIZ.timer) clearInterval(QUIZ.timer);
-    QUIZ.timer = setInterval(() => {
-        QUIZ.timeLeft -= 0.1;
-        if (QUIZ.timeLeft <= 0) { clearInterval(QUIZ.timer); submitAnswer(-1, step, q); return; }
-        const pct = QUIZ.timeLeft / tm; circle.style.strokeDashoffset = perimeter - (perimeter * pct);
-        if (QUIZ.timeLeft <= 5) { circle.style.stroke = 'var(--bad)'; if (Math.floor(QUIZ.timeLeft * 10) % 10 === 0 && Math.floor(QUIZ.timeLeft) !== Math.floor(QUIZ.timeLeft + 0.1)) { sound.tick(); } }
-        else if (QUIZ.timeLeft <= tm / 2) { circle.style.stroke = 'orange'; }
-        else { circle.style.stroke = 'var(--ok)'; }
-        $('#qz-txt-time').textContent = Math.ceil(QUIZ.timeLeft);
-    }, 100);
-}
-
-async function useJoker(type, step, q) {
-    if (QUIZ.isAnswering) return;
-    if (type === 'ami') { QUIZ.timeLeft += 30; $('#jk-ami').disabled = true; $('#jk-ami').textContent = '📞 Appel à un ami (+30s)'; }
-    else if (type === 'cinquante') {
-        $('#jk-50').disabled = true; $('#jk-50').textContent = '50/50 utilisé';
-        const wrongIndices = [0,1,2,3].filter(i => i !== q.bonne_reponse);
-        QuizEngine.shuffle(wrongIndices).slice(0, 2).forEach(i => { $(`#qz-grid .qz-ans[data-i="${i}"]`).classList.add('disabled'); });
+       async function startGameScreen() {
+        if (QUIZ.game.status !== 'en_cours') QUIZ.game.status = 'en_cours';
+        showOverlay(`
+            <div class="qz-game">
+                <div class="qz-head"><button class="qz-btn-icon" id="qz-btn-pause">⏸</button><b>Niveau <span id="qz-h-lvl">1</span> · <span id="qz-h-name">Échauffement</span></b><button class="qz-btn-icon" id="qz-btn-snd">${QUIZ.soundOn ? '🔊' : '🔇'}</button></div>
+                <div class="qz-top"><div class="A" id="qz-h-a">${esc(QUIZ.game.class_a_name)} <span class="qz-scores">0</span></div><div class="B" id="qz-h-b">${esc(QUIZ.game.class_b_name)} <span class="qz-scores">0</span></div></div>
+                <div class="qz-q-box" id="qz-main-area"><div class="sk" style="width:80%;height:80px"></div></div>
+            </div>
+        `);
+        keepAwake();
+        $('#qz-btn-pause').onclick = pauseGame;
+        $('#qz-btn-snd').onclick = e => { QUIZ.soundOn = !QUIZ.soundOn; localStorage.setItem('orea_quiz_sound', QUIZ.soundOn ? 'on' : 'off'); e.target.textContent = QUIZ.soundOn ? '🔊' : '🔇'; };
+        loadNextStep();
     }
-    try { await QuizStorage.useJoker(QUIZ.game.id, step.team, type); QUIZ.state.jokers_used[step.team][type] = true; await QuizEngine.saveState(QUIZ.game.id, QUIZ.state); } catch(e) { console.error(e); }
-}
 
-async function submitAnswer(selectedIdx, step, q) {
-    if (QUIZ.isAnswering) return; QUIZ.isAnswering = true; if (QUIZ.timer) clearInterval(QUIZ.timer);
-    const timeMs = Date.now() - QUIZ.startTime, isCorrect = selectedIdx === q.bonne_reponse;
-    $('#qz-grid').querySelectorAll('.qz-ans').forEach((el, i) => { el.classList.add('disabled'); if (i === q.bonne_reponse) el.classList.add('correct'); else if (i === selectedIdx && !isCorrect) el.classList.add('wrong'); });
-    if (isCorrect) sound.success(); else sound.buzzer();
-    try { await QuizEngine.recordAnswer({ game: QUIZ.game, players: QUIZ.players, state: QUIZ.state }, { team: step.team, player_id: step.player.id, correct: isCorrect, time_ms: timeMs, question_id: q.id }); updateScores(); } catch(e) { console.error(e); }
-    setTimeout(() => {
-        const ov = document.createElement('div'); ov.className = 'qz-exp';
-        ov.innerHTML = `<div class="qz-exp-box"><h3 style="color:${isCorrect ? 'var(--ok)' : 'var(--bad)'}">${isCorrect ? '✅ Bonne réponse !' : (selectedIdx === -1 ? '⏰ Temps écoulé !' : '❌ Mauvaise réponse')}</h3><p>${esc(q.explication || 'La bonne réponse était : ' + q.choix[q.bonne_reponse])}</p><button class="ghost" style="margin-top:15px;width:100%" id="qz-next">Question suivante →</button></div>`;
-        $('#qz-main-area').appendChild(ov); $('#qz-next').onclick = () => { ov.remove(); QUIZ.isAnswering = false; loadNextStep(); };
-    }, 1500);
-}
+    function updateScores() {
+        if (!QUIZ.state) return;
+        $('#qz-h-a .qz-scores').textContent = QUIZ.state.scores.A;
+        $('#qz-h-b .qz-scores').textContent = QUIZ.state.scores.B;
+        const n = QUIZ.state.level;
+        $('#qz-h-lvl').textContent = n;
+        $('#qz-h-name').textContent = QuizEngine.LEVELS.find(l => l.n === n)?.nom || '';
+    }
+
+    async function loadNextStep() {
+        const main = $('#qz-main-area');
+        main.innerHTML = `<div class="sk" style="width:80%;height:80px"></div>`;
+        try {
+            const step = await QuizEngine.nextQuestion({ game: QUIZ.game, players: QUIZ.players, state: QUIZ.state });
+            if (step.finished) return endGame(step.winner);
+            if (step.tie) return showTieScreen();
+            if (step.error) throw new Error(step.error);
+            updateScores(); renderQuestion(step);
+        } catch (e) { main.innerHTML = `<p class="due" style="text-align:center;padding:20px">Erreur : ${esc(e.message)}</p><button class="ghost" style="margin-top:10px" onclick="history.back()">Quitter</button>`; }
+    }
+
+    function renderQuestion(step) {
+        QUIZ.currentStep = step; QUIZ.currentQ = step.q;
+        const q = step.q, tm = QUIZ.game.timer_seconds, main = $('#qz-main-area');
+        const teamColor = step.team === 'A' ? '#3b82f6' : '#ef4444';
+        const teamName = step.team === 'A' ? QUIZ.game.class_a_name : QUIZ.game.class_b_name;
+        const letters = ['A', 'B', 'C', 'D'];
+        main.innerHTML = `
+            <div style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:10px 20px">
+                <div style="color:${teamColor};font-weight:800;font-size:14px">👤 ${esc(step.player.name)} <small>(${esc(teamName)})</small></div>
+                <div class="qz-timer" id="qz-timer"><svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="40"></circle><circle class="fg" cx="50" cy="50" r="40" id="qz-circle" stroke-dasharray="251.2" stroke-dashoffset="0"></circle></svg><span id="qz-txt-time">${tm}</span></div>
+            </div>
+            <div class="qz-q-box" style="flex:1;padding-top:0">
+                <div class="qz-theme">${esc(q.theme || 'Culture Générale')} · Niveau ${QUIZ.state.level}</div>
+                <div class="qz-question">${esc(q.question)}</div>
+                <div class="qz-choices-grid" id="qz-grid">${q.choix.map((c, i) => `<div class="qz-ans" data-i="${i}"><span>${letters[i]}</span> ${esc(c)}</div>`).join('')}</div>
+            </div>`;
+        if (QUIZ.state.level !== 5) {
+            const jokers = QUIZ.state.jokers_used[step.team];
+            main.insertAdjacentHTML('beforeend', `<div class="qz-jokers"><button class="qz-jk" id="jk-ami" ${jokers.ami || QUIZ.isAnswering ? 'disabled' : ''}>📞 Appel à un ami (${jokers.ami ? 'utilisé' : '1'})</button><button class="qz-jk" id="jk-50" ${jokers.cinquante || QUIZ.isAnswering ? 'disabled' : ''}>50/50 (${jokers.cinquante ? 'utilisé' : '1'})</button></div>`);
+            if (!jokers.ami) $('#jk-ami').onclick = () => useJoker('ami', step, q);
+            if (!jokers.cinquante) $('#jk-50').onclick = () => useJoker('cinquante', step, q);
+        }
+        QUIZ.isAnswering = false; QUIZ.timeLeft = tm; QUIZ.startTime = Date.now();
+        $('#qz-grid').querySelectorAll('.qz-ans').forEach(el => { el.onclick = () => submitAnswer(+el.dataset.i, step, q); });
+        const circle = $('#qz-circle'), perimeter = 251.2;
+        if (QUIZ.timer) clearInterval(QUIZ.timer);
+        QUIZ.timer = setInterval(() => {
+            QUIZ.timeLeft -= 0.1;
+            if (QUIZ.timeLeft <= 0) { clearInterval(QUIZ.timer); submitAnswer(-1, step, q); return; }
+            const pct = QUIZ.timeLeft / tm; circle.style.strokeDashoffset = perimeter - (perimeter * pct);
+            if (QUIZ.timeLeft <= 5) { circle.style.stroke = 'var(--bad)'; if (Math.floor(QUIZ.timeLeft * 10) % 10 === 0 && Math.floor(QUIZ.timeLeft) !== Math.floor(QUIZ.timeLeft + 0.1)) { sound.tick(); } }
+            else if (QUIZ.timeLeft <= tm / 2) { circle.style.stroke = 'orange'; }
+            else { circle.style.stroke = 'var(--ok)'; }
+            $('#qz-txt-time').textContent = Math.ceil(QUIZ.timeLeft);
+        }, 100);
+    }
+
+    async function useJoker(type, step, q) {
+        if (QUIZ.isAnswering) return;
+        if (type === 'ami') { QUIZ.timeLeft += 30; $('#jk-ami').disabled = true; $('#jk-ami').textContent = '📞 Appel à un ami (+30s)'; }
+        else if (type === 'cinquante') {
+            $('#jk-50').disabled = true; $('#jk-50').textContent = '50/50 utilisé';
+            const wrongIndices = [0,1,2,3].filter(i => i !== q.bonne_reponse);
+            QuizEngine.shuffle(wrongIndices).slice(0, 2).forEach(i => { $(`#qz-grid .qz-ans[data-i="${i}"]`).classList.add('disabled'); });
+        }
+        try { await QuizStorage.useJoker(QUIZ.game.id, step.team, type); QUIZ.state.jokers_used[step.team][type] = true; await QuizEngine.saveState(QUIZ.game.id, QUIZ.state); } catch(e) { console.error(e); }
+    }
+
+    async function submitAnswer(selectedIdx, step, q) {
+        if (QUIZ.isAnswering) return; QUIZ.isAnswering = true; if (QUIZ.timer) clearInterval(QUIZ.timer);
+        const timeMs = Date.now() - QUIZ.startTime, isCorrect = selectedIdx === q.bonne_reponse;
+        $('#qz-grid').querySelectorAll('.qz-ans').forEach((el, i) => { el.classList.add('disabled'); if (i === q.bonne_reponse) el.classList.add('correct'); else if (i === selectedIdx && !isCorrect) el.classList.add('wrong'); });
+        if (isCorrect) sound.success(); else sound.buzzer();
+        try { await QuizEngine.recordAnswer({ game: QUIZ.game, players: QUIZ.players, state: QUIZ.state }, { team: step.team, player_id: step.player.id, correct: isCorrect, time_ms: timeMs, question_id: q.id }); updateScores(); } catch(e) { console.error(e); }
+        setTimeout(() => {
+            const ov = document.createElement('div'); ov.className = 'qz-exp';
+            ov.innerHTML = `<div class="qz-exp-box"><h3 style="color:${isCorrect ? 'var(--ok)' : 'var(--bad)'}">${isCorrect ? '✅ Bonne réponse !' : (selectedIdx === -1 ? '⏰ Temps écoulé !' : '❌ Mauvaise réponse')}</h3><p>${esc(q.explication || 'La bonne réponse était : ' + q.choix[q.bonne_reponse])}</p><button class="ghost" style="margin-top:15px;width:100%" id="qz-next">Question suivante →</button></div>`;
+            $('#qz-main-area').appendChild(ov); $('#qz-next').onclick = () => { ov.remove(); QUIZ.isAnswering = false; loadNextStep(); };
+        }, 1500);
+    }
+
     function resumeTimer(step, q) {
         QUIZ.startTime = Date.now() - (QUIZ.game.timer_seconds - QUIZ.timeLeft) * 1000;
         QUIZ.timer = setInterval(() => {
@@ -402,7 +407,7 @@ async function submitAnswer(selectedIdx, step, q) {
                 <p>Pour sa brillante victoire lors du tournoi du ${new Date().toLocaleDateString('fr-FR')}.</p>
                 <div class="grid">
                     <div><h3>🌟 Meilleurs Buteurs</h3><ul>${top3.map((p,i)=>`<li>${i+1}. ${p.name} (${p.points} pts)</li>`).join('')}</ul></div>
-                    <div><h3>⚡ Les Plus Rapides</h3><ul>${fastest.map((p,i)=>`<li>${i+1}. ${p.p.name} (${(p.avg/1000).toFixed(1)}s)</li>`).join('')}</ul></div>
+                    <div><h3>⚡ Les Plus Rapides</h3><ul>${fastest.map((p,i)=>`<li>${i+1}. ${p.p_name} (${(p.avg/1000).toFixed(1)}s)</li>`).join('')}</ul></div>
                 </div>
                 <div class="sig"><div>Le Directeur</div><div>L'Enseignant</div></div>
             </div>
