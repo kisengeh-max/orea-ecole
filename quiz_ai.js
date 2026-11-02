@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v40 — quiz_ai.js (Version de diagnostic forcé)
+   ORÉA École v40 — quiz_ai.js (erreurs lisibles, clé en en-tête, cache par difficulté)
    Affiche le vrai message de Google pour comprendre le blocage.
    ===================================================================== */
 (function () {
@@ -16,21 +16,27 @@
     const isKeyMissing = () => !key() || key() === 'XXX';
 
     function frError(kind, detail) {
-        // On force l'affichage du détail brut pour voir ce que Google dit vraiment
-        if (detail) return '[' + kind + '] ' + detail;
-        
-        switch (kind) {
-            case 'nokey':      return 'La clé Gemini n’est pas configurée.';
-            case 'network':    return 'Échec de connexion réseau.';
-            case 'quota':      return 'Quota Gemini atteint.';
-            case 'notfound':   return 'Modèle introuvable.';
-            case 'badjson':    return 'Réponse de Gemini non valide (pas du JSON).';
-            case 'refused':    return 'Gemini a refusé la génération.';
-            case 'busy':       return 'Génération déjà en cours.';
-            case 'invalid_key':return 'Clé API refusée.';
-            case 'forbidden':  return 'Accès refusé (API non activée ?).';
-            default:           return 'Erreur inconnue';
+        // Accepte frError('invalid_key: détail') ou frError('invalid_key', 'détail')
+        if (detail === undefined && typeof kind === 'string') {
+            const i = kind.indexOf(':');
+            if (i > 0) { detail = kind.slice(i + 1).trim(); kind = kind.slice(0, i).trim(); }
         }
+        const MAP = {
+            nokey: 'La clé Gemini n’est pas configurée.',
+            network: 'Serveur Google indisponible.',
+            network_fetch: 'Requête bloquée ou réseau coupé.',
+            quota: 'Quota Gemini atteint.',
+            notfound: 'Modèle introuvable.',
+            badjson: 'Réponse de Gemini non valide.',
+            refused: 'Gemini a refusé la génération.',
+            busy: 'Génération déjà en cours.',
+            invalid_key: 'Clé API refusée.',
+            forbidden: 'Accès refusé (API non activée ?).',
+            finish_reason: 'Génération interrompue.',
+            other_http: 'Erreur HTTP de Google.'
+        };
+        const base = MAP[kind] || 'Erreur';
+        return detail ? base + ' (' + detail + ')' : base;
     }
 
     function classifyHttp(status, body) {
@@ -112,16 +118,16 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
     }
 
     async function callGemini(prompt) {
-        const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model()) + ':generateContent?key=' + encodeURIComponent(key());
+        const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model()) + ':generateContent';
 
         let res;
         try {
             res = await fetch(url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key() },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.7, responseMimeType: 'application/json' }
+                    generationConfig: { temperature: 0.7, responseMimeType: 'application/json', maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 0 } }
                 })
             });
         } catch (e) {
@@ -164,7 +170,8 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         try {
             // On ne fait qu'UN SEUL essai pour voir l'erreur exacte
             const raw = await callGemini(prompt);
-            const list = validate(extractJson(raw));
+            const diffAsked = Math.max(1, Math.min(5, opts.niveau_difficulte || 2));
+            const list = validate(extractJson(raw).map(q => Object.assign({}, q, { niveau_difficulte: diffAsked })));
             if (!list.length) throw new Error('badjson: aucune question valide');
             return list.slice(0, Math.min(BATCH_MAX, list.length));
         } catch (e) {
@@ -177,11 +184,13 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
 
     async function ensureCache(opts) {
         const need = Math.max(1, opts.need || 20);
-        const got = await QuizStorage.cacheCount(opts.school_id, opts.niveau_scolaire);
-        if (got >= need) return { from: 'cache', have: got };
-        
+        let got = 0;
+        if (!opts.force) {
+            got = await QuizStorage.cacheCount(opts.school_id, opts.niveau_scolaire);
+            if (got >= need) return { from: 'cache', have: got };
+        }
         const manque = need - got;
-        const lots = Math.ceil(manque / 20);
+        const lots = opts.force ? 1 : Math.ceil(manque / 20);
         let total = 0;
         
         for (let i = 0; i < lots; i++) {

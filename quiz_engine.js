@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v40 — quiz_engine.js (Version corrigée et stable)
+   ORÉA École v40 — quiz_engine.js
    ===================================================================== */
 (function () {
     'use strict';
@@ -234,7 +234,8 @@
                     school_id: game.school_id,
                     niveau_scolaire: game.niveau_scolaire,
                     niveau_difficulte: niveau_diff,
-                    need: 20
+                    need: 20,
+                    force: true
                 });
                 pool = await QuizStorage.pickQuestions(game.school_id, game.niveau_scolaire, niveau_diff, class_ids, 1);
             } catch (e) {
