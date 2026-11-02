@@ -52,12 +52,7 @@
             timer_seconds: opts.timer_seconds
         });
 
-        await QuizAI.ensureCache({
-            school_id: opts.school_id,
-            niveau_scolaire: opts.niveau_scolaire,
-            niveau_difficulte: 2,
-            need: 30
-        }).catch(e => { });
+        // Pas de pré-chargement ici : la partie démarre tout de suite, les questions sont générées au besoin.
 
         const game = await QuizStorage.createGame({
             school_id: opts.school_id,
