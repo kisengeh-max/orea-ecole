@@ -1435,6 +1435,7 @@ function vMenu() {
         h += menuCard('justificatifs', 'Justificatifs d’absence', null, "pAdminJustifs()");
         h += menuCard('annonces', 'Publier une annonce', null, "pAdminAnnonce()");
     }
+    h += menuCard('alerte', 'Génie en Herbe', 'Quiz', "OreaQuizUI.openNewGame()");
     $('#main').innerHTML = h;
 }
 
