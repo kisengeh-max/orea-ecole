@@ -4,7 +4,7 @@
 // GEMINI_KEY : ta clé Google AI Studio (les nouvelles clés commencent par AQ.Ab8...).
 //   ⚠ Cette clé est visible dans le navigateur. Elle est restreinte à l'API Generative Language.
 //   Plus tard, on pourra la déplacer dans une Supabase Edge Function (voir récapitulatif final).
-// GEMINI_MODEL : nom du modèle. gemini-2.5-flash est le modèle actuel recommandé par Google.
+// GEMINI_MODEL : nom du modèle. gemini-3.8-flash est le modèle demandé par Google (2.5 n’est plus dispo pour les nouveaux comptes).
 window.OREA_CONFIG={
   SUPABASE_URL:"https://llmqzbomgkgayvhndubn.supabase.co",
   SUPABASE_ANON_KEY:"sb_publishable_lY1lrnM0Fu5TDhVRg-JrVQ_Fp8S4eIW",

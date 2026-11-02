@@ -6,7 +6,7 @@
     'use strict';
 
     const BATCH_MIN = 15, BATCH_MAX = 25;
-    const DEFAULT_MODEL = 'gemini-2.5-flash';
+    const DEFAULT_MODEL = 'gemini-3.8-flash';
     const ORIGINES = { rdc: 0.40, afrique: 0.30, monde: 0.30 };
 
     let isGenerating = false;
@@ -127,7 +127,7 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
                 headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key() },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.7, responseMimeType: 'application/json', maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 0 } }
+                    generationConfig: { temperature: 0.7, responseMimeType: 'application/json', maxOutputTokens: 16384 }
                 })
             });
         } catch (e) {
