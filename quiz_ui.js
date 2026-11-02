@@ -191,23 +191,44 @@
         function renderPlayers() {
             const ca = S.classes.find(c => c.id === $('#qz-cls-a').value);
             const cb = S.classes.find(c => c.id === $('#qz-cls-b').value);
-            if (!ca || !cb || ca.id === cb.id) { $('#qz-pl-area').innerHTML = `<p class="due" style="text-align:center">Choisissez deux classes différentes.</p>`; $('#qz-start').disabled = true; return; }
+            if (!ca || !cb || ca.id === cb.id) { 
+                $('#qz-pl-area').innerHTML = `<p class="due" style="text-align:center">Choisissez deux classes différentes.</p>`; 
+                $('#qz-start').disabled = true; 
+                return; 
+            }
+            
             const stA = S.stu.filter(s => s.class_id === ca.id).sort((a,b)=>a.name.localeCompare(b.name));
             const stB = S.stu.filter(s => s.class_id === cb.id).sort((a,b)=>a.name.localeCompare(b.name));
             
-            // MODIFICATION 1 : Le mot "checked" a été retiré pour que les élèves ne soient pas cochés d'office.
             $('#qz-pl-area').innerHTML = `
                 <div class="qz-players">
-                    <div class="qz-pl-card"><b style="color:#3b82f6;margin-bottom:8px;display:block">${esc(ca.name)}</b>${stA.slice(0, 5).map(s => `<label><input type="checkbox" class="plA" value="${s.id}"> ${esc(s.name)}</label>`).join('')}</div>
-                    <div class="qz-pl-card"><b style="color:#ef4444;margin-bottom:8px;display:block">${esc(cb.name)}</b>${stB.slice(0, 5).map(s => `<label><input type="checkbox" class="plB" value="${s.id}"> ${esc(s.name)}</label>`).join('')}</div>
-                </div><p style="font-size:12px;color:var(--mut);margin-top:8px;text-align:center">Cochez 5 élèves par équipe pour lancer la partie.</p>`;
+                    <div class="qz-pl-card">
+                        <b style="color:#3b82f6;margin-bottom:8px;display:block">${esc(ca.name)}</b>
+                        <div style="max-height: 150px; overflow-y: auto; padding-right: 5px;">
+                            ${stA.map(s => `<label style="margin-bottom:6px;"><input type="checkbox" class="plA" value="${s.id}"> ${esc(s.name)}</label>`).join('')}
+                        </div>
+                    </div>
+                    <div class="qz-pl-card">
+                        <b style="color:#ef4444;margin-bottom:8px;display:block">${esc(cb.name)}</b>
+                        <div style="max-height: 150px; overflow-y: auto; padding-right: 5px;">
+                            ${stB.map(s => `<label style="margin-bottom:6px;"><input type="checkbox" class="plB" value="${s.id}"> ${esc(s.name)}</label>`).join('')}
+                        </div>
+                    </div>
+                </div>
+                <p style="font-size:12px;color:var(--mut);margin-top:8px;text-align:center">Sélectionnez 5 élèves par équipe.</p>`;
             
-            // MODIFICATION 2 : Vérifie qu'il y a exactement 5 élèves par équipe.
-            const check = () => { const na = document.querySelectorAll('.plA:checked').length; const nb = document.querySelectorAll('.plB:checked').length; $('#qz-start').disabled = !(na === 5 && nb === 5); };
-            $('#qz-pl-area').onchange = check; check();
+            const check = () => { 
+                const na = document.querySelectorAll('.plA:checked').length; 
+                const nb = document.querySelectorAll('.plB:checked').length; 
+                $('#qz-start').disabled = !(na === 5 && nb === 5); 
+            };
+            $('#qz-pl-area').onchange = check; 
+            check();
         }
 
-        $('#qz-cls-a').onchange = renderPlayers; $('#qz-cls-b').onchange = renderPlayers; renderPlayers();
+        $('#qz-cls-a').onchange = renderPlayers; 
+        $('#qz-cls-b').onchange = renderPlayers; 
+        renderPlayers();
 
         $('#qz-start').onclick = async e => {
             const btn = e.target; btn.textContent = 'Préparation...'; btn.disabled = true;
