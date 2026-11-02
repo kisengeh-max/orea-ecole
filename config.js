@@ -10,5 +10,5 @@ window.OREA_CONFIG={
   SUPABASE_ANON_KEY:"sb_publishable_lY1lrnM0Fu5TDhVRg-JrVQ_Fp8S4eIW",
   APP_VERSION:"v40",
   GEMINI_KEY:"AQ.Ab8RN6LrWKMwc71E04t4eAmgfFyFMq4tHm4e3tVmPEcHNEQofw",
-  GEMINI_MODEL:"gemini-2.5-flash"
+  GEMINI_MODEL:"gemini-3.8-flash"
 };
