@@ -3,13 +3,14 @@
    UNIQUE point d'appel Gemini. Génère des questions par lots (15-25),
    JSON strict, validation, 1 nouvelle tentative si JSON invalide.
    Ajout d'un verrou anti-doublon pour économiser le quota (audit).
+   Messages d'erreur détaillés pour le débogage.
    À charger APRÈS quiz_storage.js, AVANT quiz_engine.js et quiz_ui.js.
    ===================================================================== */
 (function () {
     'use strict';
 
     const BATCH_MIN = 15, BATCH_MAX = 25;
-    const DEFAULT_MODEL = 'gemini-3.8-flash';
+    const DEFAULT_MODEL = 'gemini-1.5-flash';
     const ORIGINES = { rdc: 0.40, afrique: 0.30, monde: 0.30 };
 
     // Variables du verrou (empêche 2 générations simultanées)
@@ -24,12 +25,13 @@
     function frError(kind, detail) {
         switch (kind) {
             case 'nokey':      return 'La clé Gemini n’est pas configurée. Ouvre config.js et remplace « XXX » par ta clé Google AI Studio.';
-            case 'network':    return 'Pas de connexion internet. Vérifie ton réseau, puis réessaie.';
+            case 'network':    return 'Pas de connexion internet ou erreur réseau.';
             case 'quota':      return 'Quota Gemini atteint (100 requêtes/jour). Réessaie demain ou utilise le cache existant.';
             case 'notfound':   return 'Modèle introuvable. Vérifie GEMINI_MODEL dans config.js.';
             case 'badjson':    return 'La réponse de Gemini n’était pas au format attendu. Une nouvelle tentative a été faite.';
             case 'refused':    return 'Gemini a refusé la génération. Réessaie avec un autre thème.';
             case 'busy':       return 'Une génération de questions est déjà en cours. Merci de patienter quelques secondes.';
+            case 'invalid_key':return 'Ta clé API est invalide. Vérifie-la dans config.js (elle doit commencer par AIza...).';
             default:           return 'Erreur IA : ' + (detail || 'inconnue');
         }
     }
@@ -37,6 +39,7 @@
     function classifyHttp(status, body) {
         const t = String(body || '').toLowerCase();
         if (status === 0) return 'network';
+        if (status === 400 && /api key not valid/.test(t)) return 'invalid_key';
         if (status === 404 && /model|not found/.test(t)) return 'notfound';
         if (status === 429) return 'quota';
         if (status === 403) return 'refused';
@@ -131,12 +134,14 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
                     ]
                 })
             });
-        } catch (_) { throw new Error('network'); }
+        } catch (e) { 
+            throw new Error('network : ' + e.message); 
+        }
         
         const txt = await res.text();
         if (!res.ok) {
             const kind = classifyHttp(res.status, txt);
-            throw new Error(kind === 'other' ? ('gemini ' + res.status + ' : ' + txt.slice(0, 160)) : kind);
+            throw new Error(kind === 'other' ? ('gemini ' + res.status + ' : ' + txt.slice(0, 160)) : (kind + ' : ' + txt.slice(0, 160)));
         }
         let body;
         try { body = JSON.parse(txt); } catch (_) { throw new Error('badjson'); }
@@ -167,7 +172,7 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
                     return list.slice(0, Math.min(BATCH_MAX, list.length));
                 } catch (e) {
                     const code = String(e.message || '');
-                    if (code === 'nokey' || code === 'network' || code === 'quota' || code === 'notfound' || code === 'refused') throw e;
+                    if (code === 'nokey' || code.startsWith('network') || code.startsWith('quota') || code.startsWith('notfound') || code.startsWith('invalid_key') || code === 'refused') throw e;
                     if (attempt === 2) throw new Error('badjson');
                 }
             }
