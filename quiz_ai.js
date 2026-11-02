@@ -117,8 +117,8 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         }));
     }
 
-    async function callGemini(prompt) {
-        const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model()) + ':generateContent';
+    async function callGemini(prompt, modelName) {
+        const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(modelName || model()) + ':generateContent';
 
         let res;
         try {
@@ -167,16 +167,29 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         isGenerating = true;
         const prompt = buildPrompt(opts);
         
+        const fallback = (window.OREA_CONFIG && OREA_CONFIG.GEMINI_FALLBACK_MODEL) || '';
+        const DELAYS = [0, 2000, 4000, 8000];
+        const wait = ms => new Promise(r => setTimeout(r, ms));
+        const diffAsked = Math.max(1, Math.min(5, opts.niveau_difficulte || 2));
+        let lastErr = null;
         try {
-            // On ne fait qu'UN SEUL essai pour voir l'erreur exacte
-            const raw = await callGemini(prompt);
-            const diffAsked = Math.max(1, Math.min(5, opts.niveau_difficulte || 2));
-            const list = validate(extractJson(raw).map(q => Object.assign({}, q, { niveau_difficulte: diffAsked })));
-            if (!list.length) throw new Error('badjson: aucune question valide');
-            return list.slice(0, Math.min(BATCH_MAX, list.length));
-        } catch (e) {
-            // On transmet l'erreur telle quelle
-            throw new Error(e.message);
+            for (let i = 0; i < DELAYS.length; i++) {
+                if (DELAYS[i]) await wait(DELAYS[i]);
+                const useModel = (i >= 2 && fallback) ? fallback : model();
+                try {
+                    const raw = await callGemini(prompt, useModel);
+                    const list = validate(extractJson(raw).map(q => Object.assign({}, q, { niveau_difficulte: diffAsked })));
+                    if (!list.length) throw new Error('badjson: aucune question valide');
+                    return list.slice(0, Math.min(BATCH_MAX, list.length));
+                } catch (e) {
+                    lastErr = e;
+                    const m = String(e.message || '');
+                    // On réessaie seulement si c'est temporaire (serveur surchargé, quota, réseau, JSON cassé)
+                    const retryable = /^(network|network_fetch|quota|badjson|finish_reason)/.test(m);
+                    if (!retryable || i === DELAYS.length - 1) throw e;
+                }
+            }
+            throw lastErr || new Error('Erreur inconnue');
         } finally {
             isGenerating = false;
         }
