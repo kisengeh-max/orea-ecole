@@ -6,7 +6,7 @@
     'use strict';
 
     const BATCH_MIN = 5, BATCH_MAX = 25, FETCH_TIMEOUT_MS = 45000;
-    const DEFAULT_MODEL = 'gemini-3.8-flash';
+    const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
     const ORIGINES = { rdc: 0.40, afrique: 0.30, monde: 0.30 };
 
     let isGenerating = false;
@@ -178,7 +178,7 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         const prompt = buildPrompt(opts);
         
         const fallback = (window.OREA_CONFIG && OREA_CONFIG.GEMINI_FALLBACK_MODEL) || '';
-        const DELAYS = [0, 3000, 6000];
+        const DELAYS = [0, 1500, 4000, 8000];
         let noThink = false;
         const wait = ms => new Promise(r => setTimeout(r, ms));
         const diffAsked = Math.max(1, Math.min(5, opts.niveau_difficulte || 2));
@@ -186,7 +186,7 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         try {
             for (let i = 0; i < DELAYS.length; i++) {
                 if (DELAYS[i]) await wait(DELAYS[i]);
-                const useModel = (i >= 2 && fallback) ? fallback : model();
+                const useModel = (i % 2 === 1 && fallback) ? fallback : model();
                 try {
                     const raw = await callGemini(prompt, useModel, noThink);
                     const list = validate(extractJson(raw).map(q => Object.assign({}, q, { niveau_difficulte: diffAsked })));
