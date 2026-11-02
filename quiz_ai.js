@@ -1,7 +1,6 @@
 /* =====================================================================
-   ORÉA École v40 — quiz_ai.js (Version finale corrigée)
-   Gère les nouvelles clés Google (AQ.Ab8...) et le modèle gemini-2.5-flash.
-   À charger APRÈS quiz_storage.js, AVANT quiz_engine.js et quiz_ui.js.
+   ORÉA École v40 — quiz_ai.js (Version de diagnostic forcé)
+   Affiche le vrai message de Google pour comprendre le blocage.
    ===================================================================== */
 (function () {
     'use strict';
@@ -17,17 +16,20 @@
     const isKeyMissing = () => !key() || key() === 'XXX';
 
     function frError(kind, detail) {
+        // On force l'affichage du détail brut pour voir ce que Google dit vraiment
+        if (detail) return '[' + kind + '] ' + detail;
+        
         switch (kind) {
-            case 'nokey':      return 'La clé Gemini n’est pas configurée (config.js → GEMINI_KEY).';
-            case 'network':    return 'Échec de connexion à Google. Vérifie ton réseau. Détail : ' + (detail || 'inconnu');
-            case 'quota':      return 'Quota Gemini atteint (limite journalière). Réessaie demain ou active la facturation.';
-            case 'notfound':   return 'Modèle introuvable. Vérifie GEMINI_MODEL dans config.js (ex: gemini-2.5-flash).';
-            case 'badjson':    return 'La réponse de Gemini n’était pas du JSON valide. Une nouvelle tentative a été faite.';
-            case 'refused':    return 'Gemini a refusé la génération (safety). Change de thème.';
-            case 'busy':       return 'Une génération est déjà en cours. Patiente quelques secondes.';
-            case 'invalid_key':return 'Clé API refusée par Google. Vérifie qu’elle est bien copiée et active.';
-            case 'forbidden':  return 'Accès refusé par Google. Vérifie que l’API Generative Language est activée.';
-            default:           return 'Erreur IA : ' + (detail || 'inconnue');
+            case 'nokey':      return 'La clé Gemini n’est pas configurée.';
+            case 'network':    return 'Échec de connexion réseau.';
+            case 'quota':      return 'Quota Gemini atteint.';
+            case 'notfound':   return 'Modèle introuvable.';
+            case 'badjson':    return 'Réponse de Gemini non valide (pas du JSON).';
+            case 'refused':    return 'Gemini a refusé la génération.';
+            case 'busy':       return 'Génération déjà en cours.';
+            case 'invalid_key':return 'Clé API refusée.';
+            case 'forbidden':  return 'Accès refusé (API non activée ?).';
+            default:           return 'Erreur inconnue';
         }
     }
 
@@ -39,7 +41,7 @@
         if (status === 429) return 'quota';
         if (status === 400 && /safety/.test(t)) return 'refused';
         if (status >= 500) return 'network';
-        return 'other';
+        return 'other_http';
     }
 
     function buildPrompt(opts) {
@@ -81,17 +83,17 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         let s = String(text || '').trim();
         s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
         const first = s.indexOf('['), last = s.lastIndexOf(']');
-        if (first === -1 || last === -1 || last <= first) throw new Error('badjson');
+        if (first === -1 || last === -1 || last <= first) throw new Error('badjson: pas de crochets JSON');
         const raw = s.slice(first, last + 1);
         try { return JSON.parse(raw); }
         catch (_) {
             const cleaned = raw.replace(/,\s*([}\]])/g, '$1');
-            return JSON.parse(cleaned);
+            try { return JSON.parse(cleaned); } catch(e) { throw new Error('badjson: ' + e.message); }
         }
     }
 
     function validate(list) {
-        if (!Array.isArray(list) || !list.length) throw new Error('badjson');
+        if (!Array.isArray(list) || !list.length) throw new Error('badjson: tableau vide');
         return list.filter(q =>
             q && typeof q.question === 'string' && q.question.trim().length >= 5
             && Array.isArray(q.choix) && q.choix.length === 4
@@ -119,34 +121,37 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.7, responseMimeType: 'application/json' },
-                    safetySettings: [
-                        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
-                        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
-                        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
-                        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' }
-                    ]
+                    generationConfig: { temperature: 0.7, responseMimeType: 'application/json' }
                 })
             });
         } catch (e) {
-            throw new Error('network : ' + (e && e.message ? e.message : 'fetch failed'));
+            throw new Error('network_fetch: ' + (e && e.message ? e.message : 'bloqué par le navigateur'));
         }
 
         const txt = await res.text();
         if (!res.ok) {
             const kind = classifyHttp(res.status, txt);
-            const detail = 'HTTP ' + res.status + ' — ' + txt.slice(0, 200);
-            if (kind === 'other') throw new Error('gemini_http : ' + detail);
-            throw new Error(kind + ' : ' + detail);
+            // On extrait le message d'erreur de Google
+            let googleMsg = txt;
+            try {
+                const j = JSON.parse(txt);
+                if (j.error && j.error.message) googleMsg = j.error.message;
+            } catch(_) {}
+            throw new Error(kind + ': ' + googleMsg.slice(0, 150));
         }
+        
         let body;
-        try { body = JSON.parse(txt); } catch (_) { throw new Error('badjson'); }
-        if (body && body.promptFeedback && body.promptFeedback.blockReason) throw new Error('refused');
+        try { body = JSON.parse(txt); } catch (_) { throw new Error('badjson: réponse globale non JSON'); }
+        if (body && body.promptFeedback && body.promptFeedback.blockReason) throw new Error('refused: bloqué par la sécurité');
 
         const cand = body && body.candidates && body.candidates[0];
+        if (cand && cand.finishReason && cand.finishReason !== 'STOP') {
+             throw new Error('finish_reason: ' + cand.finishReason);
+        }
+        
         const parts = cand && cand.content && cand.content.parts;
         const text = parts && parts.map(p => p.text || '').join('') || '';
-        if (!text.trim()) throw new Error('badjson');
+        if (!text.trim()) throw new Error('badjson: texte vide reçu');
         return text;
     }
 
@@ -155,23 +160,16 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         if (isGenerating) throw new Error('busy');
         isGenerating = true;
         const prompt = buildPrompt(opts);
+        
         try {
-            for (let attempt = 1; attempt <= 2; attempt++) {
-                try {
-                    const raw = await callGemini(prompt);
-                    const list = validate(extractJson(raw));
-                    if (!list.length) throw new Error('badjson');
-                    return list.slice(0, Math.min(BATCH_MAX, list.length));
-                } catch (e) {
-                    const code = String(e.message || '');
-                    if (code === 'nokey' || code === 'refused' ||
-                        code.startsWith('network') || code.startsWith('quota') ||
-                        code.startsWith('notfound') || code.startsWith('invalid_key') ||
-                        code.startsWith('forbidden') || code.startsWith('gemini_http')) throw e;
-                    if (attempt === 2) throw new Error('badjson');
-                }
-            }
-            throw new Error('badjson');
+            // On ne fait qu'UN SEUL essai pour voir l'erreur exacte
+            const raw = await callGemini(prompt);
+            const list = validate(extractJson(raw));
+            if (!list.length) throw new Error('badjson: aucune question valide');
+            return list.slice(0, Math.min(BATCH_MAX, list.length));
+        } catch (e) {
+            // On transmet l'erreur telle quelle
+            throw new Error(e.message);
         } finally {
             isGenerating = false;
         }
