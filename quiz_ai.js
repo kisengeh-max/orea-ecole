@@ -117,7 +117,9 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         }));
     }
 
-    async function callGemini(prompt, modelName) {
+    async function callGemini(prompt, modelName, noThink) {
+        const t0 = Date.now();
+        const secs = () => Math.round((Date.now() - t0) / 1000);
         const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(modelName || model()) + ':generateContent';
 
         let res;
@@ -130,18 +132,18 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
                 headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key() },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.7, responseMimeType: 'application/json', maxOutputTokens: 16384 }
+                    generationConfig: { temperature: 0.7, responseMimeType: 'application/json', maxOutputTokens: 16384, ...(noThink ? {} : { thinkingConfig: { thinkingLevel: 'low' } }) }
                 })
             });
         } catch (e) {
             clearTimeout(timer);
-            if (e && e.name === 'AbortError') throw new Error('network_fetch: délai dépassé (connexion trop lente ou Google ne répond pas)');
-            throw new Error('network_fetch: ' + (e && e.message ? e.message : 'bloqué par le navigateur'));
+            if (e && e.name === 'AbortError') throw new Error('network_fetch: délai dépassé après ' + secs() + ' s');
+            throw new Error('network_fetch: ' + (e && e.message ? e.message : 'bloqué par le navigateur') + ' après ' + secs() + ' s');
         }
 
         let txt;
         try { txt = await res.text(); }
-        catch (e) { clearTimeout(timer); throw new Error('network_fetch: réponse interrompue'); }
+        catch (e) { clearTimeout(timer); throw new Error('network_fetch: réponse interrompue après ' + secs() + ' s'); }
         clearTimeout(timer);
         if (!res.ok) {
             const kind = classifyHttp(res.status, txt);
@@ -177,6 +179,7 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         
         const fallback = (window.OREA_CONFIG && OREA_CONFIG.GEMINI_FALLBACK_MODEL) || '';
         const DELAYS = [0, 3000, 6000];
+        let noThink = false;
         const wait = ms => new Promise(r => setTimeout(r, ms));
         const diffAsked = Math.max(1, Math.min(5, opts.niveau_difficulte || 2));
         let lastErr = null;
@@ -185,13 +188,15 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
                 if (DELAYS[i]) await wait(DELAYS[i]);
                 const useModel = (i >= 2 && fallback) ? fallback : model();
                 try {
-                    const raw = await callGemini(prompt, useModel);
+                    const raw = await callGemini(prompt, useModel, noThink);
                     const list = validate(extractJson(raw).map(q => Object.assign({}, q, { niveau_difficulte: diffAsked })));
                     if (!list.length) throw new Error('badjson: aucune question valide');
                     return list.slice(0, Math.min(BATCH_MAX, list.length));
                 } catch (e) {
                     lastErr = e;
                     const m = String(e.message || '');
+                    // Si Google refuse le réglage de réflexion, on le retire et on réessaie aussitôt
+                    if (!noThink && /thinking/i.test(m)) { noThink = true; i--; continue; }
                     // On réessaie seulement si c'est temporaire (serveur surchargé, quota, réseau, JSON cassé)
                     const retryable = /^(network|network_fetch|quota|badjson|finish_reason)/.test(m);
                     if (!retryable || i === DELAYS.length - 1) throw e;
@@ -217,7 +222,7 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         for (let i = 0; i < lots; i++) {
             try {
                 const list = await generateBatch({
-                    count: opts.force ? 12 : 20,
+                    count: opts.force ? 8 : 20,
                     niveau_difficulte: opts.niveau_difficulte,
                     niveau_scolaire: opts.niveau_scolaire,
                     theme: opts.theme
