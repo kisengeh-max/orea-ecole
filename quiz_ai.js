@@ -1,53 +1,47 @@
 /* =====================================================================
-   ORÉA École v40 — quiz_ai.js
-   UNIQUE point d'appel Gemini. Génère des questions par lots (15-25),
-   JSON strict, validation, 1 nouvelle tentative si JSON invalide.
-   Ajout d'un verrou anti-doublon pour économiser le quota (audit).
-   Messages d'erreur détaillés pour le débogage.
+   ORÉA École v40 — quiz_ai.js (Version finale corrigée)
+   Gère les nouvelles clés Google (AQ.Ab8...) et le modèle gemini-2.5-flash.
    À charger APRÈS quiz_storage.js, AVANT quiz_engine.js et quiz_ui.js.
    ===================================================================== */
 (function () {
     'use strict';
 
     const BATCH_MIN = 15, BATCH_MAX = 25;
-    const DEFAULT_MODEL = 'gemini-1.5-flash';
+    const DEFAULT_MODEL = 'gemini-2.5-flash';
     const ORIGINES = { rdc: 0.40, afrique: 0.30, monde: 0.30 };
 
-    // Variables du verrou (empêche 2 générations simultanées)
     let isGenerating = false;
-    let generationPromise = null;
 
     const key = () => (window.OREA_CONFIG && OREA_CONFIG.GEMINI_KEY) || '';
     const model = () => (window.OREA_CONFIG && OREA_CONFIG.GEMINI_MODEL) || DEFAULT_MODEL;
     const isKeyMissing = () => !key() || key() === 'XXX';
 
-    // Erreurs claires en français
     function frError(kind, detail) {
         switch (kind) {
-            case 'nokey':      return 'La clé Gemini n’est pas configurée. Ouvre config.js et remplace « XXX » par ta clé Google AI Studio.';
-            case 'network':    return 'Pas de connexion internet ou erreur réseau.';
-            case 'quota':      return 'Quota Gemini atteint (100 requêtes/jour). Réessaie demain ou utilise le cache existant.';
-            case 'notfound':   return 'Modèle introuvable. Vérifie GEMINI_MODEL dans config.js.';
-            case 'badjson':    return 'La réponse de Gemini n’était pas au format attendu. Une nouvelle tentative a été faite.';
-            case 'refused':    return 'Gemini a refusé la génération. Réessaie avec un autre thème.';
-            case 'busy':       return 'Une génération de questions est déjà en cours. Merci de patienter quelques secondes.';
-            case 'invalid_key':return 'Ta clé API est invalide. Vérifie-la dans config.js (elle doit commencer par AIza...).';
+            case 'nokey':      return 'La clé Gemini n’est pas configurée (config.js → GEMINI_KEY).';
+            case 'network':    return 'Échec de connexion à Google. Vérifie ton réseau. Détail : ' + (detail || 'inconnu');
+            case 'quota':      return 'Quota Gemini atteint (limite journalière). Réessaie demain ou active la facturation.';
+            case 'notfound':   return 'Modèle introuvable. Vérifie GEMINI_MODEL dans config.js (ex: gemini-2.5-flash).';
+            case 'badjson':    return 'La réponse de Gemini n’était pas du JSON valide. Une nouvelle tentative a été faite.';
+            case 'refused':    return 'Gemini a refusé la génération (safety). Change de thème.';
+            case 'busy':       return 'Une génération est déjà en cours. Patiente quelques secondes.';
+            case 'invalid_key':return 'Clé API refusée par Google. Vérifie qu’elle est bien copiée et active.';
+            case 'forbidden':  return 'Accès refusé par Google. Vérifie que l’API Generative Language est activée.';
             default:           return 'Erreur IA : ' + (detail || 'inconnue');
         }
     }
-    
+
     function classifyHttp(status, body) {
         const t = String(body || '').toLowerCase();
-        if (status === 0) return 'network';
-        if (status === 400 && /api key not valid/.test(t)) return 'invalid_key';
+        if (status === 400 && /api key not valid|invalid api key/.test(t)) return 'invalid_key';
+        if (status === 401 || status === 403) return 'invalid_key';
         if (status === 404 && /model|not found/.test(t)) return 'notfound';
         if (status === 429) return 'quota';
-        if (status === 403) return 'refused';
+        if (status === 400 && /safety/.test(t)) return 'refused';
         if (status >= 500) return 'network';
         return 'other';
     }
 
-    // Prompt strict, en français
     function buildPrompt(opts) {
         const n = Math.max(BATCH_MIN, Math.min(BATCH_MAX, opts.count || 20));
         const diff = Math.max(1, Math.min(5, opts.niveau_difficulte || 2));
@@ -57,17 +51,17 @@
 
 Niveau : ${niveau}. Difficulté : ${diff}/5. ${theme}
 Origine : répartis approximativement comme suit → 40 % RDC, 30 % Afrique (hors RDC), 30 % reste du monde.
-Matières : programme scolaire + culture générale (histoire, géographie, sciences, français, maths simples, vie courante, sport, culture congolaise et africaine).
+Matières : programme scolaire + culture générale.
 
 RÈGLES STRICTES :
 - Une seule bonne réponse par question.
-- 3 distracteurs plausibles (pas de réponses absurdes).
-- Aucune ambiguïté, aucune question piège.
+- 3 distracteurs plausibles.
+- Aucune ambiguïté.
 - Question courte (max 180 caractères), choix courts (max 70 caractères).
 - Explication d'une seule phrase, max 200 caractères.
 - Écris uniquement du JSON valide, sans texte autour.
 
-FORMAT ATTENDU (un tableau JSON strict) :
+FORMAT ATTENDU (tableau JSON strict) :
 [
   {
     "theme": "Géographie",
@@ -83,7 +77,6 @@ FORMAT ATTENDU (un tableau JSON strict) :
 Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
     }
 
-    // Extraction robuste du JSON
     function extractJson(text) {
         let s = String(text || '').trim();
         s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
@@ -118,6 +111,7 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
 
     async function callGemini(prompt) {
         const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model()) + ':generateContent?key=' + encodeURIComponent(key());
+
         let res;
         try {
             res = await fetch(url, {
@@ -134,19 +128,21 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
                     ]
                 })
             });
-        } catch (e) { 
-            throw new Error('network : ' + e.message); 
+        } catch (e) {
+            throw new Error('network : ' + (e && e.message ? e.message : 'fetch failed'));
         }
-        
+
         const txt = await res.text();
         if (!res.ok) {
             const kind = classifyHttp(res.status, txt);
-            throw new Error(kind === 'other' ? ('gemini ' + res.status + ' : ' + txt.slice(0, 160)) : (kind + ' : ' + txt.slice(0, 160)));
+            const detail = 'HTTP ' + res.status + ' — ' + txt.slice(0, 200);
+            if (kind === 'other') throw new Error('gemini_http : ' + detail);
+            throw new Error(kind + ' : ' + detail);
         }
         let body;
         try { body = JSON.parse(txt); } catch (_) { throw new Error('badjson'); }
         if (body && body.promptFeedback && body.promptFeedback.blockReason) throw new Error('refused');
-        
+
         const cand = body && body.candidates && body.candidates[0];
         const parts = cand && cand.content && cand.content.parts;
         const text = parts && parts.map(p => p.text || '').join('') || '';
@@ -154,14 +150,10 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         return text;
     }
 
-    // Fonction principale : génère un lot
     async function generateBatch(opts) {
         if (isKeyMissing()) throw new Error('nokey');
-        
-        // VERROU : si une génération est déjà en cours, on refuse
         if (isGenerating) throw new Error('busy');
         isGenerating = true;
-
         const prompt = buildPrompt(opts);
         try {
             for (let attempt = 1; attempt <= 2; attempt++) {
@@ -172,18 +164,19 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
                     return list.slice(0, Math.min(BATCH_MAX, list.length));
                 } catch (e) {
                     const code = String(e.message || '');
-                    if (code === 'nokey' || code.startsWith('network') || code.startsWith('quota') || code.startsWith('notfound') || code.startsWith('invalid_key') || code === 'refused') throw e;
+                    if (code === 'nokey' || code === 'refused' ||
+                        code.startsWith('network') || code.startsWith('quota') ||
+                        code.startsWith('notfound') || code.startsWith('invalid_key') ||
+                        code.startsWith('forbidden') || code.startsWith('gemini_http')) throw e;
                     if (attempt === 2) throw new Error('badjson');
                 }
             }
             throw new Error('badjson');
         } finally {
-            // On libère TOUJOURS le verrou, même en cas d'erreur
             isGenerating = false;
         }
     }
 
-    // Remplit le cache
     async function ensureCache(opts) {
         const need = Math.max(1, opts.need || 20);
         const got = await QuizStorage.cacheCount(opts.school_id, opts.niveau_scolaire);
@@ -193,7 +186,6 @@ Rends UNIQUEMENT le tableau JSON, aucun commentaire.`;
         const lots = Math.ceil(manque / 20);
         let total = 0;
         
-        // Si on demande plusieurs lots, on les fait un par un (le verrou bloque les autres)
         for (let i = 0; i < lots; i++) {
             try {
                 const list = await generateBatch({
