@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v57 — quiz_ui.js (livraison 3 : intros, thèmes N2, jokers pool, signalement)
+   ORÉA École v58 — quiz_ui.js (Livraison 4 : Banque + Import + Modération)
    Interface animateur du Génie en Herbe.
    ===================================================================== */
 (function () {
@@ -30,7 +30,7 @@
         .qz-btn-icon:active{background:rgba(199,163,75,.15)}
         .qz-body{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;-webkit-overflow-scrolling:touch}
         .qz-form label{display:block;font-size:13px;color:var(--mut);margin-bottom:4px;font-weight:600}
-        .qz-form select,.qz-form input{width:100%;padding:14px;background:var(--bg);border:1px solid var(--line);border-radius:12px;color:var(--tx);font-size:15px;margin-bottom:10px}
+        .qz-form select,.qz-form input,.qz-form textarea{width:100%;padding:14px;background:var(--bg);border:1px solid var(--line);border-radius:12px;color:var(--tx);font-size:15px;margin-bottom:10px;font-family:inherit}
         .qz-choices{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:15px}
         .qz-ch{flex:1;padding:12px;text-align:center;border:1px solid var(--line);border-radius:12px;font-weight:700;color:var(--mut);background:transparent;font-size:14px}
         .qz-ch.on{background:rgba(199,163,75,.15);border-color:var(--gold);color:var(--gold)}
@@ -48,7 +48,7 @@
         .qz-pl-list{max-height:46vh;overflow-y:auto;padding-right:4px;-webkit-overflow-scrolling:touch}
         .qz-pl-list label{padding:7px 0;margin:0}
         .qz-pl-card input[type=checkbox]{width:20px;height:20px;flex-shrink:0}
-        /* ===== ÉCRAN DE JEU : noir profond + or + violet ===== */
+        /* ===== ÉCRAN DE JEU ===== */
         .qz-game{--bg:#0a0a0f;--card:#15121f;--line:rgba(227,201,120,.28);--tx:#f6f1e3;--mut:#a89fbd;--gold:#E3C978;--ok:#3ddc84;--bad:#ff4d5e;--vio:#a78bfa;position:relative;overflow:hidden;display:flex;flex-direction:column;height:100%;color:var(--tx);background:radial-gradient(circle at 50% 0%,rgba(139,92,246,.16),transparent 55%),#0a0a0f}
         .qz-rays{position:absolute;inset:-25%;pointer-events:none;z-index:0;background:conic-gradient(from 0deg at 50% 22%,transparent 0 6%,rgba(227,201,120,.11) 9%,transparent 13% 27%,rgba(139,92,246,.13) 30%,transparent 34% 48%,rgba(227,201,120,.09) 51%,transparent 55% 70%,rgba(139,92,246,.11) 73%,transparent 77%);animation:qzRays 6s ease-in-out infinite alternate}
         .qz-bar{position:relative;z-index:2;display:flex;align-items:center;gap:12px;padding:calc(8px + env(safe-area-inset-top)) 14px 4px}
@@ -118,6 +118,11 @@
         .qz-opt{min-height:96px;display:flex;align-items:center;justify-content:center;text-align:center;padding:12px;border:2px solid var(--gold);border-radius:16px;background:linear-gradient(180deg,rgba(227,201,120,.14),rgba(227,201,120,.04));font-weight:800;font-size:16px;cursor:pointer;-webkit-tap-highlight-color:transparent}
         .qz-opt:active{border-color:var(--vio);box-shadow:0 0 22px rgba(139,92,246,.7)}
         .qz-opt.myst{border-color:var(--vio);background:rgba(139,92,246,.18)}
+        .qz-admin-tbl{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:10px}
+        .qz-admin-tbl th,.qz-admin-tbl td{border:1px solid var(--line);padding:8px;text-align:center}
+        .qz-admin-tbl th{background:rgba(227,201,120,.1);color:var(--gold)}
+        .qz-admin-tbl td.ok{color:var(--ok);font-weight:700}
+        .qz-admin-tbl td.low{color:var(--bad);font-weight:700}
         @keyframes qzPop{0%{transform:scale(.95)}50%{transform:scale(1.04)}100%{transform:scale(1)}}
         @keyframes qzShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
         @keyframes qzFade{from{opacity:0}to{opacity:1}}
@@ -156,63 +161,348 @@
         tick: () => { playTone(800, 'square', 0.05, 0.05); },
         fanfare: () => { [523.25, 659.25, 783.99, 1046.50].forEach((f, i) => setTimeout(() => playTone(f, 'triangle', 0.4, 0.15), i * 150)); }
     };
+     function startConfetti() {
+      const canvas = document.createElement('canvas');
+      canvas.style.position = 'absolute'; canvas.style.inset = '0'; canvas.style.pointerEvents = 'none'; canvas.style.zIndex = '5';
+      const box = document.getElementById('qz-podium-box');
+      if (!box) return;
+      box.appendChild(canvas);
+      canvas.width = box.clientWidth; canvas.height = box.clientHeight;
+      const ctx = canvas.getContext('2d');
+      const colors = ['#C7A34B', '#E3C978', '#3b82f6', '#ef4444', '#6BA885'];
+      const particles = [];
+      for (let i = 0; i < 100; i++) {
+          particles.push({ x: Math.random() * canvas.width, y: -20 - Math.random() * 100, w: 6 + Math.random() * 6, h: 6 + Math.random() * 6, c: colors[Math.floor(Math.random() * colors.length)], vy: 2 + Math.random() * 4, vx: -2 + Math.random() * 4, rot: Math.random() * 360, vr: -5 + Math.random() * 10 });
+      }
+      function update() {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          particles.forEach(p => {
+              p.y += p.vy; p.x += p.vx; p.rot += p.vr;
+              ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot * Math.PI / 180);
+              ctx.fillStyle = p.c; ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
+              ctx.restore();
+          });
+          if (particles.some(p => p.y < canvas.height)) requestAnimationFrame(update); else canvas.remove();
+      }
+      update();
+  }
 
-    function startConfetti() {
-        const canvas = document.createElement('canvas');
-        canvas.style.position = 'absolute'; canvas.style.inset = '0'; canvas.style.pointerEvents = 'none'; canvas.style.zIndex = '5';
-        const box = document.getElementById('qz-podium-box');
-        if (!box) return;
-        box.appendChild(canvas);
-        canvas.width = box.clientWidth; canvas.height = box.clientHeight;
-        const ctx = canvas.getContext('2d');
-        const colors = ['#C7A34B', '#E3C978', '#3b82f6', '#ef4444', '#6BA885'];
-        const particles = [];
-        for (let i = 0; i < 100; i++) {
-            particles.push({ x: Math.random() * canvas.width, y: -20 - Math.random() * 100, w: 6 + Math.random() * 6, h: 6 + Math.random() * 6, c: colors[Math.floor(Math.random() * colors.length)], vy: 2 + Math.random() * 4, vx: -2 + Math.random() * 4, rot: Math.random() * 360, vr: -5 + Math.random() * 10 });
-        }
-        function update() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            particles.forEach(p => {
-                p.y += p.vy; p.x += p.vx; p.rot += p.vr;
-                ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot * Math.PI / 180);
-                ctx.fillStyle = p.c; ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
-                ctx.restore();
-            });
-            if (particles.some(p => p.y < canvas.height)) requestAnimationFrame(update); else canvas.remove();
-        }
-        update();
-    }
+  function showOverlay(html) {
+      injectCss();
+      if (QUIZ.ov) QUIZ.ov.remove();
+      const ov = document.createElement('div');
+      ov.className = 'qz-ov'; ov.innerHTML = html;
+      document.body.appendChild(ov); QUIZ.ov = ov;
+      history.pushState({ qz: 1 }, '');
+      return ov;
+  }
 
-    function showOverlay(html) {
-        injectCss();
-        if (QUIZ.ov) QUIZ.ov.remove();
-        const ov = document.createElement('div');
-        ov.className = 'qz-ov'; ov.innerHTML = html;
-        document.body.appendChild(ov); QUIZ.ov = ov;
-        history.pushState({ qz: 1 }, '');
-        return ov;
-    }
+  window.addEventListener('popstate', e => {
+      if (QUIZ.ov) {
+          if (QUIZ.state && QUIZ.state.level > 0 && !QUIZ.quitting && !confirm('Quitter le quiz en cours ? La partie sera perdue.')) {
+              history.pushState({ qz: 1 }, ''); return;
+          }
+          closeQuiz();
+      }
+  });
 
-    window.addEventListener('popstate', e => {
-        if (QUIZ.ov) {
-            if (QUIZ.state && QUIZ.state.level > 0 && !QUIZ.quitting && !confirm('Quitter le quiz en cours ? La partie sera perdue.')) {
-                history.pushState({ qz: 1 }, ''); return;
-            }
-            closeQuiz();
-        }
-    });
+  function closeQuiz() {
+      if (QUIZ.timer) { clearInterval(QUIZ.timer); QUIZ.timer = null; }
+      if (QUIZ.wakeLock) { QUIZ.wakeLock.release().catch(()=>{}); QUIZ.wakeLock = null; }
+      if (QUIZ.ov) { QUIZ.ov.remove(); QUIZ.ov = null; }
+      QUIZ.game = null; QUIZ.players = []; QUIZ.state = null; QUIZ.quitting = false;
+      document.body.style.overflow = '';
+  }
 
-    function closeQuiz() {
-        if (QUIZ.timer) { clearInterval(QUIZ.timer); QUIZ.timer = null; }
-        if (QUIZ.wakeLock) { QUIZ.wakeLock.release().catch(()=>{}); QUIZ.wakeLock = null; }
-        if (QUIZ.ov) { QUIZ.ov.remove(); QUIZ.ov = null; }
-        QUIZ.game = null; QUIZ.players = []; QUIZ.state = null; QUIZ.quitting = false;
-        document.body.style.overflow = '';
-    }
+  async function keepAwake() {
+      try { if ('wakeLock' in navigator) QUIZ.wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
+  }
 
-    async function keepAwake() {
-        try { if ('wakeLock' in navigator) QUIZ.wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
-    }
+  /* =========================================================
+     BANQUE DE QUESTIONS (admin)
+     ========================================================= */
+  
+  function openBank() {
+      showOverlay(`
+          <div class="qz-head">
+              <button class="qz-btn-icon" onclick="history.back()">←</button>
+              <b>Banque de questions</b>
+          </div>
+          <div class="qz-body" style="padding-bottom:0">
+              <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+                  <button class="ghost" style="flex:1" onclick="OreaQuizUI.openImport()">📥 Importer du JSON</button>
+                  <button class="ghost" style="flex:1" onclick="OreaQuizUI.openReports()">🚩 Signalements</button>
+              </div>
+              <div id="qz-stock-area" style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;overflow-x:auto">
+                  <p style="text-align:center;color:var(--mut);margin:0">Chargement du stock...</p>
+              </div>
+              <div style="font-size:12px;color:var(--mut);line-height:1.4">
+                  <p><b>Gabarit JSON attendu :</b></p>
+                  <pre style="background:var(--bg);padding:10px;border-radius:8px;font-size:11px;white-space:pre-wrap;word-break:break-all">{ "niveau_scolaire": "secondaire",
+"questions": [
+  { "matiere": "Géographie", "theme": "Hydrographie", "niveau_difficulte": 1,
+    "question": "Quel est le plus long fleuve de la RDC ?",
+    "choix": ["Le Congo", "Le Kasaï", "L'Ubangi", "Le Lualaba"],
+    "bonne_reponse": 0,
+    "explication": "Le fleuve Congo traverse le pays." } ] }</pre>
+                  <p>Limite : 4 choix distincts, difficulté 1-3, niveau "primaire" ou "secondaire".</p>
+              </div>
+          </div>
+      `);
+      loadStockAdmin();
+  }
+
+  async function loadStockAdmin() {
+      const area = $('#qz-stock-area');
+      if (!area) return;
+      try {
+          const data = await db.rpc('quiz_stock');
+          if (data.error) throw data.error;
+          const stock = data.data;
+          const levels = ['primaire', 'secondaire'];
+          const diffs = [1, 2, 3];
+          let html = `<h3 style="margin-top:0;color:var(--gold);text-align:center;font-size:16px">Stock actuel (Objectif: 2000/case)</h3>`;
+          html += `<table class="qz-admin-tbl"><tr><th>Niveau</th><th>Diff 1</th><th>Diff 2</th><th>Diff 3</th></tr>`;
+          levels.forEach(lvl => {
+              html += `<tr><td style="text-transform:capitalize">${lvl}</td>`;
+              diffs.forEach(d => {
+                  const key = `${lvl}|${d}`;
+                  const n = (stock.by_level && stock.by_level[key]) ? stock.by_level[key].n : 0;
+                  let cls = n >= 2000 ? 'ok' : (n < 100 ? 'low' : '');
+                  html += `<td class="${cls}">${n}</td>`;
+              });
+              html += `</tr>`;
+          });
+          html += `</table>`;
+          
+          if (stock.by_matiere && Object.keys(stock.by_matiere).length > 0) {
+              html += `<h4 style="margin:15px 0 5px;color:var(--gold);font-size:14px;text-align:center">Par matière</h4>`;
+              html += `<table class="qz-admin-tbl"><tr><th>Matière</th><th>Total</th></tr>`;
+              Object.values(stock.by_matiere).sort((a,b) => b.n - a.n).forEach(m => {
+                  html += `<tr><td style="text-align:left">${esc(m.matiere)}</td><td>${m.n}</td></tr>`;
+              });
+              html += `</table>`;
+          }
+          area.innerHTML = html;
+      } catch (e) {
+          area.innerHTML = `<p style="color:var(--bad);text-align:center;margin:0">Erreur de chargement du stock : ${esc(e.message)}</p>`;
+      }
+  }
+
+  function openImport() {
+      let parsedData = null;
+      showOverlay(`
+          <div class="qz-head"><button class="qz-btn-icon" onclick="history.back()">←</button><b>Importer des questions</b></div>
+          <div class="qz-body qz-form">
+              <label>1. Choisir un fichier .json</label>
+              <input type="file" id="qz-file" accept=".json,application/json" style="padding:10px;background:var(--card)">
+              
+              <label>OU coller le JSON ici :</label>
+              <textarea id="qz-json-text" rows="6" placeholder='{"niveau_scolaire":"secondaire", "questions":[...]}'></textarea>
+              
+              <button class="ghost" id="qz-btn-preview" style="margin-bottom:15px">Analyser le JSON</button>
+              
+              <div id="qz-preview-area" hidden style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:15px">
+                  <h4 style="margin-top:0;color:var(--gold)">Aperçu</h4>
+                  <div id="qz-preview-content"></div>
+              </div>
+              
+              <div id="qz-import-actions" hidden>
+                  <button id="qz-btn-do-import" style="width:100%;padding:15px;font-size:16px;font-weight:800;background:var(--gold);color:#111;border:0;border-radius:12px">Lancer l'importation</button>
+              </div>
+          </div>
+      `);
+
+      $('#qz-file').onchange = e => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = ev => { $('#qz-json-text').value = ev.target.result; };
+          reader.readAsText(file);
+      };
+
+      $('#qz-btn-preview').onclick = () => {
+          const txt = $('#qz-json-text').value.trim();
+          if (!txt) return alert('Collez ou chargez un fichier JSON d\'abord.');
+          
+          let raw;
+          try { raw = JSON.parse(txt); } catch (err) { return alert('JSON invalide. Vérifiez la syntaxe.\n\n' + err.message); }
+          
+          const defNiveau = raw.niveau_scolaire || 'secondaire';
+          let list = Array.isArray(raw) ? raw : (raw.questions || []);
+          
+          if (!Array.isArray(list) || list.length === 0) return alert('Aucune question trouvée dans le JSON.');
+          
+          const valid = [];
+          const seenHashes = new Set();
+          const errors = { manque_champ: 0, choix_invalides: 0, mauvaise_reponse: 0, difficulte_invalide: 0, question_longue: 0, niveau_invalide: 0, interdit: 0, doublon_interne: 0 };
+          
+          list.forEach((q, idx) => {
+              const errLine = `Ligne ${idx+1} : `;
+              const n = (q.niveau_scolaire || defNiveau).toLowerCase();
+              if (!['primaire','secondaire'].includes(n)) { errors.niveau_invalide++; return; }
+              const diff = parseInt(q.niveau_difficulte, 10);
+              if (isNaN(diff) || diff < 1 || diff > 3) { errors.difficulte_invalide++; return; }
+              if (!q.question || typeof q.question !== 'string') { errors.manque_champ++; return; }
+              if (q.question.length > 250) { errors.question_longue++; return; }
+              if (!Array.isArray(q.choix) || q.choix.length !== 4) { errors.choix_invalides++; return; }
+              const choicesClean = q.choix.map(c => String(c || '').trim());
+              if (choicesClean.some(c => c === '')) { errors.choix_invalides++; return; }
+              if (new Set(choicesClean).size < 4) { errors.choix_invalides++; return; }
+              const br = parseInt(q.bonne_reponse, 10);
+              if (isNaN(br) || br < 0 || br > 3) { errors.mauvaise_reponse++; return; }
+              
+              const lowerAll = choicesClean.map(c => c.toLowerCase());
+              if (lowerAll.some(c => c.includes('toutes les réponses') || c.includes('aucune de ces réponses') || c.includes('toutes ces réponses'))) {
+                  errors.interdit++; return;
+              }
+              
+              const hash = hashString(n + '|' + q.question);
+              if (seenHashes.has(hash)) { errors.doublon_interne++; return; }
+              seenHashes.add(hash);
+              
+              valid.push({
+                  niveau_scolaire: n,
+                  matiere: String(q.matiere || '').trim(),
+                  theme: String(q.theme || '').trim(),
+                  niveau_difficulte: diff,
+                  question: q.question.trim(),
+                  choix: choicesClean,
+                  bonne_reponse: br,
+                  explication: String(q.explication || '').trim(),
+                  _hash: hash
+              });
+          });
+
+          if (valid.length === 0) {
+              $('#qz-preview-content').innerHTML = `<p style="color:var(--bad)">Aucune question valide trouvée. Vérifiez le format.</p>`;
+              $('#qz-preview-area').hidden = false;
+              $('#qz-import-actions').hidden = true;
+              return;
+          }
+
+          parsedData = { valid, errors, total: list.length };
+          
+          let errHtml = '';
+          Object.keys(errors).forEach(k => {
+              if (errors[k] > 0) {
+                  const label = { manque_champ:'Champs manquants', choix_invalides:'Choix invalides', mauvaise_reponse:'Bonne réponse incorrecte', difficulte_invalide:'Difficulté invalide (1-3)', question_longue:'Question > 250 car.', niveau_invalide:'Niveau scolaire invalide', interdit:'Mention "toutes les réponses"', doublon_interne:'Doublons dans le lot' }[k];
+                  errHtml += `<li>${label} : ${errors[k]}</li>`;
+              }
+          });
+
+          $('#qz-preview-content').innerHTML = `
+              <p><b>${list.length}</b> question(s) lue(s).</p>
+              <p style="color:var(--ok);font-weight:bold">${valid.length} prête(s) à être importée(s).</p>
+              ${errHtml ? `<p style="color:var(--bad)">Rejetées :</p><ul style="margin-top:0;font-size:13px">${errHtml}</ul>` : ''}
+              <p style="font-size:12px;color:var(--mut);margin-bottom:0">Les doublons (même question pour le même niveau) seront ignorés automatiquement par la base.</p>
+          `;
+          $('#qz-preview-area').hidden = false;
+          $('#qz-import-actions').hidden = false;
+      };
+
+      $('#qz-btn-do-import').onclick = async e => {
+          if (!parsedData || parsedData.valid.length === 0) return;
+          const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Envoi en cours...';
+          const lots = [];
+          for (let i = 0; i < parsedData.valid.length; i += 200) lots.push(parsedData.valid.slice(i, i + 200));
+          
+          let totalIns = 0, totalDup = 0, errStr = '';
+          
+          for (let i = 0; i < lots.length; i++) {
+              btn.textContent = `Envoi lot ${i+1}/${lots.length}...`;
+              const lotClean = lots[i].map(q => { const { _hash, ...rest } = q; return rest; });
+              try {
+                  const { data, error } = await db.rpc('quiz_import', { p_rows: lotClean });
+                  if (error) throw error;
+                  totalIns += data.inserted || 0;
+                  totalDup += data.duplicates || 0;
+              } catch (err) { errStr += `Erreur lot ${i+1}: ${err.message}\n`; }
+          }
+          
+          btn.textContent = 'Lancer l\'importation'; btn.disabled = false;
+          if (errStr) alert('Importation terminée avec des erreurs :\n\n' + errStr);
+          
+          $('#qz-preview-content').innerHTML = `<h4 style="color:var(--ok)">Terminé !</h4>
+              <p>Nouvelles questions ajoutées : <b>${totalIns}</b></p>
+              <p>Doublons ignorés : <b>${totalDup}</b></p>`;
+          $('#qz-import-actions').hidden = true;
+          loadStockAdmin(); // Refresh stock in background
+      };
+  }
+
+  function hashString(str) {
+      let h = 5381;
+      for (let i = 0; i < str.length; i++) { h = ((h << 5) + h) + str.charCodeAt(i); }
+      return h.toString(16);
+  }
+
+  async function openReports() {
+      showOverlay(`
+          <div class="qz-head"><button class="qz-btn-icon" onclick="history.back()">←</button><b>Signalements</b></div>
+          <div class="qz-body" id="qz-reports-list">
+              <p style="text-align:center;color:var(--mut)">Chargement...</p>
+          </div>
+      `);
+      
+      try {
+          const { data, error } = await db.from('quiz_reports')
+              .select('id, created_at, motif, commentaire, quiz_questions(id, question, choix, bonne_reponse, explication, est_active)')
+              .order('created_at', { ascending: false });
+              
+          if (error) throw error;
+          
+          const list = $('#qz-reports-list');
+          if (!data || data.length === 0) {
+              list.innerHTML = `<p style="text-align:center;color:var(--mut)">Aucun signalement pour l'instant.</p>`;
+              return;
+          }
+          
+          list.innerHTML = data.map(r => {
+              const q = r.quiz_questions;
+              if (!q) return '';
+              const d = new Date(r.created_at).toLocaleDateString('fr-FR');
+              return `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">
+                  <div style="font-size:11px;color:var(--mut);margin-bottom:6px">Signalé le ${d} (${r.motif})</div>
+                  <div style="font-weight:bold;font-size:15px;margin-bottom:8px">${esc(q.question)}</div>
+                  <div style="font-size:13px;color:var(--ok);margin-bottom:8px">Rép. : ${esc(Array.isArray(q.choix) ? q.choix[q.bonne_reponse] : '')}</div>
+                  <div style="display:flex;gap:8px;margin-top:10px">
+                      ${!q.est_active ? `<button class="ghost" style="flex:1;border-color:var(--ok);color:var(--ok)" onclick="OreaQuizUI.restoreQ('${q.id}')">Restaurer</button>` : ''}
+                      <button class="ghost" style="flex:1;border-color:var(--bad);color:var(--bad)" onclick="OreaQuizUI.deleteQ('${q.id}')">Supprimer</button>
+                      <button class="ghost" style="flex:1" onclick="OreaQuizUI.editQ('${q.id}')">Modifier</button>
+                  </div>
+              </div>`;
+          }).join('');
+          
+      } catch (e) {
+          $('#qz-reports-list').innerHTML = `<p style="color:var(--bad);text-align:center">Erreur : ${esc(e.message)}</p>`;
+      }
+  }
+
+  async function restoreQ(id) {
+      if (!confirm('Remettre cette question dans la banque active ?')) return;
+      try {
+          await db.rpc('quiz_restore', { p_id: id });
+          alert('Question restaurée.');
+          openReports();
+      } catch (e) { alert('Erreur : ' + e.message); }
+  }
+
+  async function deleteQ(id) {
+      if (!confirm('Supprimer DÉFINITIVEMENT cette question de la base de données ?')) return;
+      try {
+          await db.rpc('quiz_delete', { p_id: id });
+          alert('Question supprimée.');
+          openReports();
+      } catch (e) { alert('Erreur : ' + e.message); }
+  }
+
+  async function editQ(id) {
+      alert('Fonctionnalité de modification en cours de développement.');
+                            }
+       /* =========================================================
+       FIN BANQUE / REPRISE DU JEU
+       ========================================================= */
 
     async function openNewGame() {
         initAudio();
@@ -224,7 +514,12 @@
             return;
         }
 
+        // Bouton Banque visible uniquement si directeur
+        const isDir = typeof dir === 'function' && dir();
+        const bankBtnHtml = isDir ? `<div style="margin-bottom:15px;padding-bottom:15px;border-bottom:1px solid var(--line)"><button class="ghost" onclick="OreaQuizUI.openBank()" style="width:100%;border-color:var(--gold);color:var(--gold)">🗂 Banque de questions</button></div>` : '';
+
         $('#qz-cfg-body').innerHTML = `
+            ${bankBtnHtml}
             <label>Niveau scolaire</label>
             <div class="qz-choices" id="qz-lvl"><button class="qz-ch" data-v="primaire">Primaire</button><button class="qz-ch on" data-v="secondaire">Secondaire</button></div>
             <div id="qz-stock" class="qz-stock"></div>
@@ -506,77 +801,76 @@
     }
 
     async function submitAnswer(selectedIdx, step, q) {
-        if (QUIZ.isAnswering) return; QUIZ.isAnswering = true; if (QUIZ.timer) clearInterval(QUIZ.timer);
-        const timeMs = Date.now() - QUIZ.startTime, isCorrect = selectedIdx === q.bonne_reponse, lvl = QUIZ.state.level;
-        $('#qz-grid').querySelectorAll('.qz-ans').forEach((el, i) => {
-            el.classList.add('locked'); el.classList.remove('sel');
-            if (i === q.bonne_reponse) el.classList.add('correct'); else if (i === selectedIdx && !isCorrect) el.classList.add('wrong');
-        });
-        ['#qz-ok', '#jk-ami', '#jk-50'].forEach(s => { const b = $(s); if (b) b.disabled = true; });
-        flash(isCorrect);
-        if (isCorrect) sound.success(); else sound.buzzer();
-        let pts = 0;
-        try {
-            const res = await QuizEngine.recordAnswer({ game: QUIZ.game, players: QUIZ.players, state: QUIZ.state }, { team: step.team, player_id: step.player.id, correct: isCorrect, time_ms: timeMs, question_id: q.id, joker_used: QUIZ.jokerUsedQ });
-            pts = res.points; updateScores();
-        } catch (e) { console.error(e); }
-        const eliminated = !isCorrect && lvl === 3, tab = lvl === 5;
-        setTimeout(() => {
-            const ov = document.createElement('div'); ov.className = 'qz-exp';
-            const title = isCorrect ? (tab ? '⚽ BUT !' : '✅ Bonne réponse !') : (eliminated ? `❌ ${esc(step.player.name)} est éliminé(e)` : (tab ? '❌ Raté !' : (selectedIdx === -1 ? '⏰ Temps écoulé !' : '❌ Mauvaise réponse')));
-            const good = isCorrect ? '' : `<p><b>Bonne réponse :</b> ${esc(q.choix[q.bonne_reponse])}</p>`;
-            const ptsTxt = isCorrect && !tab ? `<p class="qz-pts">+${pts} point${pts > 1 ? 's' : ''}${lvl === 4 && QUIZ.jokerUsedQ ? ' (joker utilisé)' : ''}</p>` : '';
-            ov.innerHTML = `<div class="qz-exp-box"><h3 style="color:${isCorrect ? 'var(--ok)' : 'var(--bad)'}">${title}</h3>${ptsTxt}${good}${q.explication ? `<p>${esc(q.explication)}</p>` : ''}
-                <button class="ghost" style="margin-top:12px;width:100%" id="qz-next">Question suivante →</button>
-                <button class="ghost" style="margin-top:8px;width:100%;font-size:13px" id="qz-rep">⚑ Signaler cette question</button>
-                <div id="qz-rep-box" hidden style="margin-top:8px;display:flex;flex-direction:column;gap:6px"><button class="ghost" data-m="question">Question incorrecte</button><button class="ghost" data-m="reponse">Mauvaise réponse indiquée</button><button class="ghost" data-m="autre">Autre problème</button></div></div>`;
-            $('#qz-main-area').appendChild(ov);
-            $('#qz-next').onclick = () => { ov.remove(); QUIZ.isAnswering = false; loadNextStep(); };
-            const box = $('#qz-rep-box'); box.hidden = true;
-            $('#qz-rep').onclick = () => { box.hidden = false; $('#qz-rep').hidden = true; };
-            box.querySelectorAll('button').forEach(b => { b.onclick = async () => {
-                box.innerHTML = '<small>Envoi…</small>';
-                try { await QuizStorage.report(q.id, QUIZ.game.id, b.dataset.m, null); box.innerHTML = '<small style="color:var(--ok)">✅ Signalée : question retirée de la banque</small>'; }
-                catch (e) { box.innerHTML = `<small style="color:var(--bad)">❌ Échec du signalement : ${esc(e.message || 'erreur')}</small>`; }
-            }; });
-        }, 1500);
-    }
-
-    function pauseGame() {
-        if ($('.qz-pause-overlay')) return;
-        const wasRunning = !QUIZ.isAnswering && !!QUIZ.timer;
-        if (QUIZ.timer) { clearInterval(QUIZ.timer); QUIZ.timer = null; }
-        const step = QUIZ.currentStep, q = QUIZ.currentQ;
-        const ov = document.createElement('div'); ov.className = 'qz-pause-overlay';
-        ov.innerHTML = `<h2>PAUSE</h2><button id="qz-res" style="width:200px;margin-bottom:10px">Reprendre</button><button class="ghost" id="qz-quit" style="width:200px">Quitter (abandonner)</button>`;
+    if (QUIZ.isAnswering) return; QUIZ.isAnswering = true; if (QUIZ.timer) clearInterval(QUIZ.timer);
+    const timeMs = Date.now() - QUIZ.startTime, isCorrect = selectedIdx === q.bonne_reponse, lvl = QUIZ.state.level;
+    $('#qz-grid').querySelectorAll('.qz-ans').forEach((el, i) => {
+        el.classList.add('locked'); el.classList.remove('sel');
+        if (i === q.bonne_reponse) el.classList.add('correct'); else if (i === selectedIdx && !isCorrect) el.classList.add('wrong');
+    });
+    ['#qz-ok', '#jk-ami', '#jk-50'].forEach(s => { const b = $(s); if (b) b.disabled = true; });
+    flash(isCorrect);
+    if (isCorrect) sound.success(); else sound.buzzer();
+    let pts = 0;
+    try {
+        const res = await QuizEngine.recordAnswer({ game: QUIZ.game, players: QUIZ.players, state: QUIZ.state }, { team: step.team, player_id: step.player.id, correct: isCorrect, time_ms: timeMs, question_id: q.id, joker_used: QUIZ.jokerUsedQ });
+        pts = res.points; updateScores();
+    } catch (e) { console.error(e); }
+    const eliminated = !isCorrect && lvl === 3, tab = lvl === 5;
+    setTimeout(() => {
+        const ov = document.createElement('div'); ov.className = 'qz-exp';
+        const title = isCorrect ? (tab ? '⚽ BUT !' : '✅ Bonne réponse !') : (eliminated ? `❌ ${esc(step.player.name)} est éliminé(e)` : (tab ? '❌ Raté !' : (selectedIdx === -1 ? '⏰ Temps écoulé !' : '❌ Mauvaise réponse')));
+        const good = isCorrect ? '' : `<p><b>Bonne réponse :</b> ${esc(q.choix[q.bonne_reponse])}</p>`;
+        const ptsTxt = isCorrect && !tab ? `<p class="qz-pts">+${pts} point${pts > 1 ? 's' : ''}${lvl === 4 && QUIZ.jokerUsedQ ? ' (joker utilisé)' : ''}</p>` : '';
+        ov.innerHTML = `<div class="qz-exp-box"><h3 style="color:${isCorrect ? 'var(--ok)' : 'var(--bad)'}">${title}</h3>${ptsTxt}${good}${q.explication ? `<p>${esc(q.explication)}</p>` : ''}
+            <button class="ghost" style="margin-top:12px;width:100%" id="qz-next">Question suivante →</button>
+            <button class="ghost" style="margin-top:8px;width:100%;font-size:13px" id="qz-rep">⚑ Signaler cette question</button>
+            <div id="qz-rep-box" hidden style="margin-top:8px;display:flex;flex-direction:column;gap:6px"><button class="ghost" data-m="question">Question incorrecte</button><button class="ghost" data-m="reponse">Mauvaise réponse indiquée</button><button class="ghost" data-m="autre">Autre problème</button></div></div>`;
         $('#qz-main-area').appendChild(ov);
-        QuizStorage.pauseGame(QUIZ.game.id, QUIZ.state).catch(console.error);
-        $('#qz-res').onclick = () => {
-            ov.remove(); QuizStorage.resumeGame(QUIZ.game.id, QUIZ.state).catch(console.error);
-            if (wasRunning && step && q) {
-                QUIZ.deadline = Date.now() + QUIZ.timeLeft * 1000;
-                QUIZ.startTime = Date.now() - (QUIZ.game.timer_seconds - QUIZ.timeLeft) * 1000;
-                runTimer(step, q);
-            }
-        };
-        $('#qz-quit').onclick = () => { if (confirm('Abandonner la partie ?')) { QUIZ.quitting = true; QuizEngine.abort(QUIZ.game.id, QUIZ.state); history.back(); } };
-    }
+        $('#qz-next').onclick = () => { ov.remove(); QUIZ.isAnswering = false; loadNextStep(); };
+        const box = $('#qz-rep-box'); box.hidden = true;
+        $('#qz-rep').onclick = () => { box.hidden = false; $('#qz-rep').hidden = true; };
+        box.querySelectorAll('button').forEach(b => { b.onclick = async () => {
+            box.innerHTML = '<small>Envoi…</small>';
+            try { await QuizStorage.report(q.id, QUIZ.game.id, b.dataset.m, null); box.innerHTML = '<small style="color:var(--ok)">✅ Signalée : question retirée de la banque</small>'; }
+            catch (e) { box.innerHTML = `<small style="color:var(--bad)">❌ Échec du signalement : ${esc(e.message || 'erreur')}</small>`; }
+        }; });
+    }, 1500);
+}
 
-    function showTieScreen() {
-        $('#qz-main-area').innerHTML = `<div style="text-align:center;padding:40px 20px"><h2 style="font-size:40px;color:var(--gold);margin-bottom:10px">ÉGALITÉ !</h2><p style="font-size:18px">Il va falloir un <b>Tir au But</b> pour désigner le vainqueur.</p><button style="margin-top:30px;width:100%;max-width:300px" id="qz-start-tab">Commencer le Tir au But</button></div>`;
-        $('#qz-start-tab').onclick = () => { loadNextStep(); };
-    }
+function pauseGame() {
+    if ($('.qz-pause-overlay')) return;
+    const wasRunning = !QUIZ.isAnswering && !!QUIZ.timer;
+    if (QUIZ.timer) { clearInterval(QUIZ.timer); QUIZ.timer = null; }
+    const step = QUIZ.currentStep, q = QUIZ.currentQ;
+    const ov = document.createElement('div'); ov.className = 'qz-pause-overlay';
+    ov.innerHTML = `<h2>PAUSE</h2><button id="qz-res" style="width:200px;margin-bottom:10px">Reprendre</button><button class="ghost" id="qz-quit" style="width:200px">Quitter (abandonner)</button>`;
+    $('#qz-main-area').appendChild(ov);
+    QuizStorage.pauseGame(QUIZ.game.id, QUIZ.state).catch(console.error);
+    $('#qz-res').onclick = () => {
+        ov.remove(); QuizStorage.resumeGame(QUIZ.game.id, QUIZ.state).catch(console.error);
+        if (wasRunning && step && q) {
+            QUIZ.deadline = Date.now() + QUIZ.timeLeft * 1000;
+            QUIZ.startTime = Date.now() - (QUIZ.game.timer_seconds - QUIZ.timeLeft) * 1000;
+            runTimer(step, q);
+        }
+    };
+    $('#qz-quit').onclick = () => { if (confirm('Abandonner la partie ?')) { QUIZ.quitting = true; QuizEngine.abort(QUIZ.game.id, QUIZ.state); history.back(); } };
+}
 
-    async function endGame(winnerTeam) {
-        QUIZ.quitting = true;
-        if (QUIZ.timer) clearInterval(QUIZ.timer);
-        if (QUIZ.wakeLock) QUIZ.wakeLock.release().catch(()=>{});
-        await QuizEngine.finish(QUIZ.game.id, { game: QUIZ.game, players: QUIZ.players, state: QUIZ.state });
-        await QuizEngine.awardEndTitles({ game: QUIZ.game, players: QUIZ.players, state: QUIZ.state });
-        sound.fanfare(); showPodium();
-    }
+function showTieScreen() {
+    $('#qz-main-area').innerHTML = `<div style="text-align:center;padding:40px 20px"><h2 style="font-size:40px;color:var(--gold);margin-bottom:10px">ÉGALITÉ !</h2><p style="font-size:18px">Il va falloir un <b>Tir au But</b> pour désigner le vainqueur.</p><button style="margin-top:30px;width:100%;max-width:300px" id="qz-start-tab">Commencer le Tir au But</button></div>`;
+    $('#qz-start-tab').onclick = () => { loadNextStep(); };
+}
 
-    function showPodium() {
+async function endGame(winnerTeam) {
+    QUIZ.quitting = true;
+    if (QUIZ.timer) clearInterval(QUIZ.timer);
+    if (QUIZ.wakeLock) QUIZ.wakeLock.release().catch(()=>{});
+    await QuizEngine.finish(QUIZ.game.id, { game: QUIZ.game, players: QUIZ.players, state: QUIZ.state });
+    await QuizEngine.awardEndTitles({ game: QUIZ.game, players: QUIZ.players, state: QUIZ.state });
+    sound.fanfare(); showPodium();
+}
+       function showPodium() {
         const winner = QUIZ.state.winner || (QUIZ.state.scores.A > QUIZ.state.scores.B ? 'A' : 'B');
         const wName = winner === 'A' ? QUIZ.game.class_a_name : QUIZ.game.class_b_name;
         const wColor = winner === 'A' ? '#3b82f6' : '#ef4444';
@@ -637,5 +931,5 @@
         win.document.close();
     }
 
-    window.OreaQuizUI = { injectCss, initAudio, sound, startConfetti, QUIZ, $, esc, sleep, openNewGame, printCert };
+    window.OreaQuizUI = { injectCss, initAudio, sound, startConfetti, QUIZ, $, esc, sleep, openNewGame, printCert, openBank, openImport, openReports, restoreQ, deleteQ, editQ };
 })();
