@@ -1,231 +1,300 @@
 /* =====================================================================
-   ORÉA École v40 — quiz_engine_v2.js (Version Banque Locale)
-   Moteur du jeu sans IA. Pioche directement dans Supabase.
+   ORÉA École v57 — quiz_engine.js
+   QuizStorage (accès Supabase) + QuizEngine (règles du Génie en Herbe).
+   Dépend de : `db` (app.js) et des fonctions SQL quiz_draw / quiz_themes / quiz_report.
    ===================================================================== */
 (function () {
     'use strict';
 
-    const POINTS = { 1: 1, 2: 2, 3: 3, 4: 5, 5: 0 };
+    // ---- Réglages du jeu (modifiables ici) ----
+    const BY = 'matiere';            // champ utilisé pour les "thèmes" du niveau 2 ('matiere' ou 'theme')
+    const JOKERS_PER_TEAM = 3;       // jokers par équipe (Appel à un ami ou 50/50, au choix)
+    const JOKER_FINAL_PTS = 3;       // points d'une question de finale si un joker est utilisé
+    const MIN_PER_THEME = 10;        // questions minimum par matière pour être proposée au niveau 2
+    const MAX_TAB_ROUNDS = 15;       // sécurité du tir au but (puis tirage au sort)
+
     const LEVELS = [
-        { n: 1, nom: 'Échauffement',   difficultes: [1, 2] },
-        { n: 2, nom: 'Consolidation',  difficultes: [2, 3] },
-        { n: 3, nom: 'Élimination',    difficultes: [3, 4] },
-        { n: 4, nom: 'Finale',         difficultes: [4, 5], count: 12 },
-        { n: 5, nom: 'Tir au But',     difficultes: [5],     alternance: true }
+        { n: 1, nom: 'Très facile',         count: 10, pts: 1, diffs: [1] },
+        { n: 2, nom: 'Thématique',          count: 14, pts: 2, diffs: [1, 2] },
+        { n: 3, nom: 'Élimination directe', count: 10, pts: 2, diffs: [1, 2] },
+        { n: 4, nom: 'Finale',              count: 10, pts: 5, diffs: [2, 3] },
+        { n: 5, nom: 'Tir au but',          count: 0,  pts: 0, diffs: [2, 3] }
     ];
-    const THEMES_L1_L2 = ['Histoire', 'Géographie', 'Sciences', 'Français', 'Culture générale', 'Sport', 'Vie courante'];
+
+    // ================= STORAGE =================
+    const rpc = async (fn, args) => { const { data, error } = await db.rpc(fn, args); if (error) throw error; return data; };
+
+    window.QuizStorage = {
+        createGame: async function (cfg) {
+            const row = {
+                school_id: cfg.school_id, created_by: cfg.created_by, status: 'en_cours', niveau_scolaire: cfg.niveau_scolaire,
+                class_a_id: cfg.class_a_id, class_b_id: cfg.class_b_id, class_a_name: cfg.class_a_name, class_b_name: cfg.class_b_name,
+                timer_seconds: cfg.timer_seconds, current_level: 1, score_a: 0, score_b: 0, state: cfg.state || {}
+            };
+            const { data, error } = await db.from('quiz_games').insert(row).select().single();
+            if (error) throw error; return data;
+        },
+        updateGame: async function (id, patch) {
+            const { data, error } = await db.from('quiz_games').update(patch).eq('id', id).select().single();
+            if (error) throw error; return data;
+        },
+        pauseGame: async function (id, state) { return this.updateGame(id, { status: 'en_pause', paused_at: new Date().toISOString(), state }); },
+        resumeGame: async function (id, state) { return this.updateGame(id, { status: 'en_cours', state, paused_at: null }); },
+        finishGame: async function (id, patch) { return this.updateGame(id, Object.assign({ status: 'terminee', finished_at: new Date().toISOString() }, patch || {})); },
+        getGame: async function (id) {
+            const { data, error } = await db.from('quiz_games').select('*').eq('id', id).maybeSingle();
+            if (error) throw error; return data;
+        },
+        createPlayers: async function (game_id, school_id, players) {
+            const rows = (players || []).map(p => ({ game_id, school_id, student_id: p.student_id, class_id: p.class_id, team: p.team, name: p.name, status: 'en_jeu', points: 0, correct_answers: 0, wrong_answers: 0, correct_time_ms: 0 }));
+            const { data, error } = await db.from('quiz_players').insert(rows).select();
+            if (error) throw error; return data || [];
+        },
+        updatePlayer: async function (id, patch) {
+            const { data, error } = await db.from('quiz_players').update(patch).eq('id', id).select().single();
+            if (error) throw error; return data;
+        },
+        logJoker: async function (game_id, school_id, team, type) {
+            const { error } = await db.from('quiz_jokers').insert({ game_id, school_id, team, type, used: true, used_at: new Date().toISOString() });
+            if (error) throw error;
+        },
+        awardTitle: async function (row) {
+            const { data, error } = await db.from('quiz_titles').insert(row).select().single();
+            if (error) throw error; return data;
+        },
+        draw: (niveau, diffs, by, value, exclude, n) => rpc('quiz_draw', { p_niveau: niveau, p_diffs: diffs, p_by: by, p_value: value, p_exclude: exclude, p_n: n }),
+        themes: (niveau, diffs, by, exclude, min) => rpc('quiz_themes', { p_niveau: niveau, p_diffs: diffs, p_by: by, p_exclude: exclude, p_min: min }),
+        report: (question_id, game_id, motif, comment) => rpc('quiz_report', { p_question: question_id, p_game: game_id, p_motif: motif, p_comment: comment || null })
+    };
+
+    // ================= OUTILS =================
+    const lvl = n => LEVELS.find(l => l.n === n);
+    function shuffle(arr) { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+    const teamPlayers = (players, t) => players.filter(p => p.team === t);
+    const alive = (players, t) => players.filter(p => p.team === t && p.status === 'en_jeu');
+    function survivors(players) { return { A: alive(players, 'A'), B: alive(players, 'B') }; }
+    function allEliminated(players, t) { return teamPlayers(players, t).every(p => p.status === 'elimine'); }
+    function pickPlayer(players, t, k) { let l = alive(players, t); if (!l.length) l = teamPlayers(players, t); return l[k % l.length]; }
+
+    // Valide une question et mélange l'ordre des 4 réponses (évite un biais de position).
+    function prep(row) {
+        let ch = row.choix;
+        if (typeof ch === 'string') { try { ch = JSON.parse(ch); } catch (_) { ch = []; } }
+        const br = Number(row.bonne_reponse);
+        if (!Array.isArray(ch) || ch.length !== 4 || !(br >= 0 && br < 4)) throw new Error('Question invalide');
+        const items = shuffle(ch.map((t, i) => ({ t: String(t), ok: i === br })));
+        return { id: row.id, matiere: row.matiere, theme: row.theme, niveau_difficulte: row.niveau_difficulte, question: row.question, choix: items.map(x => x.t), bonne_reponse: items.findIndex(x => x.ok), explication: row.explication };
+    }
+
+    async function draw(game, asked, diffs, value, n) {
+        n = n || 1;
+        const rows = (await QuizStorage.draw(game.niveau_scolaire, diffs, BY, value, asked, n + 5)) || [];
+        const out = [];
+        for (const r of rows) { try { out.push(prep(r)); } catch (_) { /* question ignorée */ } if (out.length === n) break; }
+        if (out.length < n) throw new Error(value
+            ? `Pas assez de questions pour « ${value} » (${game.niveau_scolaire}). Ajoutez des questions à la banque.`
+            : `Plus de questions disponibles (${game.niveau_scolaire}, difficulté ${diffs.join('-')}). Ajoutez des questions à la banque.`);
+        return out;
+    }
+    async function drawOne(game, state, diffs) { const [q] = await draw(game, state.asked, diffs, null, 1); state.asked.push(q.id); return q; }
 
     function emptyState(cfg) {
         return {
-            version: 1, created_at: new Date().toISOString(),
-            niveau_scolaire: cfg.niveau_scolaire, timer_seconds: cfg.timer_seconds,
-            level: 1, sub_round: 0, order: ['A', 'B'], order_idx: 0,
-            current_player: null, current_question: null,
-            picks_remaining: { A: [], B: [] }, final_seq: [], final_idx: 0,
-            elimination_queue: [], elimination_idx: 0,
-            asked_this_game: { A: [], B: [] },
-            jokers_used: { A: { ami: false, cinquante: false }, B: { ami: false, cinquante: false } },
-            history: [], scores: { A: 0, B: 0 }, winner: null
+            version: 2, created_at: new Date().toISOString(), niveau_scolaire: cfg.niveau_scolaire, timer_seconds: cfg.timer_seconds,
+            level: 1, idx: 0, intro_seen: [], asked: [], theme_options: null, theme_pool: [], themes: null,
+            n2_queue: [], n3_queue: [], n4_seq: [], tab: { round: 1, turn: 'A', a_ok: null },
+            jokers_left: { A: JOKERS_PER_TEAM, B: JOKERS_PER_TEAM }, scores: { A: 0, B: 0 },
+            history: [], winner: null, decided_by: null, current_player: null
         };
     }
 
+    // ================= PARTIE =================
     async function createGame(opts) {
-        if (!opts || !opts.school_id || !opts.class_a || !opts.class_b) throw new Error('Paramètres incomplets.');
-        if (!opts.team_a_players || opts.team_a_players.length !== 5) throw new Error('5 joueurs requis (Équipe A).');
-        if (!opts.team_b_players || opts.team_b_players.length !== 5) throw new Error('5 joueurs requis (Équipe B).');
-
-        const state = emptyState({ niveau_scolaire: opts.niveau_scolaire, timer_seconds: opts.timer_seconds });
-
+        const state = emptyState(opts);
         const game = await QuizStorage.createGame({
-            school_id: opts.school_id, created_by: opts.created_by,
-            niveau_scolaire: opts.niveau_scolaire, class_a_id: opts.class_a.id, class_b_id: opts.class_b.id,
-            class_a_name: opts.class_a.name, class_b_name: opts.class_b.name, timer_seconds: opts.timer_seconds, state
+            school_id: opts.school_id, created_by: opts.created_by, niveau_scolaire: opts.niveau_scolaire,
+            class_a_id: opts.class_a.id, class_b_id: opts.class_b.id, class_a_name: opts.class_a.name, class_b_name: opts.class_b.name,
+            timer_seconds: opts.timer_seconds, state
         });
-
         const players = [];
         opts.team_a_players.forEach(p => players.push({ team: 'A', student_id: p.id, class_id: opts.class_a.id, name: p.name }));
         opts.team_b_players.forEach(p => players.push({ team: 'B', student_id: p.id, class_id: opts.class_b.id, name: p.name }));
         const inserted = await QuizStorage.createPlayers(game.id, opts.school_id, players);
-        await QuizStorage.initJokers(game.id, opts.school_id);
         return { game, players: inserted };
     }
 
     async function saveState(game_id, state) { return QuizStorage.updateGame(game_id, { state }); }
     async function pause(game_id, state) { return QuizStorage.pauseGame(game_id, state); }
-    async function resume(game_id) {
-        const g = await QuizStorage.getGame(game_id);
-        if (!g || g.status !== 'en_pause') throw new Error('Aucune partie en pause.');
-        return QuizStorage.resumeGame(game_id, g.state || {});
-    }
     async function abort(game_id, state) { return QuizStorage.updateGame(game_id, { status: 'abandonnee', state: state || {} }); }
 
-    function survivors(players) {
-        return { A: players.filter(p => p.team === 'A' && p.status === 'en_jeu'), B: players.filter(p => p.team === 'B' && p.status === 'en_jeu') };
+    async function serve(ctx, step) {
+        ctx.state.current_player = { team: step.team, id: step.player.id, name: step.player.name };
+        await saveState(ctx.game.id, ctx.state); return step;
     }
-    function allEliminated(players, team) { return players.filter(p => p.team === team).every(p => p.status === 'elimine'); }
+    async function advance(ctx, n) { ctx.state.level = n; ctx.state.idx = 0; await saveState(ctx.game.id, ctx.state); return nextQuestion(ctx); }
+    async function finishBy(ctx, winner, by) { ctx.state.winner = winner; ctx.state.decided_by = by; await saveState(ctx.game.id, ctx.state); return { finished: true, winner }; }
+    async function toTab(ctx) {
+        const s = ctx.state; s.level = 5; s.idx = 0; if (!s.intro_seen.includes(5)) s.intro_seen.push(5);
+        s.tab = { round: 1, turn: 'A', a_ok: null }; await saveState(ctx.game.id, s); return { tie: true };
+    }
 
+    // Niveau 2 : propose 3 matières + 1 mystère.
+    async function buildThemeOptions(ctx) {
+        const { game, state } = ctx;
+        const rows = (await QuizStorage.themes(game.niveau_scolaire, lvl(2).diffs, BY, state.asked, MIN_PER_THEME)) || [];
+        const pool = shuffle(rows.map(r => r.label));
+        if (pool.length < 3) throw new Error(`Banque insuffisante pour le niveau Thématique : il faut au moins 3 matières avec ${MIN_PER_THEME} questions chacune (trouvé : ${pool.length}).`);
+        state.theme_pool = pool;
+        state.theme_options = pool.slice(0, 3).map((label, i) => ({ id: 't' + i, label, mystery: false })).concat([{ id: 'm', label: 'Thème mystère', mystery: true }]);
+        await saveState(game.id, state);
+    }
+
+    // picks = { A: 'idOption', B: 'idOption' } → tire 7 questions par équipe, dans SON thème.
+    async function setThemes(ctx, picks) {
+        const { game, state } = ctx, L = lvl(2), opts = state.theme_options || [];
+        const a = opts.find(o => o.id === picks.A), b = opts.find(o => o.id === picks.B);
+        if (!a || !b || a.id === b.id) throw new Error('Choix de thèmes invalide.');
+        const pool = state.theme_pool, shown = opts.filter(o => !o.mystery).map(o => o.label);
+        const hidden = pool.filter(x => !shown.includes(x));
+        const mystery = other => { let c = hidden.filter(x => x !== other); if (!c.length) c = pool.filter(x => x !== other); return c[Math.floor(Math.random() * c.length)]; };
+        let la = a.mystery ? null : a.label, lb = b.mystery ? null : b.label;
+        if (a.mystery) la = mystery(lb);
+        if (b.mystery) lb = mystery(la);
+        const qa = await draw(game, state.asked, L.diffs, la, 7);
+        const qb = await draw(game, state.asked.concat(qa.map(q => q.id)), L.diffs, lb, 7);
+        const queue = [];
+        for (let i = 0; i < 7; i++) { queue.push({ team: 'A', q: qa[i] }); queue.push({ team: 'B', q: qb[i] }); }
+        state.asked = state.asked.concat(qa.map(q => q.id), qb.map(q => q.id));
+        state.themes = { A: { label: la, mystery: !!a.mystery }, B: { label: lb, mystery: !!b.mystery } };
+        state.n2_queue = queue; state.idx = 0;
+        await saveState(game.id, state);
+        return state.themes;
+    }
+
+    /* Retourne l'une de ces formes :
+       { intro: n }                      → écran de présentation du niveau
+       { needThemes: true, options }     → l'UI doit appeler setThemes()
+       { q, player, team, mystery?, isTirAuBut?, round? }
+       { tie: true }                     → égalité : tir au but
+       { finished: true, winner }        → fin de partie */
+    async function nextQuestion(ctx) {
+        const { game, players, state } = ctx, n = state.level, L = lvl(n);
+        if (!L) return { error: 'Niveau inconnu.' };
+        if (!state.intro_seen.includes(n)) { state.intro_seen.push(n); await saveState(game.id, state); return { intro: n }; }
+
+        if (n === 1) {
+            if (state.idx >= L.count) return advance(ctx, 2);
+            const t = state.idx % 2 === 0 ? 'A' : 'B', player = pickPlayer(players, t, Math.floor(state.idx / 2));
+            const q = await drawOne(game, state, L.diffs); state.idx++;
+            return serve(ctx, { q, player, team: t });
+        }
+        if (n === 2) {
+            if (!state.themes) { if (!state.theme_options) await buildThemeOptions(ctx); return { needThemes: true, options: state.theme_options }; }
+            if (state.idx >= state.n2_queue.length) return advance(ctx, 3);
+            const it = state.n2_queue[state.idx], k = Math.floor(state.idx / 2); state.idx++;
+            return serve(ctx, { q: it.q, team: it.team, player: pickPlayer(players, it.team, k), mystery: !!state.themes[it.team].mystery });
+        }
+        if (n === 3) {
+            if (state.idx === 0 && !state.n3_queue.length) {
+                const sA = shuffle(alive(players, 'A')), sB = shuffle(alive(players, 'B')), qu = [];
+                for (let i = 0; i < Math.max(sA.length, sB.length); i++) {
+                    if (sA[i]) qu.push({ team: 'A', id: sA[i].id, name: sA[i].name });
+                    if (sB[i]) qu.push({ team: 'B', id: sB[i].id, name: sB[i].name });
+                }
+                state.n3_queue = qu;
+            }
+            if (state.idx >= state.n3_queue.length) {
+                const s = survivors(players);
+                if (!s.A.length && s.B.length) return finishBy(ctx, 'B', 'elimination');
+                if (!s.B.length && s.A.length) return finishBy(ctx, 'A', 'elimination');
+                return advance(ctx, 4);
+            }
+            const cur = state.n3_queue[state.idx];
+            const q = await drawOne(game, state, L.diffs); state.idx++;
+            return serve(ctx, { q, player: cur, team: cur.team });
+        }
+        if (n === 4) {
+            if (state.idx === 0 && !state.n4_seq.length) {
+                const s = survivors(players);
+                if (!s.A.length || !s.B.length) {
+                    if (state.scores.A !== state.scores.B) return finishBy(ctx, state.scores.A > state.scores.B ? 'A' : 'B', 'score');
+                    return toTab(ctx);
+                }
+                let ia = 0, ib = 0;
+                for (let i = 0; i < L.count; i++) {
+                    const t = i % 2 === 0 ? 'A' : 'B', pool = t === 'A' ? s.A : s.B, k = t === 'A' ? ia++ : ib++, p = pool[k % pool.length];
+                    state.n4_seq.push({ team: t, id: p.id, name: p.name });
+                }
+            }
+            if (state.idx >= state.n4_seq.length) {
+                if (state.scores.A !== state.scores.B) return finishBy(ctx, state.scores.A > state.scores.B ? 'A' : 'B', 'score');
+                return toTab(ctx);
+            }
+            const cur = state.n4_seq[state.idx];
+            const q = await drawOne(game, state, L.diffs); state.idx++;
+            return serve(ctx, { q, player: cur, team: cur.team });
+        }
+        if (n === 5) {
+            if (state.winner) return { finished: true, winner: state.winner };
+            if (state.tab.round > MAX_TAB_ROUNDS) return finishBy(ctx, Math.random() < 0.5 ? 'A' : 'B', 'tirage');
+            const t = state.tab.turn, player = pickPlayer(players, t, state.tab.round - 1);
+            const q = await drawOne(game, state, L.diffs);
+            return serve(ctx, { q, player, team: t, isTirAuBut: true, round: state.tab.round });
+        }
+        return { error: 'Niveau inconnu.' };
+    }
+
+    // Tir au but : A puis B ; si un seul des deux marque, il gagne ; sinon on recommence.
+    function updateTab(state, t, ok) {
+        const tab = state.tab;
+        if (t === 'A') { tab.a_ok = ok; tab.turn = 'B'; return; }
+        if (tab.a_ok !== null && tab.a_ok !== ok) { state.winner = tab.a_ok ? 'A' : 'B'; state.decided_by = 'tir_au_but'; }
+        else { tab.round++; tab.turn = 'A'; tab.a_ok = null; }
+    }
+
+    // opts : { team, player_id, correct, time_ms, question_id, joker_used }
     async function recordAnswer(ctx, opts) {
-        const { game, players, state } = ctx;
-        const team = opts.team, level = state.level, points = POINTS[level] || 0;
+        const { game, players, state } = ctx, t = opts.team, level = state.level;
         const player = players.find(p => p.id === opts.player_id);
         if (!player) throw new Error('Joueur introuvable.');
-
-        const patch = {};
+        const base = level === 4 ? (opts.joker_used ? JOKER_FINAL_PTS : lvl(4).pts) : (lvl(level) ? lvl(level).pts : 0);
+        const patch = {}; let earned = 0;
         if (opts.correct) {
-            patch.points = player.points + points;
-            patch.correct_answers = player.correct_answers + 1;
+            earned = base;
+            patch.points = player.points + earned; patch.correct_answers = player.correct_answers + 1;
             patch.correct_time_ms = Number(player.correct_time_ms || 0) + Number(opts.time_ms || 0);
-            if (level !== 5) state.scores[team] = (state.scores[team] || 0) + points;
+            if (level !== 5) state.scores[t] = (state.scores[t] || 0) + earned;
         } else {
             patch.wrong_answers = player.wrong_answers + 1;
             if (level === 3) patch.status = 'elimine';
         }
-        await QuizStorage.updatePlayer(player.id, patch);
-        Object.assign(player, patch);
-        state.history.push({ level, team, player: player.name, player_id: player.id, correct: !!opts.correct, ms: Number(opts.time_ms || 0), question_id: opts.question_id || null });
+        if (level === 5) updateTab(state, t, !!opts.correct);
+        await QuizStorage.updatePlayer(player.id, patch); Object.assign(player, patch);
+        state.history.push({ level, team: t, player: player.name, player_id: player.id, correct: !!opts.correct, ms: Number(opts.time_ms || 0), question_id: opts.question_id || null, joker: !!opts.joker_used, pts: earned });
         await saveState(game.id, state);
-        return { player, state, correct: !!opts.correct };
+        return { player, state, correct: !!opts.correct, points: earned };
     }
 
     async function finish(game_id, ctx) {
-        const { players, state } = ctx;
-        const { A, B } = survivors(players);
-        let winner = null;
-        if (!A.length && B.length) winner = 'B';
-        else if (!B.length && A.length) winner = 'A';
-        else if (state.scores.A > state.scores.B) winner = 'A';
-        else if (state.scores.B > state.scores.A) winner = 'B';
-        state.winner = winner;
-        const winner_class_id = winner === 'A' ? ctx.game.class_a_id : winner === 'B' ? ctx.game.class_b_id : null;
+        const { state } = ctx; let w = state.winner;
+        if (!w) { if (state.scores.A > state.scores.B) w = 'A'; else if (state.scores.B > state.scores.A) w = 'B'; }
+        state.winner = w || null; if (w && !state.decided_by) state.decided_by = 'score';
+        const winner_class_id = w === 'A' ? ctx.game.class_a_id : w === 'B' ? ctx.game.class_b_id : null;
         return QuizStorage.finishGame(game_id, { winner_class_id, score_a: state.scores.A, score_b: state.scores.B, current_level: state.level, state });
     }
 
     async function awardEndTitles(ctx) {
         const { game, players } = ctx;
-        const ranked = players.slice().sort((a, b) => b.points - a.points).slice(0, 3);
+        const ranked = players.filter(p => p.points > 0).sort((a, b) => b.points - a.points).slice(0, 3);
         const fastest = players.filter(p => p.correct_answers > 0 && p.correct_time_ms > 0).map(p => ({ p, avg: p.correct_time_ms / p.correct_answers })).sort((a, b) => a.avg - b.avg).slice(0, 3);
-        const winner_team = ctx.state.winner;
-        const winners = winner_team ? players.filter(p => p.team === winner_team) : [];
-        const out = [];
-        for (let i = 0; i < ranked.length; i++) out.push({ school_id: game.school_id, game_id: game.id, student_id: ranked[i].student_id, class_id: ranked[i].class_id, player_name: ranked[i].name, title: 'Meilleur buteur', rank: i + 1 });
-        for (let i = 0; i < fastest.length; i++) out.push({ school_id: game.school_id, game_id: game.id, student_id: fastest[i].p.student_id, class_id: fastest[i].p.class_id, player_name: fastest[i].p.name, title: 'Éclair', rank: i + 1 });
-        for (const w of winners) out.push({ school_id: game.school_id, game_id: game.id, student_id: w.student_id, class_id: w.class_id, player_name: w.name, title: 'Champion de la classe', rank: null });
+        const winners = ctx.state.winner ? players.filter(p => p.team === ctx.state.winner) : [];
+        const out = [], base = p => ({ school_id: game.school_id, game_id: game.id, student_id: p.student_id, class_id: p.class_id, player_name: p.name });
+        ranked.forEach((p, i) => out.push(Object.assign(base(p), { title: 'Meilleur buteur', rank: i + 1 })));
+        fastest.forEach((f, i) => out.push(Object.assign(base(f.p), { title: 'Éclair', rank: i + 1 })));
+        winners.forEach(p => out.push(Object.assign(base(p), { title: 'Champion de la classe', rank: null })));
         for (const t of out) { try { await QuizStorage.awardTitle(t); } catch (e) { console.warn(e); } }
         return out;
     }
 
-    function buildFinalSequence(players, state) {
-        const survivorsA = players.filter(p => p.team === 'A' && p.status === 'en_jeu');
-        const survivorsB = players.filter(p => p.team === 'B' && p.status === 'en_jeu');
-        if (!survivorsA.length || !survivorsB.length) return [];
-        const seq = []; let ia = 0, ib = 0;
-        for (let i = 0; i < 12; i++) {
-            const team = i % 2 === 0 ? 'A' : 'B';
-            const pool = team === 'A' ? survivorsA : survivorsB;
-            const idx = team === 'A' ? ia++ : ib++;
-            seq.push({ team, player: pool[idx % pool.length] });
-        }
-        return seq;
-    }
-
-    function shuffle(arr) {
-        const a = arr.slice();
-        for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; }
-        return a;
-    }
-
-    // --- NOUVELLE FONCTION DE PIOCHAGE (SANS IA) ---
-    async function prepareQuestion(game, state, team, class_ids) {
-        const diff = state.level <= 2 ? [1, 2] : state.level === 3 ? [3, 4] : [4, 5];
-        const niveau_diff = diff[Math.floor(Math.random() * diff.length)];
-        
-        const askedIds = (state.asked_this_game && state.asked_this_game.A && state.asked_this_game.B) 
-            ? state.asked_this_game.A.concat(state.asked_this_game.B) 
-            : [];
-        
-        const q = await QuizStorage.prepareQuestionForLevel(
-            game.niveau_scolaire, 
-            niveau_diff, 
-            null, 
-            askedIds
-        );
-
-        if (!state.asked_this_game) state.asked_this_game = { A: [], B: [] };
-        state.asked_this_game[team].push(q.id);
-
-        return q;
-    }
-
-    async function nextQuestion(ctx) {
-        const { game, players, state } = ctx;
-        const class_ids = [game.class_a_id, game.class_b_id];
-        
-        if (state.level === 1 || state.level === 2) {
-            if (state.sub_round >= 4) { state.level++; state.sub_round = 0; await saveState(game.id, state); return nextQuestion(ctx); }
-            const team = state.sub_round % 2 === 0 ? 'A' : 'B';
-            const survivor = players.filter(p => p.team === team && p.status === 'en_jeu');
-            if (!survivor.length) { state.level++; state.sub_round = 0; await saveState(game.id, state); return nextQuestion(ctx); }
-            const player = survivor[state.sub_round % survivor.length];
-            const q = await prepareQuestion(game, state, team, class_ids);
-            state.current_question = q; state.current_player = { team, id: player.id, name: player.name };
-            await saveState(game.id, state);
-            return { q, player, team };
-        }
-
-        if (state.level === 3) {
-            if (!state.elimination_queue || !state.elimination_queue.length) {
-                const survivorsA = shuffle(players.filter(p => p.team === 'A' && p.status === 'en_jeu'));
-                const survivorsB = shuffle(players.filter(p => p.team === 'B' && p.status === 'en_jeu'));
-                state.elimination_queue = [];
-                for (let i = 0; i < Math.max(survivorsA.length, survivorsB.length); i++) {
-                    if (survivorsA[i]) state.elimination_queue.push({ team: 'A', id: survivorsA[i].id, name: survivorsA[i].name });
-                    if (survivorsB[i]) state.elimination_queue.push({ team: 'B', id: survivorsB[i].id, name: survivorsB[i].name });
-                }
-                state.elimination_idx = 0;
-            }
-            if (state.elimination_idx >= state.elimination_queue.length) {
-                state.level = 4; state.final_seq = buildFinalSequence(players, state); state.final_idx = 0;
-                await saveState(game.id, state); return nextQuestion(ctx);
-            }
-            const cur = state.elimination_queue[state.elimination_idx]; state.elimination_idx++;
-            const q = await prepareQuestion(game, state, cur.team, class_ids);
-            state.current_question = q; state.current_player = cur;
-            await saveState(game.id, state);
-            return { q, player: cur, team: cur.team };
-        }
-
-        if (state.level === 4) {
-            if (!state.final_seq || !state.final_seq.length) { state.final_seq = buildFinalSequence(players, state); state.final_idx = 0; }
-            if (state.final_idx >= state.final_seq.length) {
-                if (state.scores.A === state.scores.B) {
-                    state.level = 5; state.order = ['A', 'B']; state.order_idx = 0;
-                    await saveState(game.id, state); return { tie: true };
-                }
-                await saveState(game.id, state); return { finished: true };
-            }
-            const step = state.final_seq[state.final_idx]; state.final_idx++;
-            const q = await prepareQuestion(game, state, step.team, class_ids);
-            state.current_question = q; state.current_player = { team: step.team, id: step.player.id, name: step.player.name };
-            await saveState(game.id, state);
-            return { q, player: state.current_player, team: step.team };
-        }
-
-        if (state.level === 5) {
-            const team = state.order[state.order_idx % 2];
-            const survivorsList = players.filter(p => p.team === team && p.status === 'en_jeu');
-            if (!survivorsList.length) { state.winner = team === 'A' ? 'B' : 'A'; await finish(game.id, ctx); return { finished: true, winner: state.winner }; }
-            const player = survivorsList[state.order_idx % survivorsList.length];
-            const q = await prepareQuestion(game, state, team, class_ids);
-            state.current_question = q; state.current_player = { team, id: player.id, name: player.name };
-            state.order_idx++;
-            await saveState(game.id, state);
-            return { q, player: state.current_player, team, isTirAuBut: true };
-        }
-        return { error: 'Niveau inconnu.' };
-    }
-
-    window.QuizEngine = {
-        POINTS, LEVELS, THEMES_L1_L2, createGame, saveState, pause, resume, abort, finish,
-        recordAnswer, nextQuestion, survivors, allEliminated, awardEndTitles, shuffle
-    };
+    window.QuizEngine = { LEVELS, JOKERS_PER_TEAM, JOKER_FINAL_PTS, createGame, saveState, pause, abort, finish, nextQuestion, setThemes, recordAnswer, survivors, allEliminated, awardEndTitles, shuffle };
 })();

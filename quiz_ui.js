@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v56 — quiz_ui.js (livraison 2 : design noir/doré, HUD, chrono SVG)
+   ORÉA École v57 — quiz_ui.js (livraison 3 : intros, thèmes N2, jokers pool, signalement)
    Interface animateur du Génie en Herbe.
    ===================================================================== */
 (function () {
@@ -14,7 +14,7 @@
         game: null, players: [], state: null, timer: null, timeLeft: 0,
         startTime: 0, isAnswering: false, soundOn: localStorage.getItem('orea_quiz_sound') !== 'off',
         audioCtx: null, wakeLock: null, ov: null, currentStep: null, currentQ: null,
-        sel: null, deadline: 0, lastSec: -1, sc: { A: 0, B: 0 }, quitting: false
+        sel: null, deadline: 0, lastSec: -1, sc: { A: 0, B: 0 }, quitting: false, jokerUsedQ: false
     };
 
     function injectCss() {
@@ -107,6 +107,17 @@
         .qz-flash{position:absolute;inset:0;z-index:30;pointer-events:none;animation:qzFlash .7s ease-out forwards}
         .qz-flash.ok{background:radial-gradient(circle,rgba(61,220,132,.55),rgba(61,220,132,.15) 60%,transparent)}
         .qz-flash.bad{background:radial-gradient(circle,rgba(255,77,94,.55),rgba(255,77,94,.15) 60%,transparent)}
+        .qz-jkc{align-self:center;font-size:13px;font-weight:700;color:var(--gold)}
+        .qz-note{font-size:12px;color:var(--mut)}
+        .qz-pts{color:var(--gold);font-weight:800;font-size:18px;margin:4px 0}
+        .qz-intro{justify-content:center;gap:14px}
+        .qz-intro-k{font-size:14px;letter-spacing:.3em;color:var(--gold);font-weight:800}
+        .qz-intro-t{font-family:var(--serif);font-size:clamp(26px,8vw,38px);font-weight:900;color:var(--tx);text-shadow:0 0 18px rgba(227,201,120,.5)}
+        .qz-intro ul{list-style:none;padding:0;margin:0 0 8px;display:flex;flex-direction:column;gap:8px;color:var(--mut);font-size:16px}
+        .qz-opts{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;max-width:640px}
+        .qz-opt{min-height:96px;display:flex;align-items:center;justify-content:center;text-align:center;padding:12px;border:2px solid var(--gold);border-radius:16px;background:linear-gradient(180deg,rgba(227,201,120,.14),rgba(227,201,120,.04));font-weight:800;font-size:16px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+        .qz-opt:active{border-color:var(--vio);box-shadow:0 0 22px rgba(139,92,246,.7)}
+        .qz-opt.myst{border-color:var(--vio);background:rgba(139,92,246,.18)}
         @keyframes qzPop{0%{transform:scale(.95)}50%{transform:scale(1.04)}100%{transform:scale(1)}}
         @keyframes qzShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
         @keyframes qzFade{from{opacity:0}to{opacity:1}}
@@ -353,6 +364,43 @@
         const nm = $('#qz-h-name'); if (nm) nm.textContent = n === 5 ? '' : (LEVEL_NAMES[n] || '');
     }
 
+    const INTROS = {
+        1: ['NIVEAU 1', 'Très facile', ['10 questions · 1 point chacune', 'Les équipes répondent à tour de rôle : A, B, A, B…']],
+        2: ['NIVEAU 2', 'Thématique', ['Chaque équipe choisit son thème', '7 questions par équipe · 2 points chacune']],
+        3: ['NIVEAU 3', 'Élimination directe', ['10 questions · 2 points chacune', 'Un joueur à la fois', 'Une mauvaise réponse = joueur éliminé']],
+        4: ['NIVEAU 4', 'Finale', ['10 questions · 5 points chacune', 'Un joker utilisé ramène la question à 3 points']]
+    };
+
+    function showIntro(n) {
+        const it = INTROS[n] || ['NIVEAU ' + n, '', []];
+        updateScores();
+        ['#qz-h-a', '#qz-h-b'].forEach(s => $(s).classList.remove('act'));
+        QUIZ.timeLeft = QUIZ.game.timer_seconds; paintTimer();
+        $('#qz-main-area').innerHTML = `<div class="qz-qwrap qz-intro"><div class="qz-intro-k">${it[0]}</div><div class="qz-intro-t">${esc(it[1].toUpperCase())}</div><ul>${it[2].map(l => `<li>${esc(l)}</li>`).join('')}</ul><button class="qz-validate" id="qz-go">COMMENCER</button></div>`;
+        $('#qz-go').onclick = loadNextStep;
+        sound.fanfare();
+    }
+
+    function showThemePicker(options) {
+        const picks = {}, main = $('#qz-main-area');
+        const stepPick = team => {
+            const avail = options.filter(o => !Object.values(picks).includes(o.id));
+            const name = team === 'A' ? QUIZ.game.class_a_name : QUIZ.game.class_b_name;
+            $('#qz-h-a').classList.toggle('act', team === 'A'); $('#qz-h-b').classList.toggle('act', team === 'B');
+            main.innerHTML = `<div class="qz-qwrap"><div class="qz-turn" style="--tc:${TEAM_COL[team]}">CHOIX DU THÈME · ÉQUIPE <b>${esc(String(name).toUpperCase())}</b></div><div class="qz-opts">${avail.map(o => `<div class="qz-opt${o.mystery ? ' myst' : ''}" role="button" data-id="${o.id}">${o.mystery ? '🎁 THÈME MYSTÈRE' : esc(o.label)}</div>`).join('')}</div></div>`;
+            main.querySelectorAll('.qz-opt').forEach(el => { el.onclick = () => { picks[team] = el.dataset.id; if (team === 'A') stepPick('B'); else confirmThemes(); }; });
+        };
+        async function confirmThemes() {
+            main.innerHTML = `<div class="sk" style="width:80%;height:80px"></div>`;
+            try { await QuizEngine.setThemes({ game: QUIZ.game, players: QUIZ.players, state: QUIZ.state }, picks); loadNextStep(); }
+            catch (e) {
+                main.innerHTML = `<p class="due" style="text-align:center;padding:20px">Erreur : ${esc(e.message)}</p><button class="ghost" id="qz-retry" style="margin:10px auto 0;display:block">Choisir à nouveau</button>`;
+                $('#qz-retry').onclick = () => { delete picks.A; delete picks.B; stepPick('A'); };
+            }
+        }
+        stepPick('A');
+    }
+
     async function loadNextStep() {
         const main = $('#qz-main-area');
         main.innerHTML = `<div class="sk" style="width:80%;height:80px"></div>`;
@@ -361,6 +409,8 @@
             if (step.finished) return endGame(step.winner);
             if (step.tie) return showTieScreen();
             if (step.error) throw new Error(step.error);
+            if (step.intro) return showIntro(step.intro);
+            if (step.needThemes) { updateScores(); return showThemePicker(step.options); }
             updateScores(); renderQuestion(step);
         } catch (e) { main.innerHTML = `<p class="due" style="text-align:center;padding:20px">Erreur : ${esc(e.message)}</p><button class="ghost" style="margin:10px auto 0;display:block" onclick="history.back()">Quitter</button>`; }
     }
@@ -401,27 +451,28 @@
     }
 
     function renderQuestion(step) {
-        QUIZ.currentStep = step; QUIZ.currentQ = step.q; QUIZ.sel = null; QUIZ.isAnswering = false;
+        QUIZ.currentStep = step; QUIZ.currentQ = step.q; QUIZ.sel = null; QUIZ.isAnswering = false; QUIZ.jokerUsedQ = false;
         const q = step.q, tm = QUIZ.game.timer_seconds, main = $('#qz-main-area'), lvl = QUIZ.state.level, t = step.team;
         const teamName = t === 'A' ? QUIZ.game.class_a_name : QUIZ.game.class_b_name;
         const letters = ['A', 'B', 'C', 'D'];
         const who = lvl === 3 && step.player ? `<div class="qz-who-p">👤 ${esc(step.player.name)}</div>` : '';
+        const lab = [q.matiere, q.theme].filter((v, i, a) => v && a.indexOf(v) === i).join(' · ') || 'Culture générale';
         let jokersHtml = '';
         if (lvl !== 5) {
-            const jk = QUIZ.state.jokers_used[t];
-            jokersHtml = `<div class="qz-jokers"><button class="qz-jk" id="jk-ami" ${jk.ami ? 'disabled' : ''}>📞 Appel à un ami${jk.ami ? ' (utilisé)' : ''}</button><button class="qz-jk" id="jk-50" ${jk.cinquante ? 'disabled' : ''}>50/50${jk.cinquante ? ' (utilisé)' : ''}</button></div>`;
+            const left = QUIZ.state.jokers_left[t], tot = QuizEngine.JOKERS_PER_TEAM;
+            jokersHtml = `<div class="qz-jokers"><button class="qz-jk" id="jk-ami" ${left <= 0 ? 'disabled' : ''}>📞 Appel à un ami</button><button class="qz-jk" id="jk-50" ${left <= 0 ? 'disabled' : ''}>50/50</button><span class="qz-jkc" id="qz-jkc">🃏 ${left}/${tot}</span></div>${lvl === 4 ? `<div class="qz-note">⚠ En finale, un joker ramène la question à ${QuizEngine.JOKER_FINAL_PTS} pts</div>` : ''}`;
         }
         main.innerHTML = `
             <div class="qz-qwrap">
                 <div class="qz-turn" style="--tc:${TEAM_COL[t]}">À L'ÉQUIPE <b>${esc(String(teamName).toUpperCase())}</b>${who}</div>
-                <div class="qz-theme">${esc(q.theme || 'Culture générale')}</div>
+                <div class="qz-theme">${step.mystery ? '🎁 THÈME MYSTÈRE · ' : ''}${esc(lab)}</div>
                 <div class="qz-qframe"><div class="qz-question">${esc(q.question)}</div></div>
                 <div class="qz-choices-grid" id="qz-grid">${q.choix.map((c, i) => `<div class="qz-ans" role="button" data-i="${i}"><span>${letters[i]}</span><em>${esc(c)}</em></div>`).join('')}</div>
                 <button class="qz-validate" id="qz-ok" disabled>✔ VALIDER</button>
                 ${jokersHtml}
             </div>`;
         $('#qz-h-a').classList.toggle('act', t === 'A'); $('#qz-h-b').classList.toggle('act', t === 'B');
-        if (lvl === 2) { const nm = $('#qz-h-name'); if (nm && q.theme) nm.textContent = q.theme; }
+        if (lvl === 2) { const nm = $('#qz-h-name'); if (nm) nm.textContent = q.matiere || q.theme || ''; }
         const jA = $('#jk-ami'), j5 = $('#jk-50');
         if (jA && !jA.disabled) jA.onclick = () => useJoker('ami', step, q);
         if (j5 && !j5.disabled) j5.onclick = () => useJoker('cinquante', step, q);
@@ -433,23 +484,30 @@
 
     async function useJoker(type, step, q) {
         if (QUIZ.isAnswering) return;
+        const t = step.team, left = QUIZ.state.jokers_left[t];
+        if (left <= 0) return;
+        QUIZ.state.jokers_left[t] = left - 1; QUIZ.jokerUsedQ = true;
         if (type === 'ami') {
             QUIZ.timeLeft += 30; QUIZ.deadline += 30000;
             const b = $('#jk-ami'); b.disabled = true; b.textContent = '📞 Ami (+30 s)'; paintTimer();
         } else {
-            const b = $('#jk-50'); b.disabled = true; b.textContent = '50/50 (utilisé)';
+            const b = $('#jk-50'); b.disabled = true; b.textContent = '50/50 ✓';
             QuizEngine.shuffle([0, 1, 2, 3].filter(i => i !== q.bonne_reponse)).slice(0, 2).forEach(i => {
                 const el = $(`#qz-grid .qz-ans[data-i="${i}"]`); el.classList.add('disabled'); el.classList.remove('sel');
                 if (QUIZ.sel === i) QUIZ.sel = null;
             });
             const ok = $('#qz-ok'); if (ok) ok.disabled = QUIZ.sel === null;
         }
-        try { await QuizStorage.useJoker(QUIZ.game.id, step.team, type); QUIZ.state.jokers_used[step.team][type] = true; await QuizEngine.saveState(QUIZ.game.id, QUIZ.state); } catch (e) { console.error(e); }
+        const now = QUIZ.state.jokers_left[t], c = $('#qz-jkc');
+        if (c) c.textContent = `🃏 ${now}/${QuizEngine.JOKERS_PER_TEAM}`;
+        if (now <= 0) ['#jk-ami', '#jk-50'].forEach(s => { const b = $(s); if (b) b.disabled = true; });
+        QuizStorage.logJoker(QUIZ.game.id, QUIZ.game.school_id, t, type).catch(() => {});
+        QuizEngine.saveState(QUIZ.game.id, QUIZ.state).catch(console.error);
     }
 
     async function submitAnswer(selectedIdx, step, q) {
         if (QUIZ.isAnswering) return; QUIZ.isAnswering = true; if (QUIZ.timer) clearInterval(QUIZ.timer);
-        const timeMs = Date.now() - QUIZ.startTime, isCorrect = selectedIdx === q.bonne_reponse;
+        const timeMs = Date.now() - QUIZ.startTime, isCorrect = selectedIdx === q.bonne_reponse, lvl = QUIZ.state.level;
         $('#qz-grid').querySelectorAll('.qz-ans').forEach((el, i) => {
             el.classList.add('locked'); el.classList.remove('sel');
             if (i === q.bonne_reponse) el.classList.add('correct'); else if (i === selectedIdx && !isCorrect) el.classList.add('wrong');
@@ -457,14 +515,30 @@
         ['#qz-ok', '#jk-ami', '#jk-50'].forEach(s => { const b = $(s); if (b) b.disabled = true; });
         flash(isCorrect);
         if (isCorrect) sound.success(); else sound.buzzer();
-        try { await QuizEngine.recordAnswer({ game: QUIZ.game, players: QUIZ.players, state: QUIZ.state }, { team: step.team, player_id: step.player.id, correct: isCorrect, time_ms: timeMs, question_id: q.id }); updateScores(); } catch (e) { console.error(e); }
-        const eliminated = !isCorrect && QUIZ.state.level === 3;
+        let pts = 0;
+        try {
+            const res = await QuizEngine.recordAnswer({ game: QUIZ.game, players: QUIZ.players, state: QUIZ.state }, { team: step.team, player_id: step.player.id, correct: isCorrect, time_ms: timeMs, question_id: q.id, joker_used: QUIZ.jokerUsedQ });
+            pts = res.points; updateScores();
+        } catch (e) { console.error(e); }
+        const eliminated = !isCorrect && lvl === 3, tab = lvl === 5;
         setTimeout(() => {
             const ov = document.createElement('div'); ov.className = 'qz-exp';
-            const title = isCorrect ? '✅ Bonne réponse !' : (eliminated ? `❌ ${esc(step.player.name)} est éliminé(e)` : (selectedIdx === -1 ? '⏰ Temps écoulé !' : '❌ Mauvaise réponse'));
+            const title = isCorrect ? (tab ? '⚽ BUT !' : '✅ Bonne réponse !') : (eliminated ? `❌ ${esc(step.player.name)} est éliminé(e)` : (tab ? '❌ Raté !' : (selectedIdx === -1 ? '⏰ Temps écoulé !' : '❌ Mauvaise réponse')));
             const good = isCorrect ? '' : `<p><b>Bonne réponse :</b> ${esc(q.choix[q.bonne_reponse])}</p>`;
-            ov.innerHTML = `<div class="qz-exp-box"><h3 style="color:${isCorrect ? 'var(--ok)' : 'var(--bad)'}">${title}</h3>${good}${q.explication ? `<p>${esc(q.explication)}</p>` : ''}<button class="ghost" style="margin-top:15px;width:100%" id="qz-next">Question suivante →</button></div>`;
-            $('#qz-main-area').appendChild(ov); $('#qz-next').onclick = () => { ov.remove(); QUIZ.isAnswering = false; loadNextStep(); };
+            const ptsTxt = isCorrect && !tab ? `<p class="qz-pts">+${pts} point${pts > 1 ? 's' : ''}${lvl === 4 && QUIZ.jokerUsedQ ? ' (joker utilisé)' : ''}</p>` : '';
+            ov.innerHTML = `<div class="qz-exp-box"><h3 style="color:${isCorrect ? 'var(--ok)' : 'var(--bad)'}">${title}</h3>${ptsTxt}${good}${q.explication ? `<p>${esc(q.explication)}</p>` : ''}
+                <button class="ghost" style="margin-top:12px;width:100%" id="qz-next">Question suivante →</button>
+                <button class="ghost" style="margin-top:8px;width:100%;font-size:13px" id="qz-rep">⚑ Signaler cette question</button>
+                <div id="qz-rep-box" hidden style="margin-top:8px;display:flex;flex-direction:column;gap:6px"><button class="ghost" data-m="question">Question incorrecte</button><button class="ghost" data-m="reponse">Mauvaise réponse indiquée</button><button class="ghost" data-m="autre">Autre problème</button></div></div>`;
+            $('#qz-main-area').appendChild(ov);
+            $('#qz-next').onclick = () => { ov.remove(); QUIZ.isAnswering = false; loadNextStep(); };
+            const box = $('#qz-rep-box'); box.hidden = true;
+            $('#qz-rep').onclick = () => { box.hidden = false; $('#qz-rep').hidden = true; };
+            box.querySelectorAll('button').forEach(b => { b.onclick = async () => {
+                box.innerHTML = '<small>Envoi…</small>';
+                try { await QuizStorage.report(q.id, QUIZ.game.id, b.dataset.m, null); box.innerHTML = '<small style="color:var(--ok)">✅ Signalée : question retirée de la banque</small>'; }
+                catch (e) { box.innerHTML = `<small style="color:var(--bad)">❌ Échec du signalement : ${esc(e.message || 'erreur')}</small>`; }
+            }; });
         }, 1500);
     }
 
@@ -490,7 +564,7 @@
 
     function showTieScreen() {
         $('#qz-main-area').innerHTML = `<div style="text-align:center;padding:40px 20px"><h2 style="font-size:40px;color:var(--gold);margin-bottom:10px">ÉGALITÉ !</h2><p style="font-size:18px">Il va falloir un <b>Tir au But</b> pour désigner le vainqueur.</p><button style="margin-top:30px;width:100%;max-width:300px" id="qz-start-tab">Commencer le Tir au But</button></div>`;
-        $('#qz-start-tab').onclick = () => { QUIZ.state.level = 5; QUIZ.state.order = ['A', 'B']; QUIZ.state.order_idx = 0; loadNextStep(); };
+        $('#qz-start-tab').onclick = () => { loadNextStep(); };
     }
 
     async function endGame(winnerTeam) {
