@@ -16,10 +16,12 @@ const S = {
     impcls: '', impf: 'all', imps: 'anciennete', _bilan: null, events: [], evMonth: null,
     absM: null, sanM: null
 };
+S.curTermFilter = null;
 
 document.documentElement.dataset.theme = localStorage.theme || 'dark';
 
 const dir = () => S.me.role === 'directeur';
+const canCollect = () => S.me && (S.me.role === 'directeur' || S.me.role === 'percepteur');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const nf = (n, d = 2) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: d }).format(n);
 const fmt = n => nf(n / (S.school.rates[S.cur] || 1), S.cur === 'CDF' ? 0 : 2) + ' ' + SYM[S.cur];
@@ -66,7 +68,7 @@ window.addEventListener('popstate', () => {
     if (S.me && (S.tab === 'cotation' || S.tab === 'bulletins')) { if (S.tab === 'cotation' && S.cotScreen === 'eval') S.cotScreen = 'home'; else S.tab = 'eleves'; render(); return; }
     if (S.me && S.tab === 'eleves' && S.view === 'class') { S.view = 'grid'; S.q = ''; render(); return; }
     if (S.me && !['accueil', 'menu'].includes(S.tab)) {
-        if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps'].includes(S.tab)) {
+        if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'finance_home', 'programme_home', 'donnees_home'].includes(S.tab)) {
             S.tab = 'menu';
             render();
         } else {
@@ -352,13 +354,25 @@ function applyLocalFee(x) {
 }
 const hasTerms = () => { const t = S.terms[S.year]; return !!(t && (t.t1 || t.t2 || t.t3)); };
 function curTerm(year) { const t = S.terms[year]; if (!t || !(t.t1 || t.t2 || t.t3)) return null; const now = tdy(); let k = 0; [t.t1, t.t2, t.t3].forEach((d, i) => { if (d && d <= now) k = i + 1; }); return k; }
+const getTermToShow = () => S.curTermFilter || (typeof curTerm === 'function' ? curTerm(S.year) : 1) || 1;
+const termOn = () => !!(S.curTermFilter || hasTerms());
+const tRem = s => { const t = trims(s)[getTermToShow() - 1]; return t ? t[1] : 0; };
+function setTermFilter(v) { S.curTermFilter = v; render(); }
+const termBar = () => `<div class=chips>${[[null, 'Auto'], [1, 'T1'], [2, 'T2'], [3, 'T3']].map(x => `<button class="chip ${S.curTermFilter === x[0] ? 'on' : ''}" onclick="setTermFilter(${x[0]})">${x[1]}${x[0] === null ? ' (T' + getTermToShow() + ')' : ''}</button>`).join('')}</div>`;
 function status(s) {
     if (s.balance_cdf <= 0) return 'paid';
     const c = S.classes.find(x => x.id === s.class_id), k = c ? curTerm(cy(c)) : null;
     if (k === null) return 'due';
     return trims(s).slice(0, k).some(t => t[1] > 0) ? 'late' : 'ok';
 }
-function stTag(s) {
+function stTag(s, scoped) {
+    if (scoped && termOn()) {
+        const k = getTermToShow(), t = trims(s)[k - 1], c = S.classes.find(x => x.id === s.class_id), real = c ? curTerm(cy(c)) : null;
+        if (!t || t[2] <= 0) return `<span class=ok>— T${k}</span>`;
+        if (t[1] <= 0) return `<span class=ok>✓ Soldé T${k}</span>`;
+        if (real !== null && k <= real) return `<span class=due>🔴 En retard T${k}<br><small>Doit ${fmt(t[1])}</small></span>`;
+        return `<span class=due>À payer T${k}<br><small>Doit ${fmt(t[1])}</small></span>`;
+    }
     const st = status(s);
     if (st === 'paid') return '<span class=ok>✓ Soldé</span>';
     if (st === 'ok') return `<span class=ok>✅ À jour<br><small>reste ${fmt(s.balance_cdf)}</small></span>`;
@@ -517,7 +531,7 @@ function setupView() {
 function render() {
     $('#nav').hidden = false; subBanner();
     const R = S.me.role, tabs = [['accueil', 'Accueil'], ['eleves', 'École'], ['menu', 'Menu'], ['reglages', 'Réglages']];
-    const SUB = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'cotation', 'bulletins'];
+    const SUB = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'cotation', 'bulletins', 'finance_home', 'programme_home', 'donnees_home'];
     if (!tabs.some(x => x[0] === S.tab) && !SUB.includes(S.tab)) S.tab = 'accueil';
     let activeTab = ['cotation', 'bulletins'].includes(S.tab) ? 'eleves' : SUB.includes(S.tab) ? 'menu' : S.tab;
     $('#nav').innerHTML = tabs.map(x => `<button data-t=${x[0]}>${svgI(x[0])}<span>${x[1]}</span></button>`).join('');
@@ -528,7 +542,8 @@ function render() {
         hs.insertAdjacentHTML('afterend', `<button id="searchBtn" class="ghost" style="width:auto;min-height:40px;padding:8px;margin-left:auto;border:none" onclick="openSearch()">🔍</button>`);
     }
 
-    ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier, devoirs: vDevoirs, emploi_temps: vEmploiTemps, cotation: () => vCotation(), bulletins: () => vBulletins() })[S.tab]();
+    if (R === 'enseignant' && ['caisse', 'impayes', 'depenses', 'bilan', 'finance_home'].includes(S.tab)) S.tab = 'menu';
+    ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier, devoirs: vDevoirs, emploi_temps: vEmploiTemps, finance_home: vFinanceHome, programme_home: vProgrammeHome, donnees_home: vDonneesHome, cotation: () => vCotation(), bulletins: () => vBulletins() })[S.tab]();
     qui();
 }
 const sorts = {
@@ -574,7 +589,8 @@ function vEleves() {
         const FT = [['all', 'Tous'], ...(hasTerms() ? [['late', 'En retard']] : []), ['due', 'À payer'], ['paid', 'Soldés'], ['nophone', 'Sans n°']];
         h += `<div class=bar><button class=ghost style="width:auto" onclick=backGrid()>← Classes</button><b class=ctitle>${esc(c.name)}</b><button class=ghost style="width:auto;margin-left:auto" onclick=printClass()>🖨 Imprimer</button></div>`
             + `<input id=q type=search placeholder="🔍 Rechercher dans ${esc(c.name)}" value="${esc(S.q)}">`
-            + (['directeur', 'enseignant'].includes(S.me.role) ? `<div class=bar><button class=ghost style="flex:1;width:auto" onclick=openCotation()>📝 Cotation</button>${dir() ? '<button style="flex:1;width:auto" onclick=openBulletins()>📄 Bulletins</button>' : ''}</div>` : '')
+            + termBar()
+            + (['directeur', 'enseignant'].includes(S.me.role) ? `<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0\"><button class=ghost style=\"width:auto\" onclick=openCotation()>📝 Cotation</button><button class=ghost style=\"width:auto\" onclick=openDevoirsClasse()>📚 Devoirs</button><button class=ghost style=\"width:auto\" onclick=openHoraireClasse()>📅 Horaire</button><button class=ghost style=\"width:auto\" onclick=openSanctionsClasse()>⚖️ Sanctions</button></div>` : '')
             + `<div class=bar><select id=so><option value=alpha>Alphabétique A → Z</option><option value=solde>Plus grand solde dû</option><option value=retard>Retard de paiement</option><option value=moyenne>Tri par moyenne</option></select></div>`
             + `<div class=chips>${FT.map(f => `<button class="chip ${S.ft === f[0] ? 'on' : ''}" data-f=${f[0]}>${f[1]}</button>`).join('')}</div><div id=lst></div>`;
     } else {
@@ -588,7 +604,7 @@ function vEleves() {
         if ($('#so')) {
             $('#so').value = S.sort;
             $('#so').onchange = e => { S.sort = e.target.value; drawList(); };
-            document.querySelectorAll('.chip').forEach(b => b.onclick = () => { S.ft = b.dataset.f; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b)); drawList(); });
+            document.querySelectorAll('.chip[data-f]').forEach(b => b.onclick = () => { S.ft = b.dataset.f; document.querySelectorAll('.chip[data-f]').forEach(x => x.classList.toggle('on', x === b)); drawList(); });
         }
         drawList();
     }
@@ -609,9 +625,9 @@ function listNow() {
     let l = grid ? ys() : ys().filter(s => s.class_id === S.cls);
     if (q) l = l.filter(s => nrm(s.name).includes(q) || (qd && String(s.parent_phone || '').replace(/\D/g, '').includes(qd)));
     if (!grid) {
-        if (S.ft === 'due') l = l.filter(s => s.balance_cdf > 0);
+        if (S.ft === 'due') l = l.filter(s => termOn() ? tRem(s) > 0 : s.balance_cdf > 0);
         else if (S.ft === 'late') l = l.filter(s => status(s) === 'late');
-        else if (S.ft === 'paid') l = l.filter(s => s.balance_cdf <= 0);
+        else if (S.ft === 'paid') l = l.filter(s => termOn() ? tRem(s) <= 0 : s.balance_cdf <= 0);
         else if (S.ft === 'nophone') l = l.filter(s => !s.parent_phone);
     }
     return l.sort(sorts[grid ? 'alpha' : S.sort]);
@@ -620,8 +636,8 @@ function drawList() {
     const grid = S.view !== 'class', q = nrm(S.q).trim();
     if (grid && !q) return drawGrid();
     const cn = Object.fromEntries(S.classes.map(c => [c.id, c.name])), l = listNow();
-    const tot = l.reduce((t, s) => t + Number(s.balance_cdf || 0), 0);
-    $('#lst').innerHTML = l.length ? `<small>${l.length} élève(s) · reste dû ${fmt(tot)}</small>` + l.map(s => `<div class=card onclick="menu('${s.id}')"><span><b>${esc(s.name)}</b>${grid ? '' : avgPill(s)}${grid ? '<br><small>' + esc(cn[s.class_id] || '') + '</small>' : ''}</span>${stTag(s)}</div>`).join('') : `<p class=empty>${q || S.ft !== 'all' ? 'Aucun élève trouvé.' : 'Aucun élève dans cette classe.'}</p>`;
+    const sc = !grid && termOn(), tot = l.reduce((t, s) => t + (sc ? tRem(s) : Number(s.balance_cdf || 0)), 0);
+    $('#lst').innerHTML = l.length ? `<small>${l.length} élève(s) · reste dû ${sc ? 'T' + getTermToShow() + ' ' : ''}${fmt(tot)}</small>` + l.map(s => `<div class=card onclick="menu('${s.id}')"><span><b>${esc(s.name)}</b>${grid ? '' : avgPill(s)}${grid ? '<br><small>' + esc(cn[s.class_id] || '') + '</small>' : ''}</span>${stTag(s, !grid)}</div>`).join('') : `<p class=empty>${q || S.ft !== 'all' ? 'Aucun élève trouvé.' : 'Aucun élève dans cette classe.'}</p>`;
 }
 
 /* ---------- Impression d’une classe (PDF / PNG) ---------- */
@@ -689,14 +705,14 @@ function addStudent() {
     });
 }
 function termSolde(s) {
-    const c = S.classes.find(x => x.id === s.class_id), k = c ? curTerm(cy(c)) : null;
+    const c = S.classes.find(x => x.id === s.class_id), k = S.curTermFilter || (c ? curTerm(cy(c)) : null);
     if (!(k > 0)) return `<p>${stTag(s)}</p>`;
     const t = trims(s)[k - 1];
     return `<p><b>Solde du trimestre ${k}</b> : ${t[1] > 0 ? `<span class=due>${fmt(t[1])} à payer</span>` : '<span class=ok>✓ Soldé</span>'}</p>`;
 }
 function menu(id) {
     const s = S.stu.find(x => x.id === id), R = S.me.role;
-    const d = show(`<h3>${esc(s.name)}</h3>${termSolde(s)}<p><small>${trims(s).map(t => 'T' + t[0] + ' : ' + (t[2] > 0 ? (t[1] > 0 ? 'reste ' + fmt(t[1]) : '✓') : '—')).join(' · ')}</small></p>${fees4(s).length ? '<p><small>' + fees4(s).map(f => esc(f.name) + ' : ' + (feeRem(s, f) > 0 ? 'reste ' + fmt(feeRemCdf(s, f)) : '✓')).join(' · ') + '</small></p>' : ''}<div class=col>${R !== 'enseignant' ? '<button id=m1>Encaisser un paiement</button><button class=ghost id=m2>Historique et reçus</button>' : ''}${R !== 'percepteur' ? '<button class=ghost id=m7>Sanctions</button>' : ''}${R === 'directeur' || R === 'enseignant' ? '<button class=ghost id=m9>📊 Cotes</button>' : ''}${dir() ? '<button class=ghost id=m6>Message WhatsApp au parent</button><button class=ghost id=m8>🔑 Voir le code Parent</button><button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>' : ''}<button class=ghost id=m3>Fermer</button></div>`);
+    const d = show(`<h3>${esc(s.name)}</h3>${termSolde(s)}<p><small>${trims(s).map(t => 'T' + t[0] + ' : ' + (t[2] > 0 ? (t[1] > 0 ? 'reste ' + fmt(t[1]) : '✓') : '—')).join(' · ')}</small></p>${fees4(s).length ? '<p><small>' + fees4(s).map(f => esc(f.name) + ' : ' + (feeRem(s, f) > 0 ? 'reste ' + fmt(feeRemCdf(s, f)) : '✓')).join(' · ') + '</small></p>' : ''}<div class=col>${canCollect() ? '<button id=m1>Encaisser un paiement</button>' : ''}${R !== 'enseignant' ? '<button class=ghost id=m2>Historique et reçus</button>' : ''}${R !== 'percepteur' ? '<button class=ghost id=m7>Sanctions</button>' : ''}${R === 'directeur' || R === 'enseignant' ? '<button class=ghost id=m9>📊 Cotes</button>' : ''}${dir() ? '<button class=ghost id=m6>Message WhatsApp au parent</button><button class=ghost id=m8>🔑 Voir le code Parent</button><button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>' : ''}<button class=ghost id=m3>Fermer</button></div>`);
     const b = (k, f) => { const e = d.querySelector('#' + k); if (e) e.onclick = f; };
     b('m1', () => pay(id)); b('m2', () => hist(id)); b('m3', () => d.close()); b('m4', () => editStudent(id)); b('m5', () => { d.close(); delStudent(id); }); b('m6', () => wa(id)); b('m7', () => sanc(id)); b('m9', () => { if (typeof openStuCotes === 'function') openStuCotes(id); });
     b('m8', async () => {
@@ -977,8 +993,8 @@ async function receipt(p, sid) {
 /* ---------- Accueil (REFONTE GRAPHIQUE) ---------- */
 const tdy = () => new Date().toLocaleDateString('sv-SE');
 function previsionCard() {
-    const t = curTerm(S.year);
-    if (!t) return '';
+    const t = getTermToShow();
+    if (!S.curTermFilter && !hasTerms()) return '';
     const st = ys();
     const due = st.reduce((a, s) => a + Number(s['due' + t + '_cdf'] || 0), 0);
     const paid = st.reduce((a, s) => a + Number(s['p' + t + '_cdf'] || 0), 0);
@@ -999,8 +1015,8 @@ async function vAccueil() {
     ]);
     const st = ys(), sm = k => st.reduce((a, s) => a + Number(s[k] || 0), 0), A = aa.data || [], cnt = k => A.filter(a => a.status === k).length;
     const tod = sum((pp.data || []).filter(p => R === 'directeur' || p.collector_id === S.me.id)) + qToday(), pend = (rq.data || []).length;
-    const exp = sm('due1_cdf') + sm('due2_cdf') + sm('due3_cdf') + sm('fee_exp_cdf'), due = sm('balance_cdf');
-    let h = ybar() + `<h3>Bonjour ${esc(S.me.full_name)}</h3>`;
+    const tt = getTermToShow(), tDue = sm('due' + tt + '_cdf'), tPaid = sm('p' + tt + '_cdf'), due = Math.max(0, tDue - tPaid);
+    let h = termBar() + ybar() + `<h3>Bonjour ${esc(S.me.full_name)}</h3>`;
 
     if (S.events && S.events.length) {
         const ev = S.events[0];
@@ -1014,15 +1030,15 @@ async function vAccueil() {
     if (R !== 'enseignant') {
         h += lateCard();
         if (R === 'directeur') h += previsionCard();
-        const pct = exp > 0 ? Math.max(0, Math.min(100, Math.round(100 * (1 - due / exp)))) : 0;
+        const pct = tDue > 0 ? Math.max(0, Math.min(100, Math.round(100 * tPaid / tDue))) : 0;
         h += `<div class="card hero"><small>Encaissé aujourd'hui ${R === 'directeur' ? '· école' : '· ma caisse'}</small><span class=big>${fmt(tod)}</span></div>`;
-        h += `<div class="stat-pair"><div class="card stat"><span>Total encaissé</span><b>${fmt(sm('paid_cdf'))}</b></div><div class="card stat"><span>Reste à encaisser</span><b class="${due > 0 ? 'due' : ''}">${fmt(due)}</b></div></div>`;
-        h += `<div class="card ring-card"><span>Taux de recouvrement</span><div class=ring style="--p:${pct}"><b>${pct} %</b></div></div>`;
+        h += `<div class="stat-pair"><div class="card stat"><span>Total encaissé · T${tt}</span><b>${fmt(tPaid)}</b></div><div class="card stat"><span>Reste à encaisser · T${tt}</span><b class="${due > 0 ? 'due' : ''}">${fmt(due)}</b></div></div>`;
+        h += `<div class="card ring-card"><span>Taux de recouvrement · T${tt}</span><div class=ring style="--p:${pct}"><b>${pct} %</b></div></div>`;
         h += '<h3>Par trimestre</h3><div class=tri-list>';
         [1, 2, 3].forEach(i => {
             const paidI = sm('p' + i + '_cdf'), dueI = sm('due' + i + '_cdf');
             const pctI = dueI > 0 ? Math.max(0, Math.min(100, Math.round(100 * paidI / dueI))) : 0;
-            h += `<div class=tri-card><div class=tri-badge>T${i}</div><div class=tri-info><div class=tri-labels><small>Encaissé</small><b>${fmt(paidI)} / ${fmt(dueI)}</b></div><div class=tri-bar><i style="width:${pctI}%"></i></div></div></div>`;
+            h += `<div class="tri-card" ${i === tt ? 'style="border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)"' : ''}><div class=tri-badge>T${i}</div><div class=tri-info><div class=tri-labels><small>Encaissé</small><b>${fmt(paidI)} / ${fmt(dueI)}</b></div><div class=tri-bar><i style="width:${pctI}%"></i></div></div></div>`;
         });
         h += '</div>';
         h += classBars() + (R === 'directeur' ? '<div id=ch></div>' : '');
@@ -1121,20 +1137,23 @@ async function team() {
 // --- FIN DE LA TRANCHE 7. La tranche suivante commencera par : /* ---------- Caisse ---------- */ ---
 /* ---------- Caisse ---------- */
 async function vCaisse() {
+    if (!canCollect()) { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><p class=empty data-ic="🔒">Accès réservé au percepteur ou au directeur</p>'; return; }
     $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
     const t0 = new Date(); t0.setHours(0, 0, 0, 0);
     const { data: ps0, error: pe0 } = await todayFull(t0);
     if (pe0 || !ps0) { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><p class=empty>La caisse demande une connexion.</p>'; return; }
-    const ps = ps0;
-    const mine = ps.filter(p => p.collector_id === S.me.id);
+    const mine = ps0.filter(p => p.collector_id === S.me.id);
+    const ps = dir() ? ps0 : mine;
     const tot = a => [sum(a.filter(p => p.method === 'especes')), sum(a.filter(p => p.method === 'mobile_money'))];
     const [c, m] = tot(dir() ? ps : mine);
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Aujourd’hui ${dir() ? '(toute l’école)' : '(ma caisse)'}</h3><div class=card><span>Espèces</span><b>${fmt(c)}</b></div><div class=card><span>Mobile Money</span><b>${fmt(m)}</b></div><div class=card><span>Paiements</span><b>${(dir() ? ps : mine).length}</b></div>`;
     if (S.me.role === 'percepteur') h += '<button onclick=closeDay()>Clôturer ma journée</button>';
-    const { data: cl = [] } = await db.from('closures').select('*').order('created_at', { ascending: false }).limit(30);
+    let { data: cl = [] } = await db.from('closures').select('*').order('created_at', { ascending: false }).limit(30);
+    if (!dir()) cl = cl.filter(k => k.collector_id === S.me.id);
     const { data: pr = [] } = await db.from('profiles').select('id,full_name');
     const nm = Object.fromEntries(pr.map(p => [p.id, p.full_name]));
-    const { data: rq = [] } = await db.from('change_requests').select('*').order('created_at', { ascending: false }).limit(20);
+    let { data: rq = [] } = await db.from('change_requests').select('*').order('created_at', { ascending: false }).limit(20);
+    if (!dir()) rq = rq.filter(r => r.requested_by === S.me.id);
     const st = { en_attente: '⏳ En attente', approuvee: '✓ Approuvée', refusee: '✗ Refusée' };
     const reqHtml = rq.length ? '<h3>Demandes de correction</h3>' + rq.map(r => `<div class="card col"><b>${esc(r.info || 'Paiement supprimé')}</b><span>${r.kind === 'delete_payment' ? 'Suppression' : 'Correction → ' + nf(r.new_amount) + ' · T' + r.new_term}${nm[r.requested_by] ? ' · ' + esc(nm[r.requested_by]) : ''}</span><small>${st[r.status]}${r.reason ? ' · ' + esc(r.reason) : ''}</small>${dir() && r.status === 'en_attente' ? `<div class=row><button onclick="decide('${r.id}',true)">Approuver</button><button class=ghost onclick="decide('${r.id}',false)">Refuser</button></div>` : ''}</div>`).join('') : '';
     h += reqHtml + '<h3>Clôtures</h3>' + (cl.length ? cl.map(k => {
@@ -1408,33 +1427,23 @@ function vMenu() {
     const R = S.me.role; let h = `<h3>Menu</h3>`;
     h += `<div class=menu-title>Gestion quotidienne</div>`;
     h += menuCard('presences', 'Présences', null, "menuGo('presences')");
-    if (R !== 'enseignant') h += menuCard('caisse', 'Caisse', null, "menuGo('caisse')");
-    if (R !== 'enseignant') {
-        h += menuCard('impayes', 'Impayés', null, "menuGo('impayes')");
-        if (R === 'directeur') {
-            h += menuCard('depenses', 'Dépenses', null, "menuGo('depenses')");
-            h += menuCard('bilan', 'Bilan mensuel', null, "menuGo('bilan')");
-        }
-    }
+    if (canCollect()) h += menuCard('caisse', 'Caisse', null, "menuGo('caisse')");
+    if (R !== 'enseignant') h += menuCard('impayes', 'Finance', 'Impayés · Dépenses · Bilan', "menuGo('finance_home')");
     h += `<div class=menu-title>Pédagogie</div>`;
     h += menuCard('absences', 'Suivi des absences', null, "menuGo('absences')");
     h += menuCard('sanctions', 'Sanctions', null, "menuGo('sanctions')");
-    h += menuCard('calendrier', 'Calendrier', null, "menuGo('calendrier')");
+    h += menuCard('calendrier', 'Programme', 'Calendrier · Horaires', "menuGo('programme_home')");
     h += menuCard('devoirs', 'Devoirs', null, "menuGo('devoirs')");
-    h += menuCard('emploi_temps', 'Emploi du temps', null, "menuGo('emploi_temps')");
     if (dir()) {
         h += `<div class=menu-title>Administration</div>`;
         h += menuCard('annees', 'Années scolaires', null, "yearMenu()");
-        h += menuCard('equipe', 'Équipe', null, "team()");
-        h += menuCard('journal', 'Journal d’activité', null, "journal()");
-        h += menuCard('exports', 'Exports (CSV / PDF)', null, "exportMenu()");
-        h += menuCard('sauvegarde', 'Sauvegarde complète', null, "doBackup()");
-        h += menuCard('rapport', 'Rapport mensuel', null, "monthReport()");
-        h += `<div class=menu-title>Parents & Communication</div>`;
+        h += menuCard('equipe', 'Équipe & Cours', null, "team()");
+        h += menuCard('exports', 'Données', 'Exports · Sauvegarde', "menuGo('donnees_home')");
         h += menuCard('messages', 'Messages des parents', null, "pAdminInbox()");
         h += menuCard('justificatifs', 'Justificatifs d’absence', null, "pAdminJustifs()");
-        h += menuCard('annonces', 'Publier une annonce', null, "pAdminAnnonce()");
+        h += menuCard('annonces', 'Annonces', null, "pAdminAnnonce()");
     }
+    h += `<div class=menu-title>Jeux</div>`;
     h += menuCard('alerte', 'Génie en Herbe', 'Quiz', "OreaQuizUI.openNewGame()");
     $('#main').innerHTML = h;
 }
@@ -1871,5 +1880,15 @@ window.pAdminAnnonce = function() {
         d.close(); toast('Annonce publiée ✓');
     };
 };
+
+/* ---------- Fonctions de classe (seront fournies dans une autre tranche) ---------- */
+window.openDevoirsClasse = window.openDevoirsClasse || (() => { });
+window.openHoraireClasse = window.openHoraireClasse || (() => { });
+window.openSanctionsClasse = window.openSanctionsClasse || (() => { });
+
+/* ---------- Sous-menus (placeholders, remplacés plus tard) ---------- */
+function vFinanceHome() { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><h3>Finance</h3><p>Bientôt disponible.</p>'; }
+function vProgrammeHome() { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><h3>Programme</h3><p>Bientôt disponible.</p>'; }
+function vDonneesHome() { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><h3>Données</h3><p>Bientôt disponible.</p>'; }
 
 // --- FIN DU FICHIER APP.JS ---
