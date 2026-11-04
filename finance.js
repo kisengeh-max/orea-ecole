@@ -1,10 +1,11 @@
 /* =====================================================================
-   ORÉA École v59 — finance.js
+   ORÉA École v64 — finance.js
    Module complet de gestion financière pour le Directeur.
    - Tableau de bord (Encaissements vs Dépenses)
    - Budget prévisionnel (Programmé vs Réel)
    - Suivi des dettes (On doit / On nous doit)
    - Revenus divers
+   - Publication automatique d'annonce lors de modification de frais
    ===================================================================== */
 (function () {
     'use strict';
@@ -285,6 +286,37 @@
             });
             if (error) throw error;
             toast('Revenu ajouté'); loadRevenus();
+        });
+    };
+
+    // ==========================================
+    // 5. AUTRES FONCTIONS (Reprise de app.js avec modif)
+    // ==========================================
+    
+    // Remplace la fonction editFees de app.js pour ajouter la publication auto
+    window.editFees = function (id) {
+        const c = S.classes.find(x => x.id === id);
+        ask('Frais — ' + esc(c.name), [{ n: 't1', l: '1er trimestre', t: 'number', v: c.fee_t1 }, { n: 't2', l: '2e trimestre', t: 'number', v: c.fee_t2 }, { n: 't3', l: '3e trimestre', t: 'number', v: c.fee_t3 }, { n: 'cur', l: 'Devise', o: CUR.map(x => [x, x]), v: c.fee_currency }], async v => {
+            const { data, error } = await db.from('classes').update({ fee_t1: +v.t1, fee_t2: +v.t2, fee_t3: +v.t3, fee_currency: v.cur }).eq('id', id).select();
+            if (error) throw error; 
+            if (!data.length) throw Error('Modification refusée'); 
+            
+            await load(); render(); 
+            toast('Frais enregistrés');
+            
+            // NOUVEAU : Publier automatiquement une annonce
+            const changes = [];
+            if (+v.t1 !== c.fee_t1) changes.push('T1: ' + nf(v.t1) + ' ' + v.cur);
+            if (+v.t2 !== c.fee_t2) changes.push('T2: ' + nf(v.t2) + ' ' + v.cur);
+            if (+v.t3 !== c.fee_t3) changes.push('T3: ' + nf(v.t3) + ' ' + v.cur);
+            
+            if (changes.length > 0 && typeof window.publishAnnonceWithNotif === 'function') {
+                await window.publishAnnonceWithNotif(
+                    `📢 Modification des frais : ${c.name}`,
+                    `Les frais de la classe ${c.name} ont été mis à jour : ${changes.join(', ')}.`,
+                    S.school.id
+                );
+            }
         });
     };
 
