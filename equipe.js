@@ -1,0 +1,221 @@
+/* =====================================================================
+   ORÉA École v60 — equipe.js
+   Module de gestion de l'équipe (Directeur uniquement).
+   - Nommer / Révoquer un Percepteur
+   - Attribuer des cours à un enseignant
+   - Interface "Mes cours" pour les enseignants
+   ===================================================================== */
+(function () {
+    'use strict';
+
+    const $ = s => document.querySelector(s);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const nf = (n, d = 0) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: d }).format(n);
+    const fmt = n => nf(n / (S.school.rates[S.cur] || 1), S.cur === 'CDF' ? 0 : 2) + ' ' + SYM[S.cur];
+    const tdy = () => new Date().toLocaleDateString('sv-SE');
+
+    // Hook d'accroche
+    const hook = (name, fn) => {
+        const o = window[name];
+        if (typeof o !== 'function' || o.__eq) return;
+        const w = fn(o); w.__eq = true; window[name] = w;
+    };
+
+    // Remplacer la fonction team() de app.js par la nouvelle
+    window.team = async function () {
+        if (S.me.role !== 'directeur') return toast('Accès réservé au directeur.');
+        
+        const { data, error } = await db.from('profiles').select('*').eq('school_id', S.school.id).order('full_name');
+        if (error) return toast(error.message);
+        
+        const l = data || [];
+        
+        const d = show(`<h3>Équipe & Cours</h3>
+            <div class="card col" style="margin-bottom:15px">
+                <small>Code d'invitation de l'école : <b>${esc(S.school.code)}</b></small>
+                <small>Partagez ce code pour que les enseignants rejoignent l'école.</small>
+            </div>
+            <div style="max-height:60vh;overflow-y:auto">
+                ${l.map(p => {
+                    const isMe = p.id === S.me.id;
+                    const isPercepteur = p.role === 'percepteur';
+                    const isEnseignant = p.role === 'enseignant';
+                    return `
+                    <div class="card col" style="margin-bottom:10px; ${isMe ? 'border-color:var(--gold)' : ''}">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                            <b>${esc(p.full_name)} ${isMe ? '(Moi)' : ''}</b>
+                            <span class="chip ${p.active === false ? 'due' : 'ok'}" style="padding:2px 8px;min-height:0;font-size:11px">${p.active === false ? 'Désactivé' : 'Actif'}</span>
+                        </div>
+                        <small>Rôle : <b style="color:var(--gold)">${p.role}</b></small>
+                        
+                        ${!isMe ? `
+                        <div class="row" style="margin-top:8px;flex-wrap:wrap">
+                            ${isEnseignant || isPercepteur ? `
+                                <button class="ghost" style="width:auto;flex:1;padding:6px;min-height:36px;font-size:12px" onclick="toggleRole('${p.id}', '${p.role}')">
+                                    ${isPercepteur ? '❌ Retirer Percepteur' : '💰 Nommer Percepteur'}
+                                </button>
+                            ` : ''}
+                            ${isEnseignant || isPercepteur ? `
+                                <button class="ghost" style="width:auto;flex:1;padding:6px;min-height:36px;font-size:12px" onclick="manageTeacherCourses('${p.id}', '${esc(p.full_name)}')">
+                                    📚 Gérer les cours
+                                </button>
+                            ` : ''}
+                            <button class="ghost" style="width:auto;padding:6px 12px;min-height:36px;font-size:12px;color:${p.active === false ? 'var(--ok)' : 'var(--bad)'}" onclick="toggleActive('${p.id}', ${p.active})">
+                                ${p.active === false ? 'Réactiver' : 'Désactiver'}
+                            </button>
+                        </div>
+                        ` : ''}
+                    </div>
+                    `;
+                }).join('')}
+            </div>
+            <button class="ghost" style="margin-top:15px" onclick="this.closest('dialog').close()">Fermer</button>
+        `);
+    };
+
+    // Changer le rôle (enseignant <-> percepteur)
+    window.toggleRole = async function (id, currentRole) {
+        const newRole = currentRole === 'percepteur' ? 'enseignant' : 'percepteur';
+        if (!confirm(`Changer le rôle en ${newRole} ?`)) return;
+        const { error } = await db.from('profiles').update({ role: newRole }).eq('id', id);
+        if (error) return toast(error.message);
+        toast('Rôle mis à jour ✓');
+        team(); // Rafraîchir la modale
+    };
+
+    // Activer / Désactiver
+    window.toggleActive = async function (id, currentActive) {
+        const newActive = currentActive === false ? true : false;
+        if (!confirm(newActive ? 'Réactiver ce compte ?' : 'Désactiver ce compte ?')) return;
+        const { error } = await db.from('profiles').update({ active: newActive }).eq('id', id);
+        if (error) return toast(error.message);
+        toast(newActive ? 'Compte réactivé' : 'Compte désactivé');
+        team(); // Rafraîchir
+    };
+
+    // Gérer les cours d'un enseignant (Attribution)
+    window.manageTeacherCourses = async function (teacherId, teacherName) {
+        const { data: classes } = await db.from('classes').select('*').eq('school_id', S.school.id).eq('year', S.year).order('name');
+        const { data: subjects } = await db.from('subjects').select('*').eq('school_id', S.school.id).order('name');
+        const { data: assigned } = await db.from('teacher_subjects').select('*').eq('teacher_id', teacherId).eq('year', S.year);
+        
+        const myAssigned = assigned || [];
+        
+        // On va créer une modale avec une liste déroulante pour la classe, puis une liste de checkboxes pour les cours
+        const d = show(`<h3>Cours de ${esc(teacherName)}</h3>
+            <div class="card col" style="margin-bottom:15px">
+                <label>Classe<select id="course_class">${(classes || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
+            </div>
+            <div id="course_list" style="max-height:50vh;overflow-y:auto"><div class="sk"></div></div>
+            <div class="row" style="margin-top:15px">
+                <button class="ghost" onclick="this.closest('dialog').close()">Fermer</button>
+            </div>
+        `);
+
+        const drawCourses = async () => {
+            const classId = $('#course_class').value;
+            const box = $('#course_list');
+            box.innerHTML = '<div class="sk"></div>';
+            
+            // Récupérer les cours attribués à cette classe spécifiquement
+            const { data: currentAssigned } = await db.from('teacher_subjects').select('subject_id').eq('teacher_id', teacherId).eq('class_id', classId).eq('year', S.year);
+            const assignedIds = new Set((currentAssigned || []).map(a => a.subject_id));
+
+            box.innerHTML = (subjects || []).length ? (subjects || []).map(sub => `
+                <div class="card" style="padding:10px;margin:5px 0;flex-direction:row;justify-content:flex-start;gap:10px">
+                    <input type="checkbox" id="sub_${sub.id}" ${assignedIds.has(sub.id) ? 'checked' : ''} style="width:auto;margin:0;transform:scale(1.5)" onchange="toggleCourse('${teacherId}', '${classId}', '${sub.id}', this.checked)">
+                    <label for="sub_${sub.id}" style="margin:0;text-transform:none;font-size:14px;color:var(--tx);font-weight:500">${esc(sub.name)}</label>
+                </div>
+            `).join('') : '<p class="empty">Aucun cours créé dans cette école. Allez dans "Cotation" pour en créer.</p>';
+        };
+
+        $('#course_class').onchange = drawCourses;
+        drawCourses();
+    };
+
+    window.toggleCourse = async function (teacherId, classId, subjectId, isChecked) {
+        if (isChecked) {
+            // Ajouter
+            const { error } = await db.from('teacher_subjects').insert({
+                school_id: S.school.id,
+                teacher_id: teacherId,
+                class_id: classId,
+                subject_id: subjectId,
+                year: S.year
+            });
+            if (error) toast(error.message);
+        } else {
+            // Retirer
+            const { error } = await db.from('teacher_subjects').delete().match({
+                teacher_id: teacherId,
+                class_id: classId,
+                subject_id: subjectId,
+                year: S.year
+            });
+            if (error) toast(error.message);
+        }
+    };
+
+    // Vue "Mes cours" pour l'enseignant (Ajoutée au menu)
+    window.vMesCours = async function () {
+        $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
+        
+        const { data, error } = await db.from('teacher_subjects')
+            .select('*, classes(name), subjects(name)')
+            .eq('teacher_id', S.me.id)
+            .eq('year', S.year);
+            
+        if (error) return toast(error.message);
+        
+        const l = data || [];
+        
+        // On regroupe par classe
+        const byClass = {};
+        l.forEach(t => {
+            const cName = t.classes ? t.classes.name : 'Classe inconnue';
+            if (!byClass[cName]) byClass[cName] = [];
+            byClass[cName].push(t.subjects ? t.subjects.name : 'Cours inconnu');
+        });
+
+        let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Mes cours · ${esc(S.year)}</h3>`;
+        
+        if (Object.keys(byClass).length === 0) {
+            h += '<p class=empty data-ic="📚">Aucun cours ne vous a été attribué pour cette année.</p>';
+        } else {
+            h += Object.entries(byClass).map(([className, subjects]) => `
+                <div class="card col">
+                    <b style="color:var(--gold);font-size:16px">${esc(className)}</b>
+                    <div class="chips" style="margin-top:8px">
+                        ${subjects.map(s => `<span class="chip on" style="padding:4px 12px">${esc(s)}</span>`).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        $('#main').innerHTML = h;
+    };
+
+    // Accroche au menu pour ajouter "Mes cours" (Enseignant uniquement)
+    hook('vMenu', function(orig) {
+        return function() {
+            orig.apply(this, arguments);
+            if (S.me.role === 'enseignant' && S.tab === 'menu') {
+                const main = $('#main');
+                const h3 = main.querySelector('h3');
+                const card = `<div class="menu-card" onclick="vMesCours()"><div class="menu-ic">${svgI('devoirs')}</div><div class="menu-label">Mes cours<small>Voir mes attributions</small></div><span class="menu-arrow">›</span></div>`;
+                
+                // On l'insère juste après le titre "Pédagogie"
+                const titles = main.querySelectorAll('.menu-title');
+                for (let t of titles) {
+                    if (t.textContent.includes('Pédagogie')) {
+                        t.insertAdjacentHTML('afterend', card);
+                        break;
+                    }
+                }
+            }
+        };
+    });
+
+    // Accroche au menu pour le Directeur (ajout de la carte "Équipe & Cours" est déjà faite dans app.js)
+    
+})();
