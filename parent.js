@@ -1,4 +1,4 @@
-// ORÉA École — Interface Parent (K2 + K5 Devoirs/Emploi du temps)
+// ORÉA École — Interface Parent (K2 + K5 + Signalement)
 const tfetch = (u, o = {}) => {
     const c = new AbortController(), t = setTimeout(() => c.abort(), 15000);
     if (o.signal) o.signal.addEventListener('abort', () => c.abort());
@@ -18,7 +18,7 @@ const hhmm = t => t ? String(t).slice(0, 5) : '';
 const P = { me: null, school: null, school_id: null, children: [], tab: 'accueil', msgs: [], annonces: [], convocs: [], justifs: [], events: [], assign: [], tt: [], msgChild: null };
 document.documentElement.dataset.theme = localStorage.theme || 'dark';
 
-// --- Injection CSS pour la nouvelle navigation et le chat ---
+// --- Injection CSS ---
 document.head.insertAdjacentHTML('beforeend', `<style>
     .p-nav-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--card, #1c1d1a); border-top: 1px solid var(--line, #33342e); padding: 8px 6px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); position: fixed; bottom: 0; left: 0; right: 0; z-index: 99; }
     .p-nav-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 0; border-radius: 8px; border: none; background: none; color: var(--muted, #a8a495); cursor: pointer; transition: .2s; }
@@ -95,7 +95,7 @@ async function loadK5() {
     P.assign = as.data || []; P.tt = tt.data || [];
 }
 
-// ---- Navigation (Grille 2x3) ----
+// ---- Navigation ----
 function navView() {
     const tabs = [
         ['accueil', 'Enfants'], 
@@ -148,14 +148,12 @@ function msgView() {
         return;
     }
 
-    // Sélection de l'enfant
     if (!P.msgChild || !P.children.some(c => c.id === P.msgChild)) P.msgChild = P.children[0].id;
     
     h += `<select id="msg_child_select" style="width:100%;padding:10px;margin-bottom:15px;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px">
         ${P.children.map(c => `<option value="${c.id}" ${c.id === P.msgChild ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
     </select>`;
 
-    // Filtrer les messages pour cet enfant
     const myMsgs = P.msgs.filter(m => m.student_id === P.msgChild).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
 
     h += `<div class="p-chat-container">`;
@@ -183,7 +181,6 @@ function msgView() {
     }
     h += `</div>`;
 
-    // Barre de saisie fixe
     h += `<div class="p-chat-input-bar">
         <textarea id="chat_input" class="p-chat-input" rows="1" placeholder="Votre message..."></textarea>
         <button class="p-chat-send" onclick="sendMsg()">
@@ -213,9 +210,7 @@ function ecoleView() {
     let h = `<h2 style="color:var(--gold);margin:10px 0">🏫 L'école</h2>`;
     const today = tdy();
 
-    // --- BLOC 1 : ANNONCES (en haut) ---
     h += `<div class=p-sec><h4>📣 Annonces de l'école</h4>`;
-    // On filtre les annonces périmées
     const validAnnonces = P.annonces.filter(a => !a.end_date || a.end_date >= today);
     if (validAnnonces.length) {
         h += validAnnonces.map(a => `<div style="margin-bottom:10px;padding:10px;border-bottom:1px solid var(--line)"><b>${esc(a.title)}</b><div style="font-size:14px;margin-top:4px">${esc(a.content)}</div><small style="color:var(--muted)">${new Date(a.created_at).toLocaleDateString('fr-FR')}</small></div>`).join('');
@@ -224,9 +219,7 @@ function ecoleView() {
     }
     h += `</div>`;
 
-    // --- BLOC 2 : CONVOCATIONS ---
     h += `<div class=p-sec><h4>📢 Convocations</h4>`;
-    // On n'affiche que celles qui ne sont pas archivées
     const activeConvocs = P.convocs.filter(c => c.status !== 'archivee');
     if (activeConvocs.length) {
         h += activeConvocs.map(c => { 
@@ -245,7 +238,6 @@ function ecoleView() {
     }
     h += `</div>`;
 
-    // --- BLOC 3 : JUSTIFICATIFS (en bas) ---
     h += `<div class=p-sec>
         <h4>📝 Envoyer un justificatif</h4>
         <select id="j_type" style="width:100%;padding:10px;margin-bottom:8px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px" onchange="toggleJustifFields(this.value)">
@@ -255,7 +247,6 @@ function ecoleView() {
             <option value="autre">Autre motif</option>
         </select>
 
-        <!-- Champs dynamiques -->
         <div id="box_absence_duration" style="display:block; margin-bottom:8px;">
             <select id="j_duration" style="width:100%;padding:10px;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:8px" onchange="document.getElementById('box_absence_end').style.display = this.value === 'multi' ? 'block' : 'none'">
                 <option value="single">Aujourd'hui seulement</option>
@@ -287,7 +278,6 @@ function ecoleView() {
     $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
 }
 
-// Fonction pour afficher/masquer les champs
 window.toggleJustifFields = function(val) {
     document.getElementById('box_absence_duration').style.display = val === 'absence' ? 'block' : 'none';
     document.getElementById('box_time').style.display = (val === 'retard' || val === 'depart') ? 'block' : 'none';
@@ -406,11 +396,49 @@ async function childDetail(id) {
     h += `<div class=p-sec><h4>💰 Solde</h4><div class=p-row><span>Payé</span><b>${fmtCDF(paid)}</b></div><div class=p-row><span>Reste</span><b class="${due > 0 ? 'p-due' : 'p-ok'}">${fmtCDF(due)}</b></div></div>`;
     h += `<div class=p-sec><h4>📋 Présences (30j)</h4>${atts.length ? atts.slice(0, 8).map(a => `<div class=p-row><span>${fdate(a.day)}</span><b class="${a.status === 'absent' ? 'p-due' : a.status === 'retard' ? '' : 'p-ok'}">${a.status === 'present' ? '✓ Présent' : a.status === 'absent' ? '✗ Absent' : '🕐 Retard'}</b></div>`).join('') : '<div class=p-row><small>Aucun</small></div>'}</div>`;
     if (sans.length) h += `<div class=p-sec><h4>⚖️ Sanctions</h4>${sans.slice(0, 5).map(x => `<div class=p-row><span>${fdate(x.day)} · ${esc(x.kind)}</span></div>`).join('')}</div>`;
+    
+    // Paiements avec option de signalement
     const all = [...pays.map(p => ({ ...p, _f: 0 })), ...fpays.map(p => ({ ...p, _f: 1 }))].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    if (all.length) h += `<div class=p-sec><h4>🧾 Paiements</h4>${all.slice(0, 10).map(p => `<div class=p-row><span>${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f ? esc(p.fee_name || 'Frais') : 'T' + p.term}</span><b>${nf(p.amount)} ${p.currency}</b></div>`).join('')}</div>`;
+    if (all.length) {
+        h += `<div class=p-sec><h4>🧾 Paiements</h4>`;
+        h += all.slice(0, 10).map(p => `
+            <div class="p-row" style="flex-direction:column;align-items:flex-start;gap:4px">
+                <div style="display:flex;width:100%;justify-content:space-between">
+                    <span>${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f ? esc(p.fee_name || 'Frais') : 'T' + p.term}</span>
+                    <b>${nf(p.amount)} ${p.currency}</b>
+                </div>
+                <button class="ghost" style="width:auto;min-height:28px;padding:2px 8px;font-size:11px;margin-top:4px" onclick="signalerPaiement('${p.id}', ${p._f})">⚠ Signaler une erreur</button>
+            </div>
+        `).join('');
+        h += `</div>`;
+    }
+
     h += `<button class=ghost style="width:100%;padding:12px;background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:10px;margin-top:10px" onclick="P.tab='accueil';render()">← Retour</button>`;
     $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
 }
+
+// --- NOUVEAU : Signalement de paiement (Tranche 5) ---
+window.signalerPaiement = function(paymentId, isFee) {
+    ask('Signaler une erreur', [
+        { n: 'reason', l: 'Décrivez l\'erreur (ex: mauvais montant, déjà payé...)', t: 'textarea', r: true }
+    ], async v => {
+        const payload = isFee ? {
+            fee_payment_id: paymentId,
+            kind: 'edit_fee_payment',
+            reason: 'Signalement parent : ' + v.reason.trim()
+        } : {
+            payment_id: paymentId,
+            kind: 'edit_payment',
+            reason: 'Signalement parent : ' + v.reason.trim()
+        };
+        // Note : on utilise new_amount: 0 pour indiquer que c'est une demande de vérification
+        payload.new_amount = 0; 
+        
+        const { error } = await db.from('change_requests').insert(payload);
+        if (error) return toast(error.code === '23505' ? 'Demande déjà en attente' : error.message);
+        toast('Signalement envoyé au directeur ✓');
+    });
+};
 
 async function logout() { if (!confirm('Se déconnecter ?')) return; await db.auth.signOut(); location.reload(); }
 
