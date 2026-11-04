@@ -1,5 +1,5 @@
-// ORÉA École — Module COTATION & BULLETINS (v40)
-// Dépend de app.js (S, db, show, toast, esc, nf, fdate, tdy, pageAll, curTerm, cy, dir, SK) et de bulletins.js (OB).
+// ORÉA École — Module COTATION & BULLETINS (v60)
+// Gère le verrouillage par enseignant et l'approbation du directeur.
 
 S.cotTerm = null; S.cotScreen = 'home'; S.cotEval = null; S.cotSubs = []; S.cotEvals = {}; S.cotRows = {};
 S.bulPeriod = null; S.bulStu = ''; S.bulRows = []; S.bulKey = null;
@@ -20,21 +20,10 @@ document.head.insertAdjacentHTML('beforeend', '<style>'
     + '.cot-bar{position:sticky;bottom:calc(70px + env(safe-area-inset-bottom));padding:10px 0 4px;background:linear-gradient(transparent,var(--bg) 35%);z-index:5}'
     + '.cot-bar button{min-height:56px;font-size:17px}'
     + '.cot-in{margin:0!important;width:84px!important;text-align:center;font-weight:700;font-size:17px!important}'
-    + '.cot-in:disabled{opacity:.55}'
+    + '.cot-in:disabled{opacity:.55;background:var(--line)!important;color:var(--mut)!important}'
     + 'input.bad{border-color:var(--bad)!important}'
     + '.cot-del{color:var(--bad)!important;border-color:var(--bad)!important;margin-top:10px}'
     + '</style>');
-
-// ---------- Bannière « impayés » masquable + rendu ----------
-const _renderBanner = window.render;
-window.render = function () {
-    _renderBanner();
-    if (sessionStorage.getItem('hide_impayes_banner')) { const b = document.getElementById('exb'); if (b) b.hidden = true; }
-};
-document.addEventListener('click', function (e) {
-    const btn = e.target.closest('#exb a, #exb button, #exb [onclick]');
-    if (btn) { sessionStorage.setItem('hide_impayes_banner', '1'); const b = document.getElementById('exb'); if (b) b.hidden = true; }
-}, true);
 
 // ---------- Navigation ----------
 function afterDlg(fn) {
@@ -66,29 +55,22 @@ async function cotSubjects() {
     S.cotSubs = (data || []).filter(x => x.subjects).map(x => ({ id: x.subject_id, name: x.subjects.name })).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
     return S.cotSubs;
 }
-async function seedDefaultCourses() {
-    const defaults = ['Français', 'Anglais', 'Mathématiques', 'Géographie', 'Histoire', 'Civisme', 'Éducation physique', 'Éducation à la vie', 'Éducation civique', 'Chimie', 'Physique'];
-    const { error } = await db.from('subjects').insert(defaults.map(name => ({ school_id: S.school.id, name })));
-    if (error) return toast('Erreur : ' + error.message);
-    toast('Cours de base créés'); manageClassCourses();
-}
-async function manageClassCourses() {
-    const { data: all } = await db.from('subjects').select('*').order('name');
-    const { data: assigned } = await db.from('class_subjects').select('subject_id').eq('class_id', S.cls);
-    const ids = new Set((assigned || []).map(a => a.subject_id));
-    show(`<h3>Cours de la classe</h3>${(all || []).length ? '' : '<button class=ghost onclick="seedDefaultCourses()">Créer les cours de base (RDC)</button>'}<div style="max-height:50vh;overflow-y:auto;margin:10px 0">${(all || []).map(sub => `<div class=card style="padding:10px;margin:5px 0"><b>${esc(sub.name)}</b><button class="${ids.has(sub.id) ? 'ghost' : ''}" style="width:auto;padding:5px 15px;min-height:30px" onclick="toggleClassCourse('${sub.id}',${ids.has(sub.id)})">${ids.has(sub.id) ? 'Retirer' : 'Ajouter'}</button></div>`).join('')}</div><div class=bar><input id=mc_new placeholder="Nouveau cours…" style="flex:1;margin:0"><button class=ghost style="width:auto" onclick="addNewSubject()">+</button></div><button class=ghost style="margin-top:12px" onclick="this.closest('dialog').close();render()">Fermer</button>`);
-}
-async function toggleClassCourse(subjId, isAssigned) {
-    const r = isAssigned ? await db.from('class_subjects').delete().match({ class_id: S.cls, subject_id: subjId })
-        : await db.from('class_subjects').insert({ school_id: S.school.id, class_id: S.cls, subject_id: subjId });
-    if (r.error) toast(r.error.message);
-    manageClassCourses();
-}
-async function addNewSubject() {
-    const name = $('#mc_new').value.trim(); if (!name) return;
-    const { error } = await db.from('subjects').insert({ school_id: S.school.id, name });
-    if (error) toast(error.message);
-    manageClassCourses();
+
+// ---------- VÉRIFICATION DES DROITS (NOUVEAU) ----------
+// Vérifie si l'utilisateur actuel peut modifier une note pour ce cours
+async function canEditSubject(subjectId) {
+    if (S.me.role === 'directeur') return true; // Le directeur peut tout modifier (mais ça passe en 'pending')
+    
+    // Pour un enseignant, on vérifie s'il a ce cours attribué
+    const { data } = await db.from('teacher_subjects')
+        .select('id')
+        .eq('teacher_id', S.me.id)
+        .eq('class_id', S.cls)
+        .eq('subject_id', subjectId)
+        .eq('year', S.year)
+        .maybeSingle();
+        
+    return !!data;
 }
 
 // ---------- COTATION : accueil (historique par trimestre) ----------
@@ -99,14 +81,15 @@ async function vCotation() {
     let h = `<div class=bar><button class=ghost style="width:auto" onclick="cotBack()">← ${esc(c.name)}</button><b class=ctitle>Cotation</b></div>`
         + `<div class=chips>${[1, 2, 3].map(t => `<button class="chip ${t === term ? 'on' : ''}" onclick="cotSetTerm(${t})">Trimestre ${t}</button>`).join('')}</div>`;
     $('#main').innerHTML = h + SK;
-    const [subs, gr] = await Promise.all([cotSubjects(), pageAll(() => db.from('grades').select('id,subject_id,kind,num,max_grade,eval_date,created_by').eq('class_id', S.cls).eq('term', term))]);
+    const [subs, gr] = await Promise.all([cotSubjects(), pageAll(() => db.from('grades').select('id,subject_id,kind,num,max_grade,eval_date,created_by,status').eq('class_id', S.cls).eq('term', term))]);
     if (tok !== cotTok || S.tab !== 'cotation' || S.cotScreen !== 'home') return;
     if (gr.error) { $('#main').innerHTML = h + `<p class=empty>${esc(gr.error.message)}</p>`; return; }
     const total = cotStudents().length, ev = {};
     gr.data.forEach(g => {
         const k = g.subject_id + '|' + g.kind + '|' + g.num;
-        const o = ev[k] || (ev[k] = { sid: g.subject_id, kind: g.kind, num: g.num, base: Number(g.max_grade), date: g.eval_date, mine: true, n: 0 });
+        const o = ev[k] || (ev[k] = { sid: g.subject_id, kind: g.kind, num: g.num, base: Number(g.max_grade), date: g.eval_date, mine: true, n: 0, pending: false });
         o.n++; if (g.created_by !== S.me.id) o.mine = false;
+        if (g.status === 'pending') o.pending = true;
     });
     S.cotEvals = ev;
     if (!subs.length) {
@@ -117,7 +100,7 @@ async function vCotation() {
     h += `<button onclick="cotNew()">＋ Nouvelle évaluation</button>`;
     h += subs.map(s => {
         const list = Object.values(ev).filter(e => e.sid === s.id).sort((a, b) => COT_KINDS.indexOf(a.kind) - COT_KINDS.indexOf(b.kind) || a.num - b.num);
-        return `<div class=cot-sub>${esc(s.name)}</div>` + (list.length ? list.map(e => `<div class=card style="padding:12px 14px" onclick="cotOpen('${s.id}','${e.kind}',${e.num})"><span><b>${e.kind} ${e.num}</b> <small>(Base ${nf(e.base)})${e.date ? ' · ' + fdate(e.date) : ''}</small><br><small>${e.n} / ${total} cotés</small></span><span>${e.mine ? '›' : '🔒'}</span></div>`).join('') : '<small>Aucune évaluation ce trimestre.</small>');
+        return `<div class=cot-sub>${esc(s.name)}</div>` + (list.length ? list.map(e => `<div class=card style="padding:12px 14px" onclick="cotOpen('${s.id}','${e.kind}',${e.num})"><span><b>${e.kind} ${e.num}</b> <small>(Base ${nf(e.base)})${e.date ? ' · ' + fdate(e.date) : ''}</small><br><small>${e.n} / ${total} cotés ${e.pending ? '· ⏳ En attente' : ''}</small></span><span>${e.mine ? '›' : '🔒'}</span></div>`).join('') : '<small>Aucune évaluation ce trimestre.</small>');
     }).join('');
     h += `<button class=ghost style="margin-top:18px" onclick="manageClassCourses()">⚙️ Gérer les cours de cette classe</button>`;
     $('#main').innerHTML = h;
@@ -127,9 +110,18 @@ async function vCotation() {
 async function cotNew() {
     const subs = S.cotSubs.length ? S.cotSubs : await cotSubjects();
     if (!subs.length) return toast('Ajoute d’abord des cours à cette classe.');
+    
+    // On filtre les cours où l'enseignant a le droit d'ajouter des notes
+    const allowedSubs = [];
+    for (const s of subs) {
+        if (await canEditSubject(s.id)) allowedSubs.push(s);
+    }
+    
+    if (!allowedSubs.length) return toast('Vous n\'êtes pas autorisé à ajouter des notes dans cette classe.');
+
     const term = S.cotTerm || 1;
     const d = show(`<h3>Nouvelle évaluation</h3><div class=col>
-        <label>Cours<select id=cn_sub>${subs.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
+        <label>Cours<select id=cn_sub>${allowedSubs.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
         <label>Type<select id=cn_kind>${COT_KINDS.map(k => `<option ${k === 'Devoir' ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
         <label>Trimestre<select id=cn_term>${[1, 2, 3].map(t => `<option value="${t}" ${t === term ? 'selected' : ''}>Trimestre ${t}</option>`).join('')}</select></label>
         <label>Base</label>
@@ -168,23 +160,33 @@ function cotOpen(sid, kind, num) {
 async function vCotEval() {
     const e = S.cotEval, c = cotCls(); if (!e || !c) { S.cotScreen = 'home'; return render(); }
     $('#main').innerHTML = `<div class=bar><button class=ghost style="width:auto" onclick="cotBack()">← Retour</button><b class=ctitle>${esc(c.name)}</b></div>` + SK;
-    const { data, error } = await db.from('grades').select('id,student_id,grade,created_by,max_grade,eval_date').eq('class_id', S.cls).eq('subject_id', e.subject_id).eq('term', e.term).eq('kind', e.kind).eq('num', e.num);
+    const { data, error } = await db.from('grades').select('id,student_id,grade,created_by,max_grade,eval_date,status').eq('class_id', S.cls).eq('subject_id', e.subject_id).eq('term', e.term).eq('kind', e.kind).eq('num', e.num);
     if (S.cotEval !== e || S.tab !== 'cotation') return;
     if (error) { $('#main').innerHTML = `<p class=empty>${esc(error.message)}</p>`; return; }
     const rows = data || [];
     if (rows.length) { e.base = Number(rows[0].max_grade); if (rows[0].eval_date) e.date = rows[0].eval_date; }
-    const locked = rows.some(r => r.created_by !== S.me.id);
+    
+    // Vérifier si l'utilisateur a le droit de modifier cette évaluation
+    const hasPermission = await canEditSubject(e.subject_id);
+    const locked = !hasPermission || rows.some(r => r.status === 'pending' && r.created_by !== S.me.id);
+    
     S.cotRows = Object.fromEntries(rows.map(r => [r.student_id, r]));
     const st = cotStudents();
     let h = `<div class=bar><button class=ghost style="width:auto" onclick="cotBack()">← Retour</button><b class=ctitle>${esc(c.name)}</b></div>`
         + `<div class=cot-sub style="font-size:24px;margin-top:8px">${esc(e.subject_name)}</div>`
         + `<div class="card col" style="padding:10px 14px"><b>${e.kind} ${e.num} (Base ${nf(e.base)})</b><small>${fdate(e.date)} · Trimestre ${e.term}</small></div>`;
-    if (locked) h += `<div class="card" style="padding:10px 14px">🔒 <small>Cette évaluation a été saisie par un autre utilisateur. Lecture seule.</small></div>`;
+        
+    if (locked) {
+        if (!hasPermission) h += `<div class="card" style="padding:10px 14px;border-color:var(--bad)">🔒 <small>Vous n'êtes pas l'enseignant de ce cours. Lecture seule.</small></div>`;
+        else h += `<div class="card" style="padding:10px 14px;border-color:var(--gold)">⏳ <small>Modification en attente de l'approbation de l'enseignant titulaire.</small></div>`;
+    }
+    
     if (!st.length) { $('#main').innerHTML = h + '<p class=empty>Aucun élève dans cette classe.</p>'; return; }
     h += st.map((s, i) => {
         const r = S.cotRows[s.id], val = r ? r.grade : '', nx = i < st.length - 1 ? st[i + 1].id : '';
         return `<div class=card style="padding:10px 14px;margin:5px 0"><b style="font-size:15px">${esc(s.name)}</b><div style="display:flex;align-items:center;gap:6px">${locked ? '🔒' : ''}<input class=cot-in id="cg_${s.id}" type=number step=any min=0 max="${e.base}" inputmode=decimal value="${val}" ${locked ? 'disabled' : ''} onkeydown="if(event.key==='Enter'){event.preventDefault();${nx ? `document.getElementById('cg_${nx}').focus()` : 'this.blur()'}}"><small>/ ${nf(e.base)}</small></div></div>`;
     }).join('');
+    
     if (!locked) {
         h += `<div class=cot-bar><button id=cot_save onclick="cotSave()">💾 Enregistrer</button></div>`;
         if (!e.isNew && rows.length) h += `<button class="ghost cot-del" onclick="cotDelete()">🗑 Supprimer cette évaluation</button>`;
@@ -194,6 +196,8 @@ async function vCotEval() {
 async function cotSave() {
     const e = S.cotEval; if (!e) return;
     const up = [], del = []; let bad = null;
+    const isDir = S.me.role === 'directeur';
+    
     cotStudents().forEach(s => {
         const el = document.getElementById('cg_' + s.id); if (!el || el.disabled) return;
         const raw = String(el.value).trim().replace(',', '.'), old = S.cotRows[s.id];
@@ -201,8 +205,29 @@ async function cotSave() {
         if (raw === '') { if (old) del.push(old.id); return; }
         const v = parseFloat(raw);
         if (isNaN(v) || v < 0 || v > e.base) { el.classList.add('bad'); if (!bad) bad = s; return; }
-        up.push({ school_id: S.school.id, student_id: s.id, class_id: S.cls, subject_id: e.subject_id, term: e.term, kind: e.kind, num: e.num, label: e.kind + ' ' + e.num, grade: v, max_grade: e.base, eval_date: e.date, created_by: S.me.id });
+        
+        // Si c'est le directeur qui modifie une note existante d'un autre enseignant, on met le statut 'pending'
+        let status = 'approved';
+        if (isDir && old && old.created_by !== S.me.id) status = 'pending';
+
+        up.push({ 
+            school_id: S.school.id, 
+            student_id: s.id, 
+            class_id: S.cls, 
+            subject_id: e.subject_id, 
+            term: e.term, 
+            kind: e.kind, 
+            num: e.num, 
+            label: e.kind + ' ' + e.num, 
+            grade: v, 
+            max_grade: e.base, 
+            eval_date: e.date, 
+            created_by: old ? old.created_by : S.me.id, // On garde l'auteur original si on modifie
+            status: status,
+            modified_by: isDir && old ? S.me.id : null
+        });
     });
+    
     if (bad) { toast(`Note invalide pour ${bad.name} (de 0 à ${nf(e.base)})`); document.getElementById('cg_' + bad.id).focus(); return; }
     if (!up.length && !del.length) return toast('Aucune note à enregistrer.');
     const btn = document.getElementById('cot_save'); if (btn) { btn.disabled = true; btn.textContent = '⏳ Enregistrement…'; }
@@ -214,7 +239,7 @@ async function cotSave() {
         return toast(x.message || 'Erreur d’enregistrement');
     }
     S.avgKey = null; S.bulKey = null;
-    toast(`✓ ${up.length} cote(s) enregistrée(s)${del.length ? ' · ' + del.length + ' effacée(s)' : ''}`);
+    toast(`✓ ${up.length} cote(s) enregistrée(s)${isDir && up.some(u => u.status === 'pending') ? ' · En attente d\'approbation' : ''}`);
     S.cotEval = null; cotBack();
 }
 async function cotDelete() {
@@ -237,7 +262,8 @@ async function loadClassAvg() {
         term = data && data[0] ? data[0].term : 0;
     }
     if (term) {
-        const r = await pageAll(() => db.from('grades').select('student_id,grade,max_grade').eq('class_id', cls).eq('term', term));
+        // On ne prend que les notes approuvées pour la moyenne
+        const r = await pageAll(() => db.from('grades').select('student_id,grade,max_grade').eq('class_id', cls).eq('term', term).eq('status', 'approved'));
         if (r.error) { S.avgKey = null; return; }
         const a = {};
         r.data.forEach(g => { const o = a[g.student_id] || (a[g.student_id] = { p: 0, m: 0 }); o.p += Number(g.grade); o.m += Number(g.max_grade); });
@@ -251,7 +277,12 @@ async function loadClassAvg() {
 async function bulLoad() {
     const key = S.cls + '|' + S.bulPeriod;
     if (S.bulKey === key) return null;
-    const r = await pageAll(() => { let q = db.from('grades').select('student_id,subject_id,term,grade,max_grade,subjects(name)').eq('class_id', S.cls); if (S.bulPeriod !== 'A') q = q.eq('term', +S.bulPeriod); return q; });
+    // Seulement les notes approuvées
+    const r = await pageAll(() => { 
+        let q = db.from('grades').select('student_id,subject_id,term,grade,max_grade,subjects(name)').eq('class_id', S.cls).eq('status', 'approved'); 
+        if (S.bulPeriod !== 'A') q = q.eq('term', +S.bulPeriod); 
+        return q; 
+    });
     if (r.error) return r.error;
     S.bulRows = r.data.map(cotNorm); S.bulKey = key; return null;
 }
@@ -281,7 +312,7 @@ function bulPreview() {
     const b = OB.make(bulOf(s.id), S.bulPeriod, bulMeta(s)), v = b.view, year = v.mode === 'year';
     const nAll = cotStudents().filter(x => bulOf(x.id).length).length;
     let h = '';
-    if (!v.rows.length) h += `<p class=empty data-ic="📝">Aucune note pour cet élève (${OB.NAMES[S.bulPeriod]}).</p>`;
+    if (!v.rows.length) h += `<p class=empty data-ic="📝">Aucune note approuvée pour cet élève (${OB.NAMES[S.bulPeriod]}).</p>`;
     else {
         h += `<div class="card col"><b>${esc(s.name)} · ${OB.NAMES[S.bulPeriod]}</b>`
             + v.rows.map(r => `<div style="display:flex;justify-content:space-between;margin:3px 0"><span>${esc(r.name)}</span><span><small>${year ? r.cells[3] : r.cells[0] + ' / ' + r.cells[1]}</small> <b class="${r.pct != null && r.pct < 50 ? 'due' : ''}">${OB.pctTxt(r.pct)}</b></span></div>`).join('')
@@ -327,7 +358,7 @@ async function openStuCotes(id) {
     const s = S.stu.find(x => x.id === id); if (!s) return;
     if (S.offline) return toast('Hors connexion : les cotes demandent internet.');
     show(`<h3>${esc(s.name)} · Cotes</h3>${SK}`);
-    const r = await pageAll(() => db.from('grades').select('subject_id,term,kind,num,grade,max_grade,eval_date,subjects(name)').eq('student_id', id).eq('class_id', s.class_id));
+    const r = await pageAll(() => db.from('grades').select('subject_id,term,kind,num,grade,max_grade,eval_date,subjects(name),status').eq('student_id', id).eq('class_id', s.class_id));
     if (r.error) { $('#dlg').innerHTML = `<h3>${esc(s.name)}</h3><p class=empty>${esc(r.error.message)}</p><button class=ghost onclick="this.closest('dialog').close()">Fermer</button>`; return; }
     S.stuG = { id, name: s.name, rows: r.data.map(cotNorm) };
     stuCotesGrid();
@@ -347,7 +378,7 @@ function stuCotesSubject(sid) {
         if (!l.length) return `<div class=cot-sub style="font-size:16px">Trimestre ${t}</div><small>Aucune cote.</small>`;
         const p = l.reduce((a, r) => a + Number(r.grade), 0), m = l.reduce((a, r) => a + Number(r.max_grade), 0);
         return `<div class=cot-sub style="font-size:16px">Trimestre ${t} · ${OB.num(p)} / ${OB.num(m)} (${OB.pctTxt(OB.pctOf(p, m))})</div>`
-            + l.map(r => `<div style="display:flex;justify-content:space-between;margin:3px 0"><span>${r.kind} ${r.num} <small>(Base ${nf(r.max_grade)})${r.eval_date ? ' · ' + fdate(r.eval_date) : ''}</small></span><b>${nf(r.grade)} / ${nf(r.max_grade)}</b></div>`).join('');
+            + l.map(r => `<div style="display:flex;justify-content:space-between;margin:3px 0"><span>${r.kind} ${r.num} <small>(Base ${nf(r.max_grade)})${r.eval_date ? ' · ' + fdate(r.eval_date) : ''} ${r.status === 'pending' ? '⏳' : ''}</small></span><b>${nf(r.grade)} / ${nf(r.max_grade)}</b></div>`).join('');
     }).join('');
     show(`<h3>${esc(name)}</h3><div style="max-height:55vh;overflow-y:auto">${body}</div><div class=row><button class=ghost onclick="stuCotesGrid()">← Cours</button><button class=ghost onclick="this.closest('dialog').close()">Fermer</button></div>`);
 }
