@@ -1,10 +1,7 @@
 /* =====================================================================
-   ORÉA École v40 — timetable.js
-   « Horaires des cours » : grille 3×2 (lundi → samedi), cours en cours
-   surligné, RÉCRÉATION / FIN / PAUSE en majuscules et en orange.
-   Seul le directeur modifie. Les parents lisent seulement.
-   À charger APRÈS app.js (page école) ou APRÈS parent.js (page parent).
-   S'accroche de l'extérieur : app.js et parent.js ne sont pas modifiés.
+   ORÉA École v60 — timetable.js
+   « Horaires des cours » : grille 2x3 (Lundi/Mardi, Mercredi/Jeudi, 
+   Vendredi/Samedi). Le cours en cours est surligné.
    ===================================================================== */
 (function () {
     'use strict';
@@ -20,21 +17,21 @@
     const say = m => { try { if (typeof toast === 'function') toast(m); else alert(m); } catch (_) { } };
 
     /* ---------------------------------------------------------------
-       Style (injecté une seule fois)
+       Style : Grille 2x3
        --------------------------------------------------------------- */
     function injectCss() {
         if (document.getElementById('tt-css')) return;
         const s = document.createElement('style');
         s.id = 'tt-css';
         s.textContent = `
-.tt-g{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0}
-.tt-d{background:var(--card,#1b1b18);border:1px solid var(--line,#33312a);border-radius:10px;padding:5px 4px;min-width:0}
+.tt-g{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0}
+.tt-d{background:var(--card,#1b1b18);border:1px solid var(--line,#33312a);border-radius:10px;padding:6px;min-width:0}
 .tt-d h5{margin:0 0 4px;text-align:center;font-size:12px;color:var(--gold,#c7a34b);text-transform:uppercase;letter-spacing:.05em}
 .tt-d.today{border-color:var(--gold,#c7a34b)}
 .tt-d.today h5::after{content:" ●"}
-.tt-s{padding:3px 4px;border-radius:6px;margin-bottom:3px;border-left:3px solid transparent;font-size:11px;line-height:1.25;overflow-wrap:anywhere}
+.tt-s{padding:4px 6px;border-radius:6px;margin-bottom:4px;border-left:3px solid transparent;font-size:11.5px;line-height:1.25;overflow-wrap:anywhere}
 .tt-s i{display:block;font-style:normal;color:var(--mut,var(--muted,#a8a495));font-variant-numeric:tabular-nums;font-size:10px}
-.tt-s b{display:block;font-weight:600}
+.tt-s b{display:block;font-weight:600;color:var(--tx)}
 .tt-s small{display:block;color:var(--mut,var(--muted,#a8a495));font-size:10px}
 .tt-s.sp{background:rgba(224,138,30,.14);border-left-color:#E08A1E}
 .tt-s.sp b{color:#E08A1E;text-transform:uppercase;letter-spacing:.04em}
@@ -59,11 +56,10 @@
     function grid(rows, editable, sel) {
         const by = {};
         rows.forEach(t => { (by[t.day] = by[t.day] || []).push(t); });
-        const days = [1, 2, 3, 4, 5, 6];
-        if (by[0]) days.push(0); // d'anciens créneaux du dimanche restent visibles (et supprimables)
+        const days = [1, 2, 3, 4, 5, 6]; // Lundi à Samedi
         return '<div class="tt-g' + (editable ? ' tt-edit' : '') + '">' + days.map(d => {
             const l = (by[d] || []).sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)));
-            return `<div class="tt-d" data-d="${d}"><h5>${DAYN[d].slice(0, 3)}.</h5>` + l.map(t => {
+            return `<div class="tt-d" data-d="${d}"><h5>${DAYN[d]}</h5>` + l.map(t => {
                 const sp = isSpecial(t);
                 const name = sp ? String(t.subject).toLocaleUpperCase('fr') : t.subject;
                 const e = hh(t.end_time), s = hh(t.start_time);
@@ -73,7 +69,7 @@
         }).join('') + '</div>';
     }
 
-    // Surligne le jour d'aujourd'hui et le cours en cours (relancé chaque minute)
+    // Surligne le jour d'aujourd'hui et le cours en cours
     function paintNow() {
         const n = new Date(), d = n.getDay(), m = n.getHours() * 60 + n.getMinutes();
         document.querySelectorAll('.tt-g').forEach(g => {
@@ -86,7 +82,6 @@
     }
     setInterval(paintNow, 30000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) paintNow(); });
-
 
     /* ---- ÉCOLE : écran « Horaires des cours » ---- */
     const TT = { rows: [], sel: null };
@@ -117,7 +112,7 @@
         }
         loadTT();
     };
-    window.drawTT = () => loadTT(); // l'ancien nom reste utilisable
+    window.drawTT = () => loadTT();
 
     async function loadTT() {
         const cid = S.cls;
@@ -146,9 +141,6 @@
         if (a) a.disabled = !TT.sel; if (b) b.disabled = !TT.sel;
     }
 
-    // --- FIN PARTIE 1/2. La partie suivante commence par : /* ---- Ajouter / modifier / supprimer ---- */
-
-    /* ---- Ajouter / modifier / supprimer ---- */
     function slotFields(t) {
         const days = [['1', 'Lundi'], ['2', 'Mardi'], ['3', 'Mercredi'], ['4', 'Jeudi'], ['5', 'Vendredi'], ['6', 'Samedi']];
         if (t && t.day === 0) days.push(['0', 'Dimanche']);
@@ -198,7 +190,6 @@
         TT.sel = null; say('Créneau supprimé'); loadTT();
     }
 
-    /* ---- Copier / modèle par défaut ---- */
     function copyTT() {
         const others = yc().filter(c => c.id !== S.cls);
         if (!others.length) return say('Il faut au moins une autre classe.');
@@ -229,7 +220,6 @@
     };
 
     if (!PARENT) {
-        // Menu : « Emploi du temps » devient « Horaires des cours »
         hook('render', o => function () {
             const r = o.apply(this, arguments);
             try {
