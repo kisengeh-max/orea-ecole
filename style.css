@@ -774,4 +774,4 @@ nav button:not(.on) svg{opacity:.75}
 /* ---------- Accessibilité : animations réduites ---------- */
 @media(prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
-                                                        }
+   }
