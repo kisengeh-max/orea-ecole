@@ -1,4 +1,6 @@
-// ORÉA École — Interface Parent (K2 + K5 + Signalement)
+// ORÉA École — Interface Parent (v64)
+// PARTIE 1/2 — Initialisation, Connexion, Navigation, Accueil, Messages
+
 const tfetch = (u, o = {}) => {
     const c = new AbortController(), t = setTimeout(() => c.abort(), 15000);
     if (o.signal) o.signal.addEventListener('abort', () => c.abort());
@@ -18,7 +20,7 @@ const hhmm = t => t ? String(t).slice(0, 5) : '';
 const P = { me: null, school: null, school_id: null, children: [], tab: 'accueil', msgs: [], annonces: [], convocs: [], justifs: [], events: [], assign: [], tt: [], msgChild: null };
 document.documentElement.dataset.theme = localStorage.theme || 'dark';
 
-// --- Injection CSS ---
+// --- Injection CSS pour la navigation et le chat ---
 document.head.insertAdjacentHTML('beforeend', `<style>
     .p-nav-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--card, #1c1d1a); border-top: 1px solid var(--line, #33342e); padding: 8px 6px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); position: fixed; bottom: 0; left: 0; right: 0; z-index: 99; }
     .p-nav-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 0; border-radius: 8px; border: none; background: none; color: var(--muted, #a8a495); cursor: pointer; transition: .2s; }
@@ -51,7 +53,7 @@ const SVG_ICONS = {
 };
 const svgI = k => `<svg class="p-nav-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${SVG_ICONS[k] || ''}</svg>`;
 
-// ---- Auth ----
+// ---- Authentification ----
 function authView() {
     $('#pmain').innerHTML = `<div class=p-auth>
         <img src=logo-dark.png alt="ORÉA École">
@@ -79,6 +81,7 @@ function authView() {
     };
 }
 
+// ---- Chargement des données ----
 async function loadMe() { const { data: { user } } = await db.auth.getUser(); if (!user) return null; const { data } = await db.from('profiles').select('*').eq('id', user.id).maybeSingle(); return data; }
 async function loadSchool() { if (!P.me?.school_id) { P.school = null; return; } const { data } = await db.from('schools').select('id,name').eq('id', P.me.school_id).maybeSingle(); P.school = data || null; }
 async function loadChildren() { const { data } = await db.rpc('parent_children'); P.children = data || []; }
@@ -87,7 +90,7 @@ async function loadK2() {
     const [m, a, c, j, e] = await Promise.all([
         db.rpc('parent_messages_list'), db.rpc('parent_announcements'), db.rpc('parent_convocations'), db.rpc('parent_justifications'), db.rpc('parent_events')
     ]);
-    P.msgs = m.data || []; P.annonces = a.data || []; P.convocs = c.data || []; P.justifs = j.data || []; P.events = e.data || [];
+    P.msgs = m.data || []; P.annonces = a.data || []; P.convoces = c.data || []; P.justifs = j.data || []; P.events = e.data || [];
 }
 async function loadK5() {
     if (!P.children.length) return;
@@ -147,7 +150,6 @@ function msgView() {
         $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
         return;
     }
-
     if (!P.msgChild || !P.children.some(c => c.id === P.msgChild)) P.msgChild = P.children[0].id;
     
     h += `<select id="msg_child_select" style="width:100%;padding:10px;margin-bottom:15px;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px">
@@ -206,6 +208,11 @@ async function sendMsg() {
     await loadK2(); msgView(); toast('Envoyé ✓');
 }
 
+// --- FIN DE LA PARTIE 1/2 ---
+// --- DÉBUT DE LA PARTIE 2/2 ---
+// ORÉA École — Interface Parent (v64)
+// Vue École, Scolarité, Calendrier, Ajout d'enfant, Détails et Signalement
+
 function ecoleView() {
     let h = `<h2 style="color:var(--gold);margin:10px 0">🏫 L'école</h2>`;
     const today = tdy();
@@ -220,7 +227,7 @@ function ecoleView() {
     h += `</div>`;
 
     h += `<div class=p-sec><h4>📢 Convocations</h4>`;
-    const activeConvocs = P.convocs.filter(c => c.status !== 'archivee');
+    const activeConvocs = P.convoces.filter(c => c.status !== 'archivee');
     if (activeConvocs.length) {
         h += activeConvocs.map(c => { 
             const ch = P.children.find(x => x.id === c.student_id); 
@@ -417,7 +424,7 @@ async function childDetail(id) {
     $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
 }
 
-// --- NOUVEAU : Signalement de paiement (Tranche 5) ---
+// --- Signalement de paiement ---
 window.signalerPaiement = function(paymentId, isFee) {
     ask('Signaler une erreur', [
         { n: 'reason', l: 'Décrivez l\'erreur (ex: mauvais montant, déjà payé...)', t: 'textarea', r: true }
@@ -425,14 +432,14 @@ window.signalerPaiement = function(paymentId, isFee) {
         const payload = isFee ? {
             fee_payment_id: paymentId,
             kind: 'edit_fee_payment',
-            reason: 'Signalement parent : ' + v.reason.trim()
+            reason: 'Signalement parent : ' + v.reason.trim(),
+            new_amount: 0
         } : {
             payment_id: paymentId,
             kind: 'edit_payment',
-            reason: 'Signalement parent : ' + v.reason.trim()
+            reason: 'Signalement parent : ' + v.reason.trim(),
+            new_amount: 0
         };
-        // Note : on utilise new_amount: 0 pour indiquer que c'est une demande de vérification
-        payload.new_amount = 0; 
         
         const { error } = await db.from('change_requests').insert(payload);
         if (error) return toast(error.code === '23505' ? 'Demande déjà en attente' : error.message);
@@ -454,3 +461,5 @@ async function boot() {
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 boot();
+
+// --- FIN DU FICHIER ---
