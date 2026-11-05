@@ -372,9 +372,11 @@ function bulPreview() {
             + `<div style="display:flex;justify-content:space-between;margin-top:8px;border-top:1px solid var(--line);padding-top:8px"><b>Total : ${OB.num(v.tp)} / ${OB.num(v.tm)}</b><b class="${v.pct != null && v.pct < 50 ? 'due' : 'ok'}" style="font-size:18px">${OB.pctTxt(v.pct)}</b></div></div>`
             + `<label style="font-size:12px;color:var(--mut)">Appréciation (modifiable)</label><textarea id=b_rem rows=3>${esc(b.appr)}</textarea>`
             + (window.OREA_CONFIG && OREA_CONFIG.GEMINI_KEY ? `<button id=btn_ia class=ghost onclick="bulAI()" style="margin-bottom:8px">✨ Générer avec l’IA</button>` : '')
-            + `<button onclick="bulOne()">📄 Bulletin PDF de cet élève</button>`;
+            + `<button onclick="bulOne()">📄 Bulletin PDF de cet élève</button>`
+            + `<button class=ghost onclick="bulOnePng(this)" style="margin-top:8px">🖼 Bulletin PNG de cet élève</button>`;
     }
     h += `<button class=ghost style="margin-top:10px" onclick="bulAll()">🖨 Générer tous les bulletins (${nAll} élève${nAll > 1 ? 's' : ''} avec notes)</button>`;
+    h += `<button class=ghost style="margin-top:8px" onclick="bulAllPng(this)">🖼 Tous les bulletins en images PNG</button>`;
     el.innerHTML = h;
 }
 function bulOne() {
@@ -384,6 +386,27 @@ function bulOne() {
         const b = OB.make(bulOf(s.id), S.bulPeriod, bulMeta(s, ($('#b_rem') || {}).value));
         OB.save(OB.pdf([b]), 'bulletin-' + OB.slug(s.name) + '-' + S.bulPeriod + '.pdf'); toast('Bulletin généré');
     } catch (x) { toast('Erreur PDF : ' + x.message); }
+}
+// Bulletins en image PNG (une image A4 par élève), à partager ou télécharger
+async function bulOnePng(btn) {
+    const s = S.stu.find(x => x.id === S.bulStu); if (!s) return;
+    if (!bulOf(s.id).length) return toast('Aucune note pour cet élève.');
+    try {
+        const b = OB.make(bulOf(s.id), S.bulPeriod, bulMeta(s, ($('#b_rem') || {}).value));
+        const files = await OB.png([b], 'bulletin-' + OB.slug(s.name) + '-' + S.bulPeriod);
+        if (typeof pngShow === 'function') pngShow(files, 'Bulletin · ' + s.name); else await OB.share(files, 'Bulletin de ' + s.name);
+    } catch (x) { toast('Erreur image : ' + x.message); }
+}
+async function bulAllPng(btn) {
+    const list = cotStudents().filter(s => bulOf(s.id).length);
+    if (!list.length) return toast('Aucune note dans cette classe pour cette période.');
+    const t = btn && btn.textContent; if (btn) { btn.disabled = true; btn.textContent = 'Préparation…'; }
+    try {
+        const pages = list.map(s => OB.make(bulOf(s.id), S.bulPeriod, bulMeta(s)));
+        const files = await OB.png(pages, 'bulletin-' + OB.slug((cotCls() || {}).name) + '-' + S.bulPeriod);
+        if (typeof pngShow === 'function') pngShow(files, 'Bulletins · ' + ((cotCls() || {}).name || '')); else await OB.share(files, 'Bulletins');
+    } catch (x) { toast('Erreur image : ' + x.message); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = t; } }
 }
 function bulAll() {
     const list = cotStudents().filter(s => bulOf(s.id).length);

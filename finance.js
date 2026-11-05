@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v66 — finance.js (lot 2 : Finance complète)
+   ORÉA École v67 — finance.js (lots 2 et 4 : Finance complète + exports PNG)
    Module de gestion financière du Directeur.
    - Navigation en grille : Tableau de bord + Budget, Dettes, Revenus, Impayés, Dépenses, Bilan
    - Tableau de bord : solde du trimestre en cours (+ mois et année)
@@ -8,7 +8,8 @@
      consolidation inverse, alertes 80 % / 100 %, projection, reliquats,
      lignes récurrentes, copie de la période précédente, fonds de réserve
    - Revenus : paiements des frais comptés automatiquement + revenus divers
-   - Bilan : trimestriel par défaut (mois / année au choix), export PDF
+   - Bilan : trimestriel par défaut (mois / année au choix), export PDF et PNG
+   - Budget : export PDF et PNG
    - Dépenses : justification obligatoire si le budget est dépassé
    - Publication automatique d'annonce lors de modification de frais
    Remplace : vFinanceHome (directeur), vBilan, bilanPDF, addExpense, editFees.
@@ -238,6 +239,12 @@
         if (a === 'gSub') return goalMove(d.id, -1);
         if (a === 'gDel') return goalDel(d.id);
         if (a === 'bilPdf') return window.bilanPDF();
+        if (a === 'bilPng') { const r = bilanRep(); if (!r) return toast('Ouvrez d’abord le bilan.'); return pngOut(r).catch(x => toast(x.message)); }
+        if (a === 'budPdf' || a === 'budPng') {
+            const r = S._budRep; if (!r) return;
+            if (a === 'budPng') return pngOut(r).catch(x => toast(x.message));
+            try { dl(new Blob([mkPdf(r)], { type: 'application/pdf' }), fnm(r.name, 'pdf')); toast('PDF enregistré dans Téléchargements'); } catch (x) { toast(x.message); }
+        }
     }
 
     /* =====================================================================
@@ -402,10 +409,12 @@
 
         // ----- Dépenses -----
         let depPlan = 0, depReal = 0, nOver = 0, nWarn = 0, hDep = '';
+        const xr = []; // lignes de l'export PDF / PNG
         DEP.forEach(([c, name]) => {
             const e = eff(lines, 'depense', c, p, R), plan = e.v, real = sumIn(M.exp, R, x => x.cat === c);
             if (plan <= 0 && real <= 0 && !e.line) return;
             depPlan += plan; depReal += real;
+            xr.push([name, 'Dépense', Math.round(plan), Math.round(real), plan > 0 ? ratePct(real, plan) + ' %' : '—']);
             const pct = ratePct(real, plan), over = plan > 0 && real > plan, warn = !over && plan > 0 && pct >= 80;
             if (over) nOver++; else if (warn) nWarn++;
             const color = over ? 'var(--bad)' : warn ? 'var(--gold)' : 'var(--ok)';
@@ -438,6 +447,7 @@
             const plan = e.v, real = recReal(M, R, c);
             if (plan <= 0 && real <= 0 && !e.line) return;
             recPlan += plan; recRl += real;
+            xr.push([name, 'Recette', Math.round(plan), Math.round(real), plan > 0 ? ratePct(real, plan) + ' %' : '—']);
             const pct = ratePct(real, plan), color = pct >= 100 ? 'var(--ok)' : pct >= 50 ? 'var(--gold)' : 'var(--bad)';
             hRec += `<div class="card col" style="margin-bottom:8px">
                 <div class=fin-head><b>${esc(name)}${c === 'scolarite' || c === 'frais' ? ' <span class=fin-tag>· automatique</span>' : ''}</b><span style="font-size:12px">${fmt(real)} / ${fmt(plan)}</span></div>
@@ -448,6 +458,8 @@
         });
 
         const resPlan = recPlan - depPlan, resReal = recRl - depReal, mx = Math.max(recPlan, recRl, depPlan, depReal, 1);
+        S._budRep = { name: 'budget-' + p.type + '-' + p.key + (p.type === 'trimestre' ? '-' + p.year : ''), title: 'Budget — ' + S.school.name, sub: pLabel(p) + ' · édité le ' + new Date().toLocaleDateString('fr-FR') + ' · montants en FC',
+            head: ['Catégorie', 'Type', 'Prévu (FC)', 'Réel (FC)', '%'], w: [34, 14, 19, 19, 10], r: [2, 3, 4], rows: xr, tot: ['Résultat (recettes − dépenses)', '', Math.round(resPlan), Math.round(resReal), ''] };
         const bar = (v, cls, t) => `<div class=bcol><small>${short(v)}</small><div class="bbar ${cls}" style="height:${Math.max(2, Math.round(v / mx * 70))}px"></div><small>${t}</small></div>`;
         let h = periodBar('bud', BTYPES);
         h += `<div class="card hero col" style="margin-bottom:10px">
@@ -457,6 +469,7 @@
             </div>`;
         if (nOver || nWarn) h += `<div class="card col fin-over"><b>${nOver ? '⚠ ' + nOver + ' catégorie(s) dépassée(s)' : ''}${nOver && nWarn ? ' · ' : ''}${nWarn ? nWarn + ' à plus de 80 %' : ''}</b></div>`;
         h += `<div class="card col"><div class=fin-bars>${bar(recPlan, 'ghost', 'Rec. prévues')}${bar(recRl, '', 'Rec. réelles')}${bar(depPlan, 'dep ghost', 'Dép. prévues')}${bar(depReal, 'dep', 'Dép. réelles')}</div></div>`;
+        h += `<div class="row"><button class=ghost data-act=budPdf>📄 PDF</button><button class=ghost data-act=budPng>🖼 PNG</button></div>`;
         if (!hasOwn) h += `<div class="row"><button class=ghost data-act=bCopy>Copier ${esc(pLabel(pp).toLowerCase())}</button></div>`;
 
         h += `<p class=fin-sec>Dépenses</p>` + (hDep || '<p class=empty>Aucune dépense prévue ni réalisée sur cette période.</p>')
@@ -749,19 +762,23 @@
         else h += cats.length ? cats.map(([c, o]) => `<span class=fin-head><small>${esc(lbl(DEP, c))} (${o.n})</small><small>${fmt(o.a)}</small></span>`).join('') : '<small>Aucune dépense</small>';
         h += `<b class=due style="margin-top:6px">Total : ${fmt(totDep)}</b></div>`;
         h += `<div class="card hero col"><small>SOLDE · ${esc(pLabel(p).toUpperCase())}</small><span class="big ${solde < 0 ? 'neg' : ''}">${fmt(solde)}</span></div>`;
-        h += `<button class=ghost data-act=bilPdf>📄 Exporter en PDF</button>`;
+        h += `<div class=row><button class=ghost data-act=bilPdf>📄 PDF</button><button class=ghost data-act=bilPng>🖼 PNG</button></div>`;
         host().innerHTML = h;
     };
 
-    window.bilanPDF = function () {
+    function bilanRep() {
         const b = S._bilan;
-        if (!b) return toast('Ouvrez d’abord le bilan.');
+        if (!b) return null;
         const rows = [['Encaissements espèces', '', b.esp], ['Encaissements Mobile Money / autres', '', b.mm], ['Revenus divers', '', b.rev], ['TOTAL RECETTES', '', b.totRec]];
         if (b.type === 'mois') b.exp.forEach(x => rows.push([x.label, lbl(DEP, x.cat), x.a]));
         else b.cats.forEach(([c, o]) => rows.push([lbl(DEP, c) + ' (' + o.n + ' dépense' + (o.n > 1 ? 's' : '') + ')', c, o.a]));
         rows.push(['TOTAL DÉPENSÉ', '', b.totDep]);
         rows.push(['SOLDE', '', b.solde]);
-        const r = { name: 'bilan-' + b.key, title: 'Bilan — ' + S.school.name, sub: b.label + ' · Montants en FC', head: ['Élément', 'Catégorie', 'Montant (FC)'], rows, w: [50, 30, 20], r: [2], tot: null };
+        return { name: 'bilan-' + b.key, title: 'Bilan — ' + S.school.name, sub: b.label + ' · Montants en FC', head: ['Élément', 'Catégorie', 'Montant (FC)'], rows, w: [50, 30, 20], r: [2], tot: null };
+    }
+    window.bilanPDF = function () {
+        const r = bilanRep();
+        if (!r) return toast('Ouvrez d’abord le bilan.');
         try { dl(new Blob([mkPdf(r)], { type: 'application/pdf' }), fnm(r.name, 'pdf')); toast('PDF enregistré'); } catch (e) { toast(e.message); }
     };
 

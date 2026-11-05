@@ -1,4 +1,4 @@
-// ORÉA École — Moteur des bulletins (v40)
+// ORÉA École — Moteur des bulletins (v67 : PDF + image PNG)
 // Partagé par l'espace école et l'espace parent. Aucune dépendance à S, P ou db.
 // Logique congolaise : pas de coefficients. Moyenne = somme des points / somme des bases.
 const OB = (function () {
@@ -56,16 +56,17 @@ const OB = (function () {
     const wrap = (s, max, z) => { const out = []; let cur = ''; String(s).split(/\s+/).forEach(w => { const t = cur ? cur + ' ' + w : w; if (wd(t, z) > max && cur) { out.push(cur); cur = w; } else cur = t; }); if (cur) out.push(cur); return out; };
     const GOLD = '0.847 0.718 0.416 rg', DK = '0.07 g', MUT = '0.4 g', ALT = '0.97 0.95 0.90 rg', OK = '0.25 0.48 0.36 rg', BAD = '0.66 0.35 0.31 rg', DG = '0.60 0.48 0.17 rg';
 
-    function pageStream(b, k, n) {
-        let s = '';
-        const T = (f, z, x, y, t, col) => { s += `${col || DK} BT /${f} ${z} Tf ${x.toFixed(1)} ${y.toFixed(1)} Td (${enc(t)}) Tj ET\n`; };
+    // Dessine une page de bulletin avec un « traceur » D : D.text(police, taille, x, y, texte, couleur) et D.rect(x, y, l, h, couleur).
+    // Coordonnées PDF (origine en bas à gauche). Utilisé pour le PDF ET pour l'image PNG : même mise en page.
+    function drawPage(b, k, n, D) {
+        const T = (f, z, x, y, t, col) => D.text(f, z, x, y, t, col || DK);
         const C = (f, z, y, t, col) => T(f, z, (W - wd(t, z)) / 2, y, t, col);
         const R = (f, z, xr, y, t, col) => T(f, z, xr - wd(t, z), y, t, col);
         let y = H - M - 10;
         C('F2', 18, y, cut(b.school, W - 2 * M, 18), DG); y -= 20;
         C('F2', 12, y, 'BULLETIN SCOLAIRE — ' + b.period.toUpperCase(), DK); y -= 15;
         C('F1', 10, y, 'Année scolaire ' + b.year, MUT); y -= 10;
-        s += `${GOLD} ${M} ${y} ${W - 2 * M} 1.2 re f\n`; y -= 20;
+        D.rect(M, y, W - 2 * M, 1.2, GOLD); y -= 20;
         T('F2', 12, M, y, 'Élève : ' + cut(b.name, W - 2 * M - 60, 12)); y -= 16;
         T('F1', 11, M, y, 'Classe : ' + b.cls); y -= 20;
 
@@ -83,19 +84,19 @@ const OB = (function () {
                 x += cw[j];
             });
         };
-        s += `${GOLD} ${M} ${y - 5} ${W - 2 * M} ${rh + 2} re f\n`;
+        D.rect(M, y - 5, W - 2 * M, rh + 2, GOLD);
         row(head, y, true); y -= rh + 2;
         if (!v.rows.length) { T('F1', 10, M + 4, y, 'Aucune note enregistrée pour cette période.', MUT); y -= rh; }
         v.rows.forEach((r, i) => {
-            if (i % 2) s += `${ALT} ${M} ${y - 4} ${W - 2 * M} ${rh} re f\n`;
+            if (i % 2) D.rect(M, y - 4, W - 2 * M, rh, ALT);
             row([r.name].concat(r.cells), y, false, r.pct != null && r.pct < 50 ? BAD : null);
             y -= rh;
         });
-        s += `${GOLD} ${M} ${y + rh - 5} ${W - 2 * M} 1 re f\n`;
+        D.rect(M, y + rh - 5, W - 2 * M, 1, GOLD);
         row(['TOTAL'].concat(v.totCells), y, true); y -= rh + 16;
 
         const pc = pctTxt(v.pct), col = v.pct == null ? MUT : v.pct >= 50 ? OK : BAD;
-        s += `${ALT} ${M} ${y - 12} ${W - 2 * M} 34 re f\n`;
+        D.rect(M, y - 12, W - 2 * M, 34, ALT);
         T('F2', 12, M + 10, y, 'POURCENTAGE GÉNÉRAL', DK);
         R('F2', 16, W - M - 10, y - 2, pc, col);
         y -= 20;
@@ -105,9 +106,50 @@ const OB = (function () {
         wrap(b.appr || '', W - 2 * M, 10).slice(0, 5).forEach(l => { T('F1', 10, M, y, l); y -= 13; });
 
         const sy = 96, labels = ['Le titulaire', 'Le directeur', 'Les parents'], sw = (W - 2 * M) / 3;
-        labels.forEach((l, i) => { const x = M + i * sw; T('F2', 9, x + 6, sy, l, DK); s += `0.6 g ${x + 6} ${sy - 40} ${sw - 24} 0.6 re f\n`; });
+        labels.forEach((l, i) => { const x = M + i * sw; T('F2', 9, x + 6, sy, l, DK); D.rect(x + 6, sy - 40, sw - 24, 0.6, '0.6 g'); });
         T('F1', 7, M, 22, 'ORÉA École · édité le ' + new Date().toLocaleDateString('fr-FR') + ' · page ' + (k + 1) + '/' + n, '0.5 g');
+    }
+    // Traceur PDF (flux de page)
+    function pageStream(b, k, n) {
+        let s = '';
+        drawPage(b, k, n, {
+            text: (f, z, x, y, t, col) => { s += `${col} BT /${f} ${z} Tf ${x.toFixed(1)} ${y.toFixed(1)} Td (${enc(t)}) Tj ET\n`; },
+            rect: (x, y, w, h, col) => { s += `${col} ${x} ${y} ${w} ${h} re f\n`; }
+        });
         return s;
+    }
+    // Couleur PDF (« r g b rg » ou « g g ») -> couleur CSS
+    const css = c => { const p = String(c).trim().split(/\s+/).map(Number); const v = x => Math.round(x * 255); return p.length >= 4 ? `rgb(${v(p[0])},${v(p[1])},${v(p[2])})` : `rgb(${v(p[0])},${v(p[0])},${v(p[0])})`; };
+    // Traceur image : page A4 en PNG (2 × la résolution du PDF)
+    function pageCanvas(b, k, n) {
+        const Z = 2, cv = document.createElement('canvas'); cv.width = W * Z; cv.height = H * Z;
+        const x = cv.getContext('2d'); x.scale(Z, Z);
+        x.fillStyle = '#ffffff'; x.fillRect(0, 0, W, H);
+        drawPage(b, k, n, {
+            text: (f, z, px, py, t, col) => { x.font = (f === 'F2' ? 'bold ' : '') + z + 'px Helvetica, Arial, sans-serif'; x.fillStyle = css(col); x.textAlign = 'left'; x.fillText(String(t), px, H - py); },
+            rect: (px, py, w, h, col) => { x.fillStyle = css(col); x.fillRect(px, H - py - h, w, h); }
+        });
+        return cv;
+    }
+    // bulletins (OB.make) -> [{ blob, fn, file, url }] : une image par élève
+    async function png(bulletins, base) {
+        const out = [];
+        for (let k = 0; k < bulletins.length; k++) {
+            const b = bulletins[k], cv = pageCanvas(b, k, bulletins.length);
+            const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+            const fn = (base || 'bulletin') + (bulletins.length > 1 ? '-' + slug(b.name) : '') + '.png';
+            out.push({ blob, fn, url: URL.createObjectURL(blob), file: new File([blob], fn, { type: 'image/png' }) });
+        }
+        return out;
+    }
+    // Partage (WhatsApp…) si le téléphone le permet, sinon téléchargement
+    async function share(files, text) {
+        const fl = files.map(f => f.file);
+        if (navigator.canShare && navigator.canShare({ files: fl })) {
+            try { await navigator.share({ files: fl, text: text || '' }); return 'share'; } catch (e) { if (e.name === 'AbortError') return 'abort'; }
+        }
+        files.forEach(f => { const a = document.createElement('a'); a.href = f.url; a.download = f.fn; document.body.appendChild(a); a.click(); a.remove(); });
+        return 'download';
     }
 
     // bulletins : tableau de bulletins (OB.make) → un PDF, une page par élève
@@ -140,5 +182,5 @@ const OB = (function () {
     }
     const slug = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
 
-    return { NAMES, agg, view, make, pdf, save, slug, pctOf, pctTxt, apprOf, num };
+    return { NAMES, agg, view, make, pdf, png, share, save, slug, pctOf, pctTxt, apprOf, num };
 })();

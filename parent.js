@@ -1,4 +1,4 @@
-// ORÉA École — Interface Parent (v64)
+// ORÉA École — Interface Parent (v67 : dette par trimestre, échéances promises)
 // PARTIE 1/2 — Initialisation, Connexion, Navigation, Accueil, Messages
 
 const tfetch = (u, o = {}) => {
@@ -85,7 +85,18 @@ function authView() {
 // ---- Chargement des données ----
 async function loadMe() { const { data: { user } } = await db.auth.getUser(); if (!user) return null; const { data } = await db.from('profiles').select('*').eq('id', user.id).maybeSingle(); return data; }
 async function loadSchool() { if (!P.me?.school_id) { P.school = null; return; } const { data } = await db.from('schools').select('id,name').eq('id', P.me.school_id).maybeSingle(); P.school = data || null; }
-async function loadChildren() { const { data } = await db.rpc('parent_children'); P.children = data || []; }
+async function loadChildren() {
+    const [{ data }, tr] = await Promise.all([db.rpc('parent_children'), db.rpc('parent_student_terms').then(r => r, () => ({ data: null }))]);
+    P.children = data || [];
+    P.terms = {}; (tr && tr.data || []).forEach(t => { P.terms[t.student_id] = t; });
+}
+// Dette du trimestre en cours (+ reste des trimestres précédents), même logique que l'espace école
+function pTerm(s) { const t = (P.terms || {})[s.id]; if (!t || !(t.t1 || t.t2 || t.t3)) return null; const d = tdy(); let k = 0; [t.t1, t.t2, t.t3].forEach((x, i) => { if (x && x <= d) k = i + 1; }); return Math.max(1, k); }
+function pDebt(s) {
+    const k = pTerm(s); if (!k) return null;
+    const T = [1, 2, 3].map(i => Math.max(0, Number(s['due' + i + '_cdf'] || 0) - Number(s['p' + i + '_cdf'] || 0)));
+    return { k, cur: T[k - 1], prev: T.slice(0, k - 1).map((v, i) => [i + 1, v]).filter(x => x[1] > 0) };
+}
 async function loadK2() {
     if (!P.children.length) return;
     const [m, a, c, j, e] = await Promise.all([
@@ -135,8 +146,9 @@ function homeView() {
         h += `<div class=p-empty><span class=p-ic>👨‍👩‍👧</span>Aucun enfant lié.<br><br><button class=p-btn onclick=addChildView()>+ Ajouter un enfant</button></div>`;
     } else {
         h += P.children.map(s => {
-            const due = Number(s.balance_cdf || 0);
-            const tag = due > 0 ? `<div class="p-bal p-due">Doit ${fmtCDF(due)}</div>` : `<div class="p-bal p-ok">✓ À jour</div>`;
+            const due = Number(s.balance_cdf || 0), dt = pDebt(s);
+            const tag = dt ? (dt.cur > 0 ? `<div class="p-bal p-due">Dette Trimestre ${dt.k} : ${fmtCDF(dt.cur)}</div>` : `<div class="p-bal p-ok">✓ Trimestre ${dt.k} soldé</div>`) + (dt.prev.length ? `<div class=p-line><small>${dt.prev.map(x => 'Reste T' + x[0] + ' : ' + fmtCDF(x[1])).join(' · ')}</small></div>` : '')
+                : due > 0 ? `<div class="p-bal p-due">Doit ${fmtCDF(due)}</div>` : `<div class="p-bal p-ok">✓ À jour</div>`;
             return `<div class=p-card onclick="childDetail('${s.id}')"><h3>👤 ${esc(s.name)}</h3>${tag}<div class=p-line>Total payé : ${fmtCDF(Number(s.paid_cdf || 0))}</div></div>`;
         }).join('');
         h += `<div class=p-actions><button class=p-btn onclick=addChildView()>+ Ajouter un autre enfant</button><button class=ghost style="padding:12px;background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:10px" onclick=logout()>Se déconnecter</button></div>`;
@@ -397,12 +409,17 @@ function addChildView() {
 async function childDetail(id) {
     const s = P.children.find(x => x.id === id); if (!s) return;
     $('#pmain').innerHTML = `<div style="padding:20px;text-align:center">Chargement…</div>`;
-    const [pay, fpay, att, san] = await Promise.all([db.rpc('parent_payments'), db.rpc('parent_fee_payments'), db.rpc('parent_attendance', { p_days: 30 }), db.rpc('parent_sanctions')]);
+    const [pay, fpay, att, san, ppl] = await Promise.all([db.rpc('parent_payments'), db.rpc('parent_fee_payments'), db.rpc('parent_attendance', { p_days: 30 }), db.rpc('parent_sanctions'), db.from('payment_plans').select('due_date,amount_cdf,status').eq('student_id', id).order('due_date').then(r => r, () => ({ data: [] }))]);
     const pays = (pay.data || []).filter(x => x.student_id === id), fpays = (fpay.data || []).filter(x => x.student_id === id);
     const atts = (att.data || []).filter(x => x.student_id === id), sans = (san.data || []).filter(x => x.student_id === id);
     const due = Number(s.balance_cdf || 0), paid = Number(s.paid_cdf || 0);
     let h = `<div class=p-hello>👤 <b>${esc(s.name)}</b></div>`;
-    h += `<div class=p-sec><h4>💰 Solde</h4><div class=p-row><span>Payé</span><b>${fmtCDF(paid)}</b></div><div class=p-row><span>Reste</span><b class="${due > 0 ? 'p-due' : 'p-ok'}">${fmtCDF(due)}</b></div></div>`;
+    const dt = pDebt(s);
+    h += dt
+        ? `<div class=p-sec><h4>💰 Solde</h4><div class=p-row><span>Dette Trimestre ${dt.k}</span><b class="${dt.cur > 0 ? 'p-due' : 'p-ok'}">${dt.cur > 0 ? fmtCDF(dt.cur) : '✓ Soldé'}</b></div>${dt.prev.map(x => `<div class=p-row><small>Reste Trimestre ${x[0]}</small><small class=p-due>${fmtCDF(x[1])}</small></div>`).join('')}<div class=p-row><small>Total payé</small><small>${fmtCDF(paid)}</small></div></div>`
+        : `<div class=p-sec><h4>💰 Solde</h4><div class=p-row><span>Payé</span><b>${fmtCDF(paid)}</b></div><div class=p-row><span>Reste</span><b class="${due > 0 ? 'p-due' : 'p-ok'}">${fmtCDF(due)}</b></div></div>`;
+    const plans = (ppl && ppl.data) || [], PST = { prevu: ['Prévu', ''], tenu: ['Versé ✓', 'p-ok'], non_tenu: ['En retard', 'p-due'] };
+    if (plans.length) h += `<div class=p-sec><h4>🗓️ Échéances promises</h4>${plans.map(p => `<div class=p-row><span>${fdate(p.due_date)} · <small class="${(PST[p.status] || PST.prevu)[1]}">${(PST[p.status] || PST.prevu)[0]}</small></span><b>${fmtCDF(Number(p.amount_cdf))}</b></div>`).join('')}</div>`;
     h += `<div class=p-sec><h4>📋 Présences (30j)</h4>${atts.length ? atts.slice(0, 8).map(a => `<div class=p-row><span>${fdate(a.day)}</span><b class="${a.status === 'absent' ? 'p-due' : a.status === 'retard' ? '' : 'p-ok'}">${a.status === 'present' ? '✓ Présent' : a.status === 'absent' ? '✗ Absent' : '🕐 Retard'}</b></div>`).join('') : '<div class=p-row><small>Aucun</small></div>'}</div>`;
     if (sans.length) h += `<div class=p-sec><h4>⚖️ Sanctions</h4>${sans.slice(0, 5).map(x => `<div class=p-row><span>${fdate(x.day)} · ${esc(x.kind)}</span></div>`).join('')}</div>`;
     

@@ -48,10 +48,22 @@ function drawParentNotes(kid) {
             + list.map(g => `<div class=p-row style="font-size:13px;padding-left:10px"><span>${year ? 'T' + g.term + ' · ' : ''}${esc(g.kind)} ${g.num}${g.eval_date ? ' · ' + fdate(g.eval_date) : ''}</span><b>${nf(g.grade)} / ${nf(g.max_grade)}</b></div>`).join('') + `</details>`;
     }).join('') + `</div>`;
     h += `<div class=p-sec style="text-align:center;margin-top:15px"><h4 style="margin-bottom:5px">Pourcentage général</h4><div style="font-size:32px;font-weight:bold;color:${v.pct != null && v.pct >= 50 ? 'var(--ok)' : 'var(--bad)'};font-family:serif">${OB.pctTxt(v.pct)}</div><small>${OB.num(v.tp)} / ${OB.num(v.tm)} points</small><div style="margin-top:6px">${OB.apprOf(v.pct)}</div></div>`
-        + `<div style="margin-top:15px"><button onclick="parentGenBulletin('${kid.id}')">📄 Télécharger le bulletin PDF</button></div>`;
+        + `<div style="margin-top:15px"><button onclick="parentGenBulletin('${kid.id}')">📄 Télécharger le bulletin PDF</button></div>`
+        + `<div style="margin-top:8px"><button class=ghost onclick="parentGenBulletinPng('${kid.id}')">🖼 Bulletin en image (PNG)</button></div>`;
     el.innerHTML = h;
 }
 
+// Bulletin en image PNG : partage direct (WhatsApp…) ou téléchargement
+async function parentGenBulletinPng(studentId) {
+    const kid = P.children.find(c => c.id === studentId), rows = pGradesOf(studentId);
+    if (!kid || !rows.length) return toast('Aucune note à imprimer.');
+    try {
+        const b = OB.make(rows, P.noteTerm, { school: (P.school && P.school.name) || 'ORÉA École', cls: rows[0].class_name || '', year: rows[0].class_year || '', name: kid.name });
+        const files = await OB.png([b], 'bulletin-' + OB.slug(kid.name) + '-' + P.noteTerm);
+        const r = await OB.share(files, 'Bulletin de ' + kid.name);
+        if (r === 'download') toast('Image enregistrée dans Téléchargements');
+    } catch (e) { toast('Erreur image'); }
+}
 function parentGenBulletin(studentId) {
     const kid = P.children.find(c => c.id === studentId), rows = pGradesOf(studentId);
     if (!kid || !rows.length) return toast('Aucune note à imprimer.');
