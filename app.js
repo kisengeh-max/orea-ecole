@@ -946,16 +946,20 @@ function pay(id) {
     const dt = (trims(s).find(x => x[1] > 0) || [0])[0], fs = fees4(s).filter(f => feeRem(s, f) > 0);
     const opts = [['t1', '1er trimestre'], ['t2', '2e trimestre'], ['t3', '3e trimestre'], ...fs.map(f => ['f' + f.id, esc(f.name) + ' · reste ' + fmt(feeRemCdf(s, f))])];
     const def = dt ? 't' + dt : fs.length ? 'f' + fs[0].id : 't1';
-    ask('Encaisser — ' + esc(s.name), [{ n: 'target', l: 'Paiement pour', o: opts, v: def }, { n: 'amount', l: 'Montant', t: 'number' }, { n: 'currency', l: 'Devise', o: CUR.map(c => [c, c]), v: S.cur }, { n: 'method', l: 'Mode', o: [['especes', 'Espèces'], ['mobile_money', 'Mobile Money']] }, { n: 'reference', l: 'Réf. Mobile Money (si applicable)', r: false }], async v => {
+    ask('Encaisser — ' + esc(s.name), [{ n: 'target', l: 'Paiement pour', o: opts, v: def }, { n: 'amount', l: 'Montant', t: 'number' }, { n: 'currency', l: 'Devise', o: CUR.map(c => [c, c]), v: S.cur }, { n: 'method', l: 'Mode', o: [['especes', 'Espèces'], ['mobile_money', 'Mobile Money']] }, { n: 'reference', l: 'Réf. Mobile Money (si applicable)', r: false }, { n: 'amount2', l: 'Paiement mixte : complément en FC (facultatif)', t: 'number', r: false }], async v => {
         const mm = v.method === 'mobile_money';
         if (mm && !v.reference.trim()) throw Error('Référence Mobile Money obligatoire');
         const isF = v.target[0] === 'f', fid = v.target.slice(1);
         const base = { id: crypto.randomUUID(), student_id: id, amount: +v.amount, currency: v.currency, method: v.method, reference: mm ? v.reference.trim() : null };
         const row = isF ? { ...base, fee_id: fid, fee_name: (S.fees.find(f => f.id === fid) || {}).name } : { ...base, term: +fid };
-        if (!navigator.onLine) return payOffline(row);
+        // Paiement mixte : une 2e ligne en FC (même objet, même mode), avec son propre reçu
+        const a2 = +(v.amount2 || 0), row2 = a2 > 0 ? Object.assign({}, row, { id: crypto.randomUUID(), amount: a2, currency: 'CDF', reference: mm ? v.reference.trim() + '-FC' : null }) : null;
+        if (a2 < 0) throw Error('Complément invalide');
+        if (!navigator.onLine) { if (row2) await payOffline(row2); return payOffline(row); }
         const { data, error } = await db.from(isF ? 'fee_payments' : 'payments').insert(row).select().single();
-        if (isNet(error)) return payOffline(row);
+        if (isNet(error)) { if (row2) await payOffline(row2); return payOffline(row); }
         if (error) throw error.code === '23505' ? Error('Cette référence existe déjà') : error;
+        if (row2) { const r2 = await db.from(isF ? 'fee_payments' : 'payments').insert(row2).select().single(); if (r2.error) toast('Complément en FC non enregistré : ' + r2.error.message); else toast('Paiement mixte : 2 reçus créés (voir « Paiement » de l’élève)'); }
         await load(); render(); receipt(data, id);
         if (!isF) ppSync(id); // coche les échéances couvertes du plan de paiement
     });
@@ -1033,10 +1037,12 @@ async function journal() {
 }
 
 // --- FIN DE LA TRANCHE 6. La tranche suivante commencera par : async function receipt(p, sid) { ---
+const receiptUrl = p => location.origin + location.pathname.replace(/[^/]*$/, '') + 'verif.html?id=' + p.id + '&k=' + (p.fee_id ? 'f' : 'p');
 async function receipt(p, sid) {
     const s = S.stu.find(x => x.id === sid), c = S.classes.find(x => x.id === s.class_id);
-    const cv = document.createElement('canvas'); cv.width = 640; cv.height = 900; const x = cv.getContext('2d');
-    x.fillStyle = '#fffdf6'; x.fillRect(0, 0, 640, 900); const gg = x.createLinearGradient(0, 0, 640, 900); gg.addColorStop(0, '#e9cf86'); gg.addColorStop(.5, '#b08a30'); gg.addColorStop(1, '#8a6a1f'); x.strokeStyle = gg; x.lineWidth = 4; x.strokeRect(14, 14, 612, 872); x.lineWidth = 1; x.strokeRect(24, 24, 592, 852);
+    const QH = p.receipt_no ? 190 : 0; // place du QR code de vérification (reçus numérotés)
+    const cv = document.createElement('canvas'); cv.width = 640; cv.height = 900 + QH; const x = cv.getContext('2d');
+    x.fillStyle = '#fffdf6'; x.fillRect(0, 0, 640, 900 + QH); const gg = x.createLinearGradient(0, 0, 640, 900 + QH); gg.addColorStop(0, '#e9cf86'); gg.addColorStop(.5, '#b08a30'); gg.addColorStop(1, '#8a6a1f'); x.strokeStyle = gg; x.lineWidth = 4; x.strokeRect(14, 14, 612, 872 + QH); x.lineWidth = 1; x.strokeRect(24, 24, 592, 852 + QH);
     const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = 'logo-light.png'; });
     if (im) x.drawImage(im, 225, 36, 190, 190);
     x.fillStyle = '#111211'; x.textAlign = 'center'; x.font = 'bold 28px Georgia,serif'; x.fillText(S.school.name, 320, 270);
@@ -1054,7 +1060,16 @@ async function receipt(p, sid) {
         x.textAlign = 'right'; x.fillStyle = '#111211'; x.font = 'bold 20px sans-serif'; x.fillText(r[1], 600, y);
     });
     x.save(); x.translate(515, 125); x.rotate(-.2); x.globalAlpha = .85; x.strokeStyle = x.fillStyle = '#9a7a2c'; x.lineWidth = 3; x.font = 'bold 26px Georgia,serif'; x.textAlign = 'center'; const sw = x.measureText(p.receipt_no ? 'PAYÉ' : 'PROVISOIRE').width; x.strokeRect(-sw / 2 - 12, -28, sw + 24, 40); x.fillText(p.receipt_no ? 'PAYÉ' : 'PROVISOIRE', 0, 0); x.restore();
-    x.textAlign = 'center'; x.fillStyle = '#6b6a60'; x.font = '16px sans-serif'; x.fillText('Merci — ORÉA École', 320, 870);
+    if (QH) {
+        // QR code : ouvre la page publique de vérification (verif.html) — contre les faux reçus
+        try {
+            const box = document.createElement('div');
+            new QRCode(box, { text: receiptUrl(p), width: 140, height: 140, correctLevel: QRCode.CorrectLevel.M });
+            const qc = box.querySelector('canvas'); if (qc) x.drawImage(qc, 250, 860, 140, 140);
+            x.textAlign = 'center'; x.fillStyle = '#6b6a60'; x.font = '15px sans-serif'; x.fillText('Scannez pour vérifier l’authenticité de ce reçu', 320, 1025);
+        } catch (_) { }
+    }
+    x.textAlign = 'center'; x.fillStyle = '#6b6a60'; x.font = '16px sans-serif'; x.fillText('Merci — ORÉA École', 320, 870 + (QH ? QH - 5 : 0));
     const nm = p.receipt_no ? rno(p) : 'provisoire-' + p.id.slice(0, 6), fn = 'recu-' + nm + '.png';
     const blob = await new Promise(r => cv.toBlob(r, 'image/png')), url = URL.createObjectURL(blob);
     const file = new File([blob], fn, { type: 'image/png' });
@@ -1326,10 +1341,11 @@ function vReglages() {
         h += `<div class="card col"><b>Dates des trimestres</b><small>${hasTerms() ? 'T1 dès le ' + fdate(tm.t1) + ' · T2 dès le ' + fdate(tm.t2) + ' · T3 dès le ' + fdate(tm.t3) : 'Non réglées : le statut « en retard » est désactivé.'}</small><button class=ghost onclick=setTerms()>Régler les dates · ${esc(S.year || '—')}</button></div>`;
         h += `<div class="card col"><b>Modèles de messages</b><small>Personnalise les messages WhatsApp (frais).</small><button class=ghost onclick=editTemplates()>✏️ Modifier les modèles</button></div>`;
     }
-    h += `<details><summary>Guide rapide</summary><p><b>Encaisser</b> : École → ouvre la classe → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu.<br><b>Clôture</b> : Menu → Caisse → Clôturer.<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel.<br><b>Correction</b> : Élève → Historique et reçus → Corriger.</p></details><button class=ghost id=lo>Déconnexion</button><p style="text-align:center;margin:18px 0 6px"><a href="#" id=delacc style="font-size:11px;color:var(--mut)">Supprimer mon compte</a></p>`;
+    h += `<details><summary>Guide rapide</summary><p><b>Encaisser</b> : École → ouvre la classe → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu.<br><b>Clôture</b> : Menu → Caisse → Clôturer.<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel.<br><b>Correction</b> : Élève → Historique et reçus → Corriger.</p></details><button class=ghost id=lo>Déconnexion</button><div class=card><span>Code PIN de l’app</span><button class=ghost style=width:auto id=pinb>${pinGet() ? 'Modifier / retirer' : 'Activer'}</button></div><p style="text-align:center;margin:18px 0 6px"><a href="#" id=delacc style="font-size:11px;color:var(--mut)">Supprimer mon compte</a></p>`;
     $('#main').innerHTML = h;
     $('#lo').onclick = out;
     $('#delacc').onclick = e => { e.preventDefault(); deleteAccount(); };
+    $('#pinb').onclick = pinSetup;
     $('#cu').onchange = e => { S.cur = e.target.value; localStorage.cur = S.cur; toast('Devise : ' + S.cur); };
     $('#th').onclick = () => { const t = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; document.documentElement.dataset.theme = localStorage.theme = t; };
     if (dir()) $('#sr').onclick = async () => {
@@ -1593,6 +1609,9 @@ function vMenu() {
         h += menuCard('justificatifs', 'Justificatifs d’absence', null, "pAdminJustifs()");
         h += menuCard('annonces', 'Annonces', null, "pAdminAnnonce()");
     }
+    h += `<div class=menu-title>Personnel</div>`;
+    h += menuCard('calendrier', 'Pointage', dir() ? 'Arrivées et départs de l’équipe' : 'Mon arrivée · mon départ', "pointage()");
+    h += menuCard('eleves', 'Mon espace parent', 'Suivre mes propres enfants', "location.href='parent.html'");
     h += `<div class=menu-title>Jeux</div>`;
     h += menuCard('alerte', 'Génie en Herbe', 'Quiz', "openQuiz()");
     $('#main').innerHTML = h;
@@ -2394,5 +2413,82 @@ async function vPerception() {
     $('#main').innerHTML = h;
     document.querySelectorAll('[data-pp]').forEach(b => b.onclick = () => { S.perP = b.dataset.pp; vPerception(); });
 }
+
+
+/* =====================================================================
+   PAQUET 4 — Pointage du personnel et code PIN
+   ===================================================================== */
+async function pointage() {
+    const d0 = tdy(), hm = t => t ? new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
+    if (!dir()) {
+        const { data, error } = await db.from('staff_checkins').select('*').eq('user_id', S.me.id).order('day', { ascending: false }).limit(10);
+        if (error) return toast(error.message);
+        const t = (data || []).find(x => x.day === d0);
+        const d = show(`<h3>Pointage</h3><div class=stat-pair><div class="card stat"><span>Arrivée</span><b>${hm(t && t.in_at)}</b></div><div class="card stat"><span>Départ</span><b>${hm(t && t.out_at)}</b></div></div><div class=col>${!t || !t.in_at ? '<button id=pin1>Je suis arrivé(e)</button>' : !t.out_at ? '<button id=pout>Je pars</button>' : '<p class=ok style="text-align:center">✓ Journée pointée</p>'}<button class=ghost id=pcx>Fermer</button></div><p style="margin:12px 0 4px"><small>MES DERNIERS JOURS</small></p>${(data || []).map(x => `<div class=card><span>${fdate(x.day)}</span><small>${hm(x.in_at)} → ${hm(x.out_at)}</small></div>`).join('') || '<small>Aucun pointage.</small>'}`);
+        d.querySelector('#pcx').onclick = () => d.close();
+        const go = async (field) => {
+            const now = new Date().toISOString();
+            const r = t ? await db.from('staff_checkins').update({ [field]: now }).eq('id', t.id) : await db.from('staff_checkins').insert({ school_id: S.school.id, user_id: S.me.id, day: d0, [field]: now });
+            if (r.error) return toast(r.error.message);
+            toast(field === 'in_at' ? 'Arrivée enregistrée ✓' : 'Départ enregistré ✓'); pointage();
+        };
+        const a = d.querySelector('#pin1'), b = d.querySelector('#pout');
+        if (a) a.onclick = () => go('in_at'); if (b) b.onclick = () => go('out_at');
+        return;
+    }
+    S.ptDay = S.ptDay || d0;
+    const [{ data: pr, error: e1 }, { data: ck, error: e2 }] = await Promise.all([
+        db.from('profiles').select('id,full_name,role,active').eq('school_id', S.school.id).in('role', ['enseignant', 'percepteur', 'directeur']).order('full_name'),
+        db.from('staff_checkins').select('*').eq('day', S.ptDay)
+    ]);
+    if (e1 || e2) return toast((e1 || e2).message);
+    const by = Object.fromEntries((ck || []).map(x => [x.user_id, x])), L = (pr || []).filter(p => p.active !== false && p.id !== S.me.id);
+    const nIn = L.filter(p => by[p.id] && by[p.id].in_at).length;
+    const d = show(`<h3>Pointage de l’équipe</h3><input type=date id=ptd value="${S.ptDay}"><small>${nIn} / ${L.length} présent(s)</small>${L.map(p => { const x = by[p.id]; return `<div class=card><span>${esc(p.full_name)}<br><small>${esc({ enseignant: 'Enseignant', percepteur: 'Percepteur', directeur: 'Directeur' }[p.role] || p.role)}</small></span>${x && x.in_at ? `<small class=ok>${hm(x.in_at)} → ${hm(x.out_at)}</small>` : '<small class=due>Non pointé</small>'}</div>`; }).join('')}<button class=ghost id=pcx>Fermer</button>`);
+    d.querySelector('#pcx').onclick = () => d.close();
+    d.querySelector('#ptd').onchange = e => { S.ptDay = e.target.value; pointage(); };
+}
+
+// Code PIN : protège l'app sur un téléphone partagé (stocké chiffré sur CE téléphone uniquement)
+const pinKey = () => 'orea_pin_' + (S.me ? S.me.id : '');
+const pinGet = () => { try { return localStorage.getItem(pinKey()); } catch (_) { return null; } };
+async function pinHash(p) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('orea:' + (S.me ? S.me.id : '') + ':' + p)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); }
+function pinSetup() {
+    const has = !!pinGet();
+    ask(has ? 'Modifier le code PIN' : 'Activer un code PIN', [{ n: 'p1', l: 'Nouveau code (4 chiffres) — laisser vide pour retirer le code', t: 'password', r: !has }, { n: 'p2', l: 'Confirmer le code', t: 'password', r: false }], async v => {
+        const a = (v.p1 || '').trim(), b = (v.p2 || '').trim();
+        if (!a && has) { localStorage.removeItem(pinKey()); toast('Code PIN retiré'); return render(); }
+        if (!/^\d{4}$/.test(a)) throw Error('Le code doit contenir exactement 4 chiffres');
+        if (a !== b) throw Error('Les deux codes ne sont pas identiques');
+        localStorage.setItem(pinKey(), await pinHash(a)); toast('Code PIN activé ✓'); render();
+    });
+}
+let pinHiddenAt = 0, pinShown = false;
+function pinLock() {
+    if (pinShown || !S.me || !pinGet()) return;
+    pinShown = true;
+    const ov = document.createElement('div');
+    ov.id = 'pinov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px';
+    ov.innerHTML = `<img src="icon-192.png" alt="" style="width:72px;height:72px;border-radius:16px"><b style="font-family:var(--serif);font-size:20px;color:var(--gold)">Code PIN</b><input id=pinin type=password inputmode=numeric maxlength=4 autocomplete=off style="max-width:200px;text-align:center;font-size:28px;letter-spacing:.5em"><small id=pinm></small><a href="#" id=pinout style="font-size:12px;color:var(--mut)">Code oublié ? Se déconnecter</a>`;
+    document.body.appendChild(ov);
+    const inp = ov.querySelector('#pinin'); setTimeout(() => inp.focus(), 100);
+    inp.oninput = async () => {
+        if (inp.value.length < 4) return;
+        if (await pinHash(inp.value) === pinGet()) { ov.remove(); pinShown = false; }
+        else { ov.querySelector('#pinm').textContent = 'Code incorrect'; inp.value = ''; if (navigator.vibrate) navigator.vibrate(120); }
+    };
+    ov.querySelector('#pinout').onclick = e => { e.preventDefault(); localStorage.removeItem(pinKey()); out(); };
+}
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) pinHiddenAt = Date.now();
+    else if (pinHiddenAt && Date.now() - pinHiddenAt > 120000) pinLock(); // verrouillage après 2 min en arrière-plan
+});
+const _vAccueil2 = vAccueil;
+let pinFirst = true;
+vAccueil = async function () {
+    if (pinFirst) { pinFirst = false; pinLock(); }
+    return _vAccueil2.apply(this, arguments);
+};
 
 // --- FIN DU FICHIER APP.JS ---

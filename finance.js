@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v68 — finance.js (Finance complète + exports PNG + SMS)
+   ORÉA École v72 — finance.js (+ jauge de santé financière et prévision de trésorerie)
    Module de gestion financière du Directeur.
    - Navigation en grille : Tableau de bord + Budget, Dettes, Revenus, Impayés, Dépenses, Bilan
    - Tableau de bord : solde du trimestre en cours (+ mois et année)
@@ -254,9 +254,11 @@
         const y = S.year, YR = yearRange(y), k = termOf(y), TR = k ? termRange(y, k) : null;
         const m = thisMonth(), MR = mRange(m);
         const R = [YR[0] < MR[0] ? YR[0] : MR[0], YR[1] > MR[1] ? YR[1] : MR[1]];
-        const [M, det] = await Promise.all([
+        const [M, det, bl, gl] = await Promise.all([
             loadMoney(R),
-            db.from('debts').select('amount_cdf,type').eq('school_id', S.school.id).eq('status', 'en_attente')
+            db.from('debts').select('amount_cdf,type').eq('school_id', S.school.id).eq('status', 'en_attente'),
+            db.from('budgets').select('*').eq('school_id', S.school.id).eq('year', y),
+            db.from('finance_goals').select('target_cdf,saved_cdf').eq('school_id', S.school.id)
         ]);
         if (!still('dash')) return;
         if (M.error || det.error) return finErr(M.error || det.error);
@@ -280,6 +282,7 @@
                 <div class="card stat"><span>Revenus divers</span><b>${fmt(main.rev)}</b></div>
                 <div class="card stat"><span>Dettes (net)</span><b class="${detNet >= 0 ? 'ok' : 'due'}">${fmt(detNet)}</b></div>
             </div>`;
+        h += healthAndForecast(M, main, T ? TR : YR, YR, detNet, bl.error ? [] : (bl.data || []), gl.error ? [] : (gl.data || []), y);
         if (!hasTerms()) h += `<div class="card col"><small>Astuce : enregistrez les dates des trimestres (Réglages) pour suivre le solde par trimestre.</small></div>`;
         h += `<p class=fin-sec>Autres périodes</p>
             <div class="stat-pair fin-small">
@@ -296,6 +299,50 @@
                 <button class="ghost" data-act=goto data-tab=budget>Gérer le budget</button>
             </div>`;
         $('#fin-content').innerHTML = h;
+    }
+
+    /* ---------- Jauge de santé financière + prévision de trésorerie (3 mois) ---------- */
+    function healthAndForecast(M, main, PR, YR, detNet, lines, goals, y) {
+        const today = tdy(), elapsed = R => { const n = days(R[0], R[1]); return n ? Math.min(1, Math.max(0, days(R[0], addDays(today, 1)) / n)) : 1; };
+        // Recouvrement : encaissé / attendu à ce jour sur la période principale
+        const expP = autoRec('scolarite', PR, y) + autoRec('frais', PR, y), expToDate = expP * elapsed(PR);
+        const rec = expToDate > 0 ? Math.min(1, main.enc / expToDate) : 1;
+        // Budget du mois : dépenses réelles vs prévues
+        const m = thisMonth(), MR = mRange(m), pm = { type: 'mois', key: m, year: yearOf(m + '-01') };
+        const planM = DEP.reduce((t, [c]) => t + eff(lines, 'depense', c, pm, MR).v, 0), realM = sumIn(M.exp, MR);
+        const gTot = goals.reduce((t, g) => t + Number(g.target_cdf || 0), 0), gSav = goals.reduce((t, g) => t + Number(g.saved_cdf || 0), 0);
+        const parts = [
+            40 * rec,
+            main.solde >= 0 ? 20 : Math.max(0, 20 * (1 + main.solde / Math.max(1, main.dep))),
+            planM > 0 ? 20 * Math.min(1, planM / Math.max(1, realM)) : 10,
+            detNet >= 0 ? 10 : Math.max(0, 10 * (1 + detNet / Math.max(1, main.enc))),
+            gTot > 0 ? 10 * Math.min(1, gSav / gTot) : 0
+        ];
+        const score = Math.round(parts.reduce((a, b) => a + b, 0));
+        const lab = score >= 75 ? ['Bonne santé', 'var(--ok)'] : score >= 50 ? ['À surveiller', 'var(--gold)'] : ['Fragile', 'var(--bad)'];
+        let h = `<div class="card ring-card"><span><b>Santé financière</b><br><small style="color:${lab[1]}">${lab[0]}</small><br><small>Recouvrement ${Math.round(rec * 100)} % · ${planM > 0 ? 'budget du mois ' + (realM <= planM ? 'respecté' : 'dépassé') : 'pas de budget du mois'}${gTot ? '' : ' · aucune réserve'}</small></span><div class=ring style="--p:${score}"><b>${score}</b></div></div>`;
+
+        // Prévision : mois en cours (reste) + 2 mois suivants
+        const YR0 = [YR[0], today < YR[1] ? addDays(today, 1) : YR[1]];
+        const expY = autoRec('scolarite', YR0, y) + autoRec('frais', YR0, y), encY = sumIn(M.pay, YR0) + sumIn(M.fee, YR0);
+        const rate = expY > 0 ? Math.min(1, encY / expY) : 0.7;
+        const last3 = [1, 2, 3].map(i => sumIn(M.exp, mRange(mShift(m, -i))));
+        const avgDep = last3.some(v => v > 0) ? last3.reduce((a, b) => a + b, 0) / last3.filter(v => v > 0).length : 0;
+        let cash = sumIn(M.pay, YR0) + sumIn(M.fee, YR0) + sumIn(M.rev, YR0) - sumIn(M.exp, YR0), firstNeg = null;
+        const rows = [0, 1, 2].map(i => {
+            const k = mShift(m, i), Rk = mRange(k), p = { type: 'mois', key: k, year: yearOf(k + '-01') }, left = i === 0 ? 1 - elapsed(Rk) : 1;
+            const inn = (autoRec('scolarite', Rk, y) + autoRec('frais', Rk, y)) * rate * left;
+            const plan = DEP.reduce((t, [c]) => t + eff(lines, 'depense', c, p, Rk).v, 0);
+            const outv = (plan > 0 ? Math.max(0, plan - (i === 0 ? realM : 0)) : avgDep * left);
+            cash += inn - outv;
+            if (cash < 0 && !firstNeg) firstNeg = { k, v: cash };
+            return { k, inn, outv, cash };
+        });
+        h += `<div class="card col"><b>Prévision de trésorerie</b><small>Basée sur les frais attendus (recouvrement actuel ${Math.round(rate * 100)} %) et sur le budget${avgDep ? ' ou la moyenne des dépenses' : ''}.</small>`
+            + rows.map(r => `<div class=fin-head style="margin-top:6px"><span>${esc(pLabel({ type: 'mois', key: r.k }))}</span><small>+${fmt(r.inn)} · −${fmt(r.outv)}</small></div><div style="text-align:right"><b class="${r.cash < 0 ? 'due' : 'ok'}">${fmt(r.cash)}</b></div>`).join('')
+            + (firstNeg ? `<div class=fin-note style="margin-top:8px">⚠ À ce rythme, il manquera environ <b>${fmt(-firstNeg.v)}</b> en ${esc(pLabel({ type: 'mois', key: firstNeg.k }).toLowerCase())}.</div>` : `<small class=ok style="margin-top:6px">✓ Pas de manque de trésorerie prévu sur 3 mois.</small>`)
+            + `</div>`;
+        return h;
     }
 
     /* =====================================================================

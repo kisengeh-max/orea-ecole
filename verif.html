@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vérification de reçu — ORÉA École</title>
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--bg:#15140f;--card:#211f19;--tx:#f3eedf;--mut:#a39d8b;--gold:#d8b76a;--ok:#5fb37f;--bad:#d06a5f}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.box{width:100%;max-width:420px;background:var(--card);border:1px solid rgba(216,183,106,.35);border-radius:18px;padding:24px;text-align:center}
+img{width:72px;height:72px;border-radius:14px}
+h1{font-family:Georgia,serif;color:var(--gold);font-size:22px;margin:12px 0 4px}
+.st{font-size:20px;font-weight:800;margin:16px 0}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+.row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
+.row span{color:var(--mut)}
+small{color:var(--mut);display:block;margin-top:16px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="box" id="box">
+  <img src="icon-192.png" alt="">
+  <h1>Vérification de reçu</h1>
+  <p id="msg">Vérification en cours…</p>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+(async function () {
+  const box = document.getElementById('box');
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const head = '<img src="icon-192.png" alt=""><h1>Vérification de reçu</h1>';
+  const q = new URLSearchParams(location.search), id = q.get('id'), k = q.get('k') === 'f' ? 'f' : 'p';
+  const fail = t => { box.innerHTML = head + `<div class="st bad">✗ ${t}</div><small>Ce reçu n’est pas reconnu par ORÉA École. En cas de doute, contactez directement l’école.</small>`; };
+  if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return fail('Lien de vérification invalide');
+  try {
+    const db = supabase.createClient(OREA_CONFIG.SUPABASE_URL, OREA_CONFIG.SUPABASE_ANON_KEY);
+    const { data, error } = await db.rpc('verify_receipt', { p_id: id, p_kind: k });
+    if (error) return fail('Vérification impossible pour le moment');
+    if (!data || !data.ok) return fail('Reçu introuvable');
+    const nf = n => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(n);
+    const no = data.receipt_no ? 'REC-' + String(data.receipt_no).padStart(4, '0') : '—';
+    box.innerHTML = head + `<div class="st ok">✓ Reçu authentique</div>`
+      + `<div class="row"><span>École</span><b>${esc(data.school)}</b></div>`
+      + `<div class="row"><span>Reçu n°</span><b>${esc(no)}</b></div>`
+      + `<div class="row"><span>Élève</span><b>${esc(data.student)}</b></div>`
+      + `<div class="row"><span>Objet</span><b>${esc(data.what || '')}</b></div>`
+      + `<div class="row"><span>Montant</span><b>${esc(nf(data.amount))} ${esc(data.currency)}</b></div>`
+      + `<div class="row"><span>Date</span><b>${esc(new Date(data.date).toLocaleString('fr-FR'))}</b></div>`
+      + `<small>Vérifiez que ces informations correspondent exactement au reçu papier ou à l’image reçue.</small>`;
+  } catch (e) { fail('Pas de connexion internet'); }
+})();
+</script>
+</body>
+</html>

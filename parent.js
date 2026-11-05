@@ -1,4 +1,4 @@
-// ORÉA École — Interface Parent (v71 : dette par trimestre, échéances, accusés de lecture, suppression de compte)
+// ORÉA École — Interface Parent (v72 : + espace parent du personnel de l'école)
 // PARTIE 1/2 — Initialisation, Connexion, Navigation, Accueil, Messages
 
 const tfetch = (u, o = {}) => {
@@ -141,7 +141,7 @@ function render() {
 
 // ---- Vues ----
 function homeView() {
-    let h = `<div class=p-hello>👋 Bonjour <b>${esc(P.me?.full_name || 'Parent')}</b></div>`;
+    let h = (P.staff ? `<div style="margin:6px 0 10px"><a href="./" style="color:var(--gold);font-size:14px;text-decoration:none">← Retour à mon espace école</a></div>` : '') + `<div class=p-hello>👋 Bonjour <b>${esc(P.me?.full_name || 'Parent')}</b></div>`;
     if (!P.children.length) {
         h += `<div class=p-empty><span class=p-ic>👨‍👩‍👧</span>Aucun enfant lié.<br><br><button class=p-btn onclick=addChildView()>+ Ajouter un enfant</button></div>`;
     } else {
@@ -151,7 +151,7 @@ function homeView() {
                 : due > 0 ? `<div class="p-bal p-due">Doit ${fmtCDF(due)}</div>` : `<div class="p-bal p-ok">✓ À jour</div>`;
             return `<div class=p-card onclick="childDetail('${s.id}')"><h3>👤 ${esc(s.name)}</h3>${tag}<div class=p-line>Total payé : ${fmtCDF(Number(s.paid_cdf || 0))}</div></div>`;
         }).join('');
-        h += `<div class=p-actions><button class=p-btn onclick=addChildView()>+ Ajouter un autre enfant</button><button class=ghost style="padding:12px;background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:10px" onclick=logout()>Se déconnecter</button></div><p style="text-align:center;margin:16px 0 4px"><a href="#" onclick="deleteAccountP();return false" style="font-size:11px;color:var(--muted)">Supprimer mon compte</a></p>`;
+        h += `<div class=p-actions><button class=p-btn onclick=addChildView()>+ Ajouter un autre enfant</button><button class=ghost style="padding:12px;background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:10px" onclick=logout()>Se déconnecter</button></div>${P.staff ? '' : `<p style="text-align:center;margin:16px 0 4px"><a href="#" onclick="deleteAccountP();return false" style="font-size:11px;color:var(--muted)">Supprimer mon compte</a></p>`}`;
     }
     $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
 }
@@ -399,7 +399,9 @@ function addChildView() {
         if (e.submitter.value !== 'ok') return;
         e.preventDefault();
         try {
-            const { data, error } = await db.rpc('verifier_code_parent', { p_code: e.target.code.value.trim(), p_name: null });
+            const { data, error } = P.staff
+                ? await db.rpc('staff_link_child', { p_code: e.target.code.value.trim() })
+                : await db.rpc('verifier_code_parent', { p_code: e.target.code.value.trim(), p_name: null });
             if (error) throw error;
             d.close(); toast(data.already ? 'Déjà lié' : '✓ Ajouté');
             P.me = (await loadMe()) || P.me; await loadSchool(); await loadChildren(); await loadK2(); await loadK5(); render();
@@ -491,7 +493,9 @@ async function boot() {
     const r = await db.auth.getSession();
     if (!r.data.session) return authView();
     const prof = await loadMe();
-    if (prof && prof.role && prof.role !== 'parent') { location.href = './'; return; }
+    // Le personnel (directeur, enseignant, percepteur) peut aussi suivre SES enfants ici
+    P.staff = !!(prof && ['directeur', 'enseignant', 'percepteur'].includes(prof.role));
+    if (prof && prof.role && prof.role !== 'parent' && !P.staff) { location.href = './'; return; }
     P.me = prof || { id: r.data.session.user.id, full_name: 'Parent', role: 'parent' };
     P.school_id = prof?.school_id;
     await loadSchool(); await loadChildren(); await loadK2(); await loadK5(); render();
