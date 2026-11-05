@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v58 — quiz_ui.js (Livraison 4 : Banque + Import + Modération)
+   ORÉA École v69 — quiz_ui.js (noms des équipes agrandis)
    Interface animateur du Génie en Herbe.
    ===================================================================== */
 (function () {
@@ -58,7 +58,7 @@
         .qz-side.A .qz-tname{color:#60a5fa}
         .qz-side.B .qz-tname{color:#f87171}
         .qz-side.act{border-color:var(--gold);background:rgba(227,201,120,.06);box-shadow:0 0 18px rgba(227,201,120,.35)}
-        .qz-tname{font-size:12px;font-weight:800;letter-spacing:.06em;text-align:center;line-height:1.15;max-width:100%;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
+        .qz-tname{font-size:clamp(16px,4.6vw,22px);font-weight:900;letter-spacing:.04em;line-height:1.15;text-align:center;line-height:1.15;max-width:100%;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
         .qz-score{font-family:var(--serif);font-weight:900;font-size:clamp(44px,13vw,60px);line-height:1;color:var(--gold);text-shadow:0 0 16px rgba(227,201,120,.45)}
         .qz-score.bump{animation:qzBump .5s}
         .qz-mid{display:flex;flex-direction:column;align-items:center;gap:3px}
@@ -75,8 +75,8 @@
         .qz-q-box{position:relative;z-index:1;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
         .qz-q-box>.sk{margin:40px auto}
         .qz-qwrap{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;align-items:center;gap:12px;padding:6px 16px calc(14px + env(safe-area-inset-bottom));text-align:center;animation:qzFlip .3s ease}
-        .qz-turn{font-size:12px;letter-spacing:.12em;color:var(--mut);font-weight:700}
-        .qz-turn b{color:var(--tc);font-size:14px;margin-left:4px}
+        .qz-turn{font-size:13px;letter-spacing:.1em;color:var(--mut);font-weight:700}
+        .qz-turn b{color:var(--tc);font-size:clamp(18px,5vw,24px);margin-left:4px;letter-spacing:.03em}
         .qz-who-p{font-size:15px;font-weight:800;color:var(--tx);margin-top:2px;letter-spacing:0}
         .qz-theme{font-size:11.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--vio);font-weight:700}
         .qz-qframe{width:100%;max-width:640px;border:2px solid var(--gold);border-radius:20px;padding:16px 14px;background:linear-gradient(180deg,rgba(227,201,120,.07),rgba(139,92,246,.06));box-shadow:0 0 24px rgba(227,201,120,.18),inset 0 0 18px rgba(0,0,0,.4)}

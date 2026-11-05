@@ -3,5 +3,5 @@
 window.OREA_CONFIG={
   SUPABASE_URL:"https://llmqzbomgkgayvhndubn.supabase.co",
   SUPABASE_ANON_KEY:"sb_publishable_lY1lrnM0Fu5TDhVRg-JrVQ_Fp8S4eIW",
-  APP_VERSION:"v58"
+  APP_VERSION:"v69"
 };

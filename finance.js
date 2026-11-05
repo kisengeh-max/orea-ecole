@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v67 — finance.js (lots 2 et 4 : Finance complète + exports PNG)
+   ORÉA École v68 — finance.js (Finance complète + exports PNG + SMS)
    Module de gestion financière du Directeur.
    - Navigation en grille : Tableau de bord + Budget, Dettes, Revenus, Impayés, Dépenses, Bilan
    - Tableau de bord : solde du trimestre en cours (+ mois et année)
@@ -604,7 +604,7 @@
                     ${d.contact_name ? `<small>Contact : ${esc(d.contact_name)}</small>` : ''}
                     <div class="row" style="margin-top:8px">
                         <button class="ghost" style="flex:1;padding:6px;font-size:12px" data-act=payDebt data-id=${d.id}>Marquer comme payé/reçu</button>
-                        ${wl ? `<a class="btn ghost" style="flex:1;padding:6px;font-size:12px;text-decoration:none" href="${esc(wl)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
+                        ${wl ? `<a class="btn ghost" style="flex:1;padding:6px;font-size:12px;text-decoration:none" href="${esc(wl)}" target="_blank" rel="noopener">WhatsApp</a><a class="btn ghost" style="flex:1;padding:6px;font-size:12px;text-decoration:none" href="${esc(smsLink(d.contact_phone, 'Bonjour, concernant « ' + d.label + ' ».'))}">SMS</a>` : ''}
                     </div>
                 </div>
             `;
@@ -626,7 +626,7 @@
             { n: 'cur', l: 'Devise', o: CUR.map(c => [c, c]), v: S.cur },
             { n: 'due_date', l: 'Date d’échéance', t: 'date', v: tdy() },
             { n: 'contact_name', l: 'Nom du contact (facultatif)', r: false },
-            { n: 'contact_phone', l: 'Téléphone WhatsApp (facultatif)', t: 'tel', r: false }
+            { n: 'contact_phone', l: 'Téléphone (WhatsApp / SMS, facultatif)', t: 'tel', r: false }
         ], async v => {
             if (!(+v.amount > 0)) throw Error('Montant invalide');
             const rate = S.school.rates[v.cur] || 1;

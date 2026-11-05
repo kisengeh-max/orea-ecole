@@ -101,7 +101,7 @@
 .om-bar textarea{margin:0;flex:1;resize:none;max-height:120px;min-height:44px;border-radius:22px;padding:11px 16px}
 .om-bar button{width:46px!important;min-height:46px!important;height:46px;border-radius:50%!important;padding:0!important;flex:none;font-size:20px}
 .om-subj{margin:0 10px 0;padding:8px 10px 0;background:var(--card)}
-.om-subj input{margin:0}
+.om-subj input{margin:0;min-height:38px;padding:8px 12px;font-size:14px}
 .om-ro{padding:12px;text-align:center;color:var(--mut);font-size:13px;background:var(--card);border-top:1px solid var(--line)}
 .om-chips{display:flex;gap:6px;padding:8px 12px 2px;overflow-x:auto;background:var(--bg)}
 .om-chips button{width:auto!important;min-height:34px!important;padding:6px 14px!important;font-size:13px!important;border-radius:18px!important;flex:none}
@@ -291,7 +291,7 @@
             + `<div class="om-list" id="om-ls"><div class="om-empty">Chargement…</div></div>`
             + `<button class="om-new" id="om-nw" hidden>↓ Nouveau message</button>`
             + (canWrite
-                ? (meta.broadcast ? `<div class="om-subj"><input id="om-su" placeholder="Objet (facultatif)" maxlength="80"></div>` : '')
+                ? `<div class="om-subj"><input id="om-su" placeholder="Objet (facultatif)" maxlength="80"></div>`
                   + `<div class="om-bar"><textarea id="om-in" rows="1" placeholder="Votre message…" maxlength="4000"></textarea><button id="om-sd" aria-label="Envoyer">➤</button></div>`
                 : `<div class="om-ro">Lecture seule : seul le directeur écrit à toute l’équipe.</div>`);
 
@@ -507,7 +507,7 @@
         let subject = null;
         const mm = /^Re:\s*«?(.{1,80}?)»?\s*(\n|$)/.exec(txt);
         if (mm) subject = mm[1].trim().slice(0, 80);
-        else if (meta.broadcast) { const su = $q('#om-su', T.ov); subject = su && su.value.trim() ? su.value.trim().slice(0, 80) : null; }
+        else { const su = $q('#om-su', T.ov); subject = su && su.value.trim() ? su.value.trim().slice(0, 80) : null; } // objet facultatif, dans toutes les conversations
         const row = {
             school_id: meta.school_id || null, channel: meta.ch, thread_key: meta.tk,
             student_id: meta.student_id || null, ambassador_id: meta.ambassador_id || null,

@@ -56,7 +56,7 @@ function admSchoolSection() {
             ? 'Prix convenu / mois : <b>' + ambMoney(s.sub_price, s.sub_cur) + '</b>' + (byAmb ? ' · Commission ' + nf(Number(s.commission_pct), 0) + ' % : <b>' + ambMoney(Number(s.sub_price) * Number(s.commission_pct) / 100, s.sub_cur) + '</b>' : '')
             : 'Prix convenu / mois : <b>non défini</b>';
         return `<div class="card col"><b>${esc(s.name)}</b><span>${esc(s.director_name || '—')} · ${esc(s.director_email || '')}</span><small>${s.students} élèves · ${s.members} compte(s) · code ${esc(s.code)}</small><span class="${ok && left > 7 ? 'ok' : 'due'}">${ok ? 'Actif jusqu’au ' + d.toLocaleDateString('fr-FR') + ' (' + left + ' j)' : '⛔ Expiré'}</span><span>${sp}</span><span>${pr}</span>`
-            + `<div class=row>${waUrl ? `<a class="btn ghost" style="width:auto;text-decoration:none" href="${waUrl}" target="_blank">💬 Relance WhatsApp</a>` : `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}')">📞 Ajouter WhatsApp</button>`}${s.phone ? `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}','${esc(s.phone)}')">✏</button>` : ''}</div>`
+            + `<div class=row>${waUrl ? `<a class="btn ghost" style="width:auto;text-decoration:none" href="${waUrl}" target="_blank">💬 Relance WhatsApp</a><a class="btn ghost" style="width:auto;text-decoration:none" href="${esc(smsLink(s.phone, waMsg))}">SMS</a>` : `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}')">📞 Ajouter WhatsApp</button>`}${s.phone ? `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}','${esc(s.phone)}')">✏</button>` : ''}</div>`
             + `<div class=row><button class=ghost onclick="admSponsor('${s.id}')">🤝 Parrain</button><button class=ghost onclick="admPrice('${s.id}')">💰 Prix</button></div>`
             + `<div class=row>${[1, 2, 3, 6].map(n => `<button class=ghost onclick="extModal('${s.id}',${n})">+${n} m</button>`).join('')}</div></div>`;
     }).join('') : '<p class=empty>Aucune école pour le moment.</p>');
@@ -101,7 +101,7 @@ function admAmbSection() {
             + '<small>' + a.schools_count + ' école(s) · ' + a.active_schools + ' active(s) · ' + a.prospects_count + ' prospect(s)</small>'
             + '<div class=row>' + btn
             + '<button class=ghost onclick="admAmbPct(\'' + a.user_id + '\')">% Taux</button>'
-            + (wa ? '<a class="btn ghost" style="width:auto;text-decoration:none" target=_blank href="' + wa + '">💬</a>' : '') + '</div></div>';
+            + (wa ? '<a class="btn ghost" style="width:auto;text-decoration:none" target=_blank href="' + wa + '">💬</a><a class="btn ghost" style="width:auto;text-decoration:none" href="' + esc(smsLink(a.phone, 'Bonjour ' + a.full_name + ', ici ORÉA École.')) + '">SMS</a>' : '') + '</div></div>';
     }).join('');
 }
 
@@ -136,6 +136,6 @@ function admProSection() {
             + '<span class="amb-pill' + (p.status === 'inscrite' ? ' in' : '') + '">' + (p.status === 'inscrite' ? '✅ ' : '') + AMB_ST[p.status] + '</span>'
             + '<small>Ambassadeur : ' + esc(p.amb_name) + (p.amb_status !== 'active' ? ' (' + (p.amb_status === 'blocked' ? 'bloqué' : 'en attente') + ')' : '') + '</small>'
             + (p.note ? '<small>' + esc(p.note) + '</small>' : '')
-            + (wa ? '<div class=row><a class="btn ghost" style="width:auto;text-decoration:none" target=_blank href="' + wa + '">💬 WhatsApp</a></div>' : '') + '</div>';
+            + (wa ? '<div class=row><a class="btn ghost" style="width:auto;text-decoration:none" target=_blank href="' + wa + '">💬 WhatsApp</a><a class="btn ghost" style="width:auto;text-decoration:none" href="' + esc(smsLink(p.phone, msg)) + '">SMS</a></div>' : '') + '</div>';
     }).join('');
 }

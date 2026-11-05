@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v68 — timetable.js (modèle d'horaire par défaut modifiable par le directeur)
+   ORÉA École v69 — timetable.js (modèle par défaut appliqué automatiquement, copier vers / depuis une classe)
    « Horaires des cours » : grille 2x3 (Lundi/Mardi, Mercredi/Jeudi, 
    Vendredi/Samedi). Le cours en cours est surligné.
    ===================================================================== */
@@ -102,7 +102,7 @@
         if (!canEdit()) TT.model = false;
         let h = back + '<h3>Horaires des cours</h3>' + yb;
         h += `<div class=bar><select id=ttc>${canEdit() ? `<option value="${MODEL}" ${TT.model ? 'selected' : ''}>★ Modèle par défaut (nouvelles classes)</option>` : ''}${yc().map(c => `<option value="${c.id}" ${!TT.model && c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
-        if (canEdit()) h += `<small class=tt-ro id=tt-mi style="display:${TT.model ? 'block' : 'none'}">Ce modèle est copié automatiquement dans chaque nouvelle classe. Les classes existantes ne changent pas, sauf si tu touches « Appliquer le modèle » dans une classe.</small><div class=row id=tt-cr style="display:${TT.model ? 'none' : 'flex'}"><button class=ghost id=tt-cp>📋 Copier vers une classe</button><button class=ghost id=tt-df>↺ Appliquer le modèle</button></div>`;
+        if (canEdit()) h += `<small class=tt-ro id=tt-mi style="display:${TT.model ? 'block' : 'none'}">Ce modèle est copié automatiquement dans chaque nouvelle classe. Les classes existantes ne changent pas, sauf si tu touches « Appliquer le modèle » dans une classe.</small><div class=row id=tt-cr style="display:${TT.model ? 'none' : 'flex'}"><button class=ghost id=tt-cp>Copier vers une classe</button><button class=ghost id=tt-cf>Copier depuis une classe</button></div>`;
         else h += `<small class=tt-ro>Seul le directeur peut modifier les horaires.</small>`;
         h += `<div id=ttl><div class=sk></div><div class=sk></div><div class=sk></div></div>`;
         if (canEdit()) h += `<div class=tt-bar><button id=tt-ed disabled>✏️ Modifier</button><button class=ghost id=tt-rm disabled>🗑 Supprimer</button><button id=tt-ad>＋ Ajouter</button></div><small class=tt-ro>Touche un créneau pour le choisir, puis « Modifier » ou « Supprimer ».</small>`;
@@ -117,7 +117,7 @@
             $('#tt-ed').onclick = editSlot;
             $('#tt-rm').onclick = removeSlot;
             $('#tt-cp').onclick = copyTT;
-            $('#tt-df').onclick = applyDefault;
+            $('#tt-cf').onclick = copyFrom;
         }
         loadTT();
     };
@@ -131,6 +131,15 @@
         const el = document.getElementById('ttl'); if (!el) return;
         if (error) { el.innerHTML = `<p class=empty>${esc(error.message)}</p>`; return; }
         TT.rows = data || [];
+        // Classe sans horaire : le modèle par défaut est appliqué automatiquement (une fois)
+        if (!mod && !TT.rows.length && canEdit()) {
+            TT.auto = TT.auto || {};
+            if (!TT.auto[cid]) {
+                TT.auto[cid] = 1;
+                const r = await db.rpc('apply_default_timetable', { p_class: cid, p_replace: false });
+                if (!r.error && r.data > 0) return loadTT();
+            }
+        }
         if (!TT.rows.some(r => r.id === TT.sel)) TT.sel = null;
         drawGrid();
     }
@@ -139,7 +148,9 @@
         const el = document.getElementById('ttl'); if (!el) return;
         el.innerHTML = TT.rows.length ? grid(TT.rows, canEdit(), TT.sel)
             : TT.model ? `<p class=empty data-ic="📅">Le modèle est vide : les nouvelles classes reçoivent l’horaire standard (6h30 → 12h15).</p><div class=col><button id=tt-ms>Partir de l’horaire standard</button>${yc().length ? `<button class=ghost id=tt-mc>Partir de l’horaire d’une classe</button>` : ''}</div>`
-            : `<p class=empty data-ic="📅">Aucun horaire pour cette classe.${canEdit() ? '<br>Touche « Appliquer le modèle » ou « Ajouter ».' : ''}</p>`;
+            : `<p class=empty data-ic="📅">${canEdit() ? 'Aucun horaire pour cette classe.<br>Touche « Ajouter » ou « Copier depuis une classe ».' : 'L’horaire de cette classe n’a pas encore été préparé par la direction.'}</p>`;
+        if (!TT.model && canEdit()) el.insertAdjacentHTML('beforeend', `<p style="text-align:center;margin:10px 0 0"><a href="#" id=tt-df style="font-size:12px;color:var(--mut)">Réappliquer le modèle par défaut</a></p>`);
+        const df = document.getElementById('tt-df'); if (df) df.onclick = e => { e.preventDefault(); applyDefault(); };
         const ms = document.getElementById('tt-ms'), mc = document.getElementById('tt-mc');
         if (ms) ms.onclick = modelFromStd;
         if (mc) mc.onclick = modelFromClass;
@@ -220,6 +231,20 @@
             const { data, error } = await db.rpc('copy_timetable', { p_from: S.cls, p_to: to.id });
             if (error) throw error;
             say((data || 0) + ' créneaux copiés vers ' + to.name);
+        });
+    }
+    // Reprend l'horaire d'une autre classe (remplace celui de la classe affichée)
+    function copyFrom() {
+        const others = yc().filter(c => c.id !== S.cls);
+        if (!others.length) return say('Il faut au moins une autre classe.');
+        ask('Copier vers ' + esc(clsName()) + ' l’horaire de…', [
+            { n: 'from', l: 'Classe source (les horaires actuels de ' + esc(clsName()) + ' seront remplacés)', o: others.map(c => [c.id, esc(c.name)]) }
+        ], async v => {
+            const fr = others.find(c => c.id === v.from); if (!fr) return;
+            if (!confirm('Remplacer tous les horaires de « ' + clsName() + ' » par ceux de « ' + fr.name + ' » ?')) return;
+            const { data, error } = await db.rpc('copy_timetable', { p_from: fr.id, p_to: S.cls });
+            if (error) throw error;
+            say((data || 0) + ' créneaux copiés depuis ' + fr.name); TT.sel = null; loadTT();
         });
     }
     // Remplit le modèle avec l'horaire standard (lundi → samedi)

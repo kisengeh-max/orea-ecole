@@ -163,7 +163,7 @@ function newYear() {
         if (!rows.length) throw Error('Aucune classe à copier');
         const { data: nc, error } = await db.from('classes').insert(rows).select();
         if (error) throw error;
-        await applyDefaultTT(nc);
+
         const fo = S.fees.filter(f => cy(f) === S.year && !f.student_id);
         if (fo.length && nc) {
             const nm = Object.fromEntries(S.classes.map(c => [c.id, c.name]));
@@ -709,7 +709,7 @@ function addClass(yr) {
     ask('Nouvelle classe', [{ n: 'name', l: 'Nom (ex : 3e A)' }, { n: 'year', l: 'Année scolaire', v: yr || S.year || '' }, { n: 't1', l: 'Frais 1er trimestre', t: 'number' }, { n: 't2', l: 'Frais 2e trimestre', t: 'number' }, { n: 't3', l: 'Frais 3e trimestre', t: 'number' }, { n: 'cur', l: 'Devise des frais', o: CUR.map(c => [c, c]), v: S.cur }], async v => {
         const { data: nc, error } = await db.from('classes').insert({ school_id: S.school.id, name: v.name.trim(), year: v.year.trim(), fee_t1: +v.t1, fee_t2: +v.t2, fee_t3: +v.t3, fee_currency: v.cur }).select('id');
         if (error) throw error;
-        await applyDefaultTT(nc); S.year = cy({ year: v.year.trim() }); S.cls = null; localStorage['orea_year_' + S.school.id] = S.year; await load(); render();
+ S.year = cy({ year: v.year.trim() }); S.cls = null; localStorage['orea_year_' + S.school.id] = S.year; await load(); render();
     });
 }
 function addStudent() {
@@ -733,9 +733,9 @@ function menu(id) {
         const fs = fees4(s).filter(f => feeRem(s, f) > 0);
         head = debtLines(s)
             + (fs.length ? '<p><small>Autres frais : ' + fs.map(f => esc(f.name) + ' reste ' + fmt(feeRemCdf(s, f))).join(' · ') + '</small></p>' : '')
-            + '<div class=card id=pcode style="cursor:pointer"><span><small>Code parent</small><br><b id=pcv style="font-size:20px;letter-spacing:.12em">…</b></span><small>Toucher pour copier</small></div>';
+            + '<div class=card id=pcode style="display:block"><small>Code parent</small><br><b id=pcv style="font-size:22px;letter-spacing:.14em">…</b><div class=row id=pcb style="display:none;margin-top:8px"><button class=ghost id=pc1>Copier</button><button class=ghost id=pc2>SMS</button><button class=ghost id=pc3>WhatsApp</button></div></div>';
     }
-    const d = show(`<h3>${esc(s.name)}</h3>${head}<div class=col>${R !== 'enseignant' ? '<button id=m2>Paiement</button>' : ''}${R !== 'percepteur' ? '<button class=ghost id=m7>Sanctions</button>' : ''}${R === 'directeur' || R === 'enseignant' ? '<button class=ghost id=m9>Cotes</button>' : ''}${D ? '<button class=ghost id=m6>Message au parent</button><button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>' : ''}<button class=ghost id=m3>Fermer</button></div>`);
+    const d = show(`<h3>${esc(s.name)}</h3>${head}<div class=col>${R !== 'enseignant' ? '<button id=m2>Paiement</button>' : ''}${R !== 'percepteur' ? '<button class=ghost id=m7>Avertissements et sanctions</button>' : ''}${R === 'directeur' || R === 'enseignant' ? '<button class=ghost id=m9>Cotes</button>' : ''}${D ? '<button class=ghost id=m6>Message au parent</button><button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>' : ''}<button class=ghost id=m3>Fermer</button></div>`);
     const b = (k, f) => { const e = d.querySelector('#' + k); if (e) e.onclick = f; };
     b('m2', () => hist(id)); b('m3', () => d.close()); b('m4', () => editStudent(id)); b('m5', () => { d.close(); delStudent(id); }); b('m6', () => wa(id)); b('m7', () => sanc(id)); b('m9', () => { if (typeof openStuCotes === 'function') openStuCotes(id); });
     if (D) {
@@ -743,9 +743,18 @@ function menu(id) {
             const v = d.querySelector('#pcv'); if (!v || !d.open) return;
             if (error || !data) { v.textContent = 'introuvable'; return; }
             v.textContent = data;
-            d.querySelector('#pcode').onclick = () => { (navigator.clipboard ? navigator.clipboard.writeText(data) : Promise.reject()).then(() => toast('Code copié !')).catch(() => toast('Code : ' + data)); };
+            const msg = codeMsg(s, data), hasPh = !!s.parent_phone;
+            d.querySelector('#pcb').style.display = 'flex';
+            d.querySelector('#pc1').onclick = () => { (navigator.clipboard ? navigator.clipboard.writeText(data) : Promise.reject()).then(() => toast('Code copié !')).catch(() => toast('Code : ' + data)); };
+            d.querySelector('#pc2').onclick = () => hasPh ? openSms(s.parent_phone, msg) : toast('Aucun numéro de parent enregistré.');
+            d.querySelector('#pc3').onclick = () => { const u = hasPh && waLink(s.parent_phone, msg); if (u) window.open(u, '_blank'); else toast('Aucun numéro de parent enregistré.'); };
         });
     }
+}
+// Message d'envoi du code parent (avec le lien de l'espace parent)
+function codeMsg(s, code) {
+    const link = location.origin + location.pathname.replace(/[^/]*$/, '') + 'parent.html';
+    return `Bonjour, ici ${S.school.name}. Voici le code parent de ${s.name} : ${code}. Avec ce code, suivez sa scolarité (paiements, notes, présences) sur ORÉA École : ${link}`;
 }
 // Dette du trimestre en cours (en grand) + reste des trimestres précédents (en petit)
 function debtLines(s) {
@@ -758,12 +767,16 @@ function debtLines(s) {
 /* ---------- Trimestres et WhatsApp ---------- */
 const COUNTRY = '243';
 const trims = s => [1, 2, 3].map(i => { const due = Number(s['due' + i + '_cdf'] || 0), paid = Number(s['p' + i + '_cdf'] || 0); return [i, Math.max(0, due - paid), due, paid]; });
-function waLink(phone, msg) {
+function telNum(phone) {
     let n = String(phone || '').replace(/[^\d]/g, '');
     if (!n) return null;
     if (n.startsWith('00')) n = n.slice(2); else if (n.startsWith('0')) n = COUNTRY + n.slice(1);
-    return 'https://wa.me/' + n + '?text=' + encodeURIComponent(msg);
+    return n;
 }
+function waLink(phone, msg) { const n = telNum(phone); return n ? 'https://wa.me/' + n + '?text=' + encodeURIComponent(msg) : null; }
+// SMS : ouvre l'application SMS du téléphone avec le message déjà écrit (envoi par le forfait du téléphone)
+function smsLink(phone, msg) { const n = telNum(phone); return n ? 'sms:+' + n + '?body=' + encodeURIComponent(msg) : null; }
+function openSms(phone, msg) { const u = smsLink(phone, msg); if (!u) { toast('Numéro invalide'); return false; } location.href = u; return true; }
 const logMsg = (sid, kind, body) => db.from('messages_log').insert({ school_id: S.school.id, student_id: sid, kind, body }).then(() => { }, () => { });
 const feeMsg = s => { const hi = `Bonjour, ici ${S.school.name}. `, rest = trims(s).filter(t => t[1] > 0).map(t => 'T' + t[0] + ' : ' + fmt(t[1])).concat(fees4(s).filter(f => feeRem(s, f) > 0).map(f => f.name + ' : ' + fmt(feeRemCdf(s, f)))).join(', '); return s.balance_cdf > 0 ? `${hi}Concernant ${s.name} : il reste ${fmt(s.balance_cdf)} à payer (${rest}). Merci de régulariser.` : `${hi}Les frais de ${s.name} sont entièrement soldés. Merci !`; };
 const fillTpl = (t, s) => String(t || '').replace(/{eleve}/g, s.name).replace(/{classe}/g, cnm(s.class_id)).replace(/{reste}/g, fmt(s.balance_cdf)).replace(/{ecole}/g, S.school.name);
@@ -786,12 +799,13 @@ async function wa(id) {
     };
     C.forEach(c => { M['c_' + c.id] = fillTpl(c.text, s); });
     const ph = !!s.parent_phone;
-    const d = show(`<h3>Message au parent · ${esc(s.name)}</h3><label>Sujet<select id=wk><option value=frais>Frais restants</option><option value=absence>Absences</option><option value=sanction>Sanction</option>${C.map(c => `<option value="c_${esc(c.id)}">${esc(c.name)}</option>`).join('')}<option value=libre>Message libre</option></select></label><label>Message<textarea id=wm rows=6 style="width:100%">${esc(M.frais)}</textarea></label><div class=col>${ph ? '' : '<small>Aucun numéro WhatsApp enregistré : seule la messagerie ORÉA est possible.</small>'}<button id=ws1 ${ph ? '' : 'disabled'}>Message par WhatsApp</button><button class=ghost id=ws2>Messagerie ORÉA</button><button class=ghost id=ws3 ${ph ? '' : 'disabled'}>Les 2</button><button class=ghost id=wc>Fermer</button></div>`);
+    const d = show(`<h3>Message au parent · ${esc(s.name)}</h3><label>Sujet<select id=wk><option value=frais>Frais restants</option><option value=absence>Absences</option><option value=sanction>Sanction</option>${C.map(c => `<option value="c_${esc(c.id)}">${esc(c.name)}</option>`).join('')}<option value=libre>Message libre</option></select></label><label>Message<textarea id=wm rows=6 style="width:100%">${esc(M.frais)}</textarea></label><div class=col>${ph ? '' : '<small>Aucun numéro de téléphone enregistré : seule la messagerie ORÉA est possible.</small>'}<button id=ws1 ${ph ? '' : 'disabled'}>Message par WhatsApp</button><button class=ghost id=ws4 ${ph ? '' : 'disabled'}>Message par SMS</button><button class=ghost id=ws2>Messagerie ORÉA</button><button class=ghost id=ws3 ${ph ? '' : 'disabled'}>Les 2</button><button class=ghost id=wc>Fermer</button></div>`);
     d.querySelector('#wk').onchange = e => { d.querySelector('#wm').value = M[e.target.value]; };
     d.querySelector('#wc').onclick = () => d.close();
-    const go = async (useWa, useOrea, btn) => {
+    const go = async (useWa, useOrea, btn, useSms) => {
         const m = d.querySelector('#wm').value.trim(), k = d.querySelector('#wk').value;
         if (!m) return toast('Le message est vide.');
+        if (useSms) { if (!openSms(s.parent_phone, m)) return; logMsg(id, k.startsWith('c_') ? 'libre' : k, m); d.close(); return toast('SMS prêt à envoyer'); }
         if (useWa) { // WhatsApp d'abord : l'ouverture doit suivre directement le toucher
             const u = waLink(s.parent_phone, m);
             if (!u) return toast('Numéro WhatsApp invalide');
@@ -809,6 +823,7 @@ async function wa(id) {
     d.querySelector('#ws1').onclick = e => go(true, false, e.currentTarget);
     d.querySelector('#ws2').onclick = e => go(false, true, e.currentTarget);
     d.querySelector('#ws3').onclick = e => go(true, true, e.currentTarget);
+    d.querySelector('#ws4').onclick = e => go(false, false, e.currentTarget, true);
 }
 function editFees(id) {
     const c = S.classes.find(x => x.id === id);
@@ -883,7 +898,7 @@ async function adminDraw() {
         const ok = left > 0;
         const waMsg = ok ? `Bonjour, l’abonnement de ${s.name} arrive à échéance dans ${left} jour(s).` : `Bonjour, l’abonnement de ${s.name} est arrivé à échéance.`;
         const waUrl = s.phone ? waLink(s.phone, waMsg) : null;
-        return `<div class="card col"><b>${esc(s.name)}</b><span>${esc(s.director_name || '—')} · ${esc(s.director_email || '')}</span><small>${s.students} élèves · ${s.members} compte(s) · code ${esc(s.code)}</small><span class="${ok && left > 7 ? 'ok' : 'due'}">${ok ? 'Actif jusqu’au ' + d.toLocaleDateString('fr-FR') + ' (' + left + ' j)' : '⛔ Expiré'}</span><div class=row>${waUrl ? `<a class="btn ghost" style="width:auto;text-decoration:none" href="${waUrl}" target="_blank">💬 Relance WhatsApp</a>` : `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}')">📞 Ajouter WhatsApp</button>`}${s.phone ? `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}','${esc(s.phone)}')">✏</button>` : ''}</div><div class=row>${[1, 2, 3, 6].map(n => `<button class=ghost onclick="extModal('${s.id}',${n})">+${n} m</button>`).join('')}</div></div>`;
+        return `<div class="card col"><b>${esc(s.name)}</b><span>${esc(s.director_name || '—')} · ${esc(s.director_email || '')}</span><small>${s.students} élèves · ${s.members} compte(s) · code ${esc(s.code)}</small><span class="${ok && left > 7 ? 'ok' : 'due'}">${ok ? 'Actif jusqu’au ' + d.toLocaleDateString('fr-FR') + ' (' + left + ' j)' : '⛔ Expiré'}</span><div class=row>${waUrl ? `<a class="btn ghost" style="width:auto;text-decoration:none" href="${waUrl}" target="_blank">💬 Relance WhatsApp</a><a class="btn ghost" style="width:auto;text-decoration:none" href="${esc(smsLink(s.phone, waMsg))}">SMS</a>` : `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}')">📞 Ajouter WhatsApp</button>`}${s.phone ? `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}','${esc(s.phone)}')">✏</button>` : ''}</div><div class=row>${[1, 2, 3, 6].map(n => `<button class=ghost onclick="extModal('${s.id}',${n})">+${n} m</button>`).join('')}</div></div>`;
     }).join('') : '<p class=empty>Aucune école pour le moment.</p>') + installCard() + '<button class=ghost onclick=out()>Déconnexion</button>';
     $('#main').innerHTML = h;
 }
@@ -1039,8 +1054,9 @@ async function receipt(p, sid) {
     const file = new File([blob], fn, { type: 'image/png' });
     const txt = 'Reçu ' + (p.receipt_no ? rno(p) : 'provisoire') + ' — ' + S.school.name + '\n' + s.name + ' : ' + nf(p.amount) + ' ' + p.currency;
     const can = !!(navigator.canShare && navigator.canShare({ files: [file] }));
-    const d = show(`<h3>Reçu ${p.receipt_no ? rno(p) : 'provisoire'}</h3><div class=col><button id=rw>📤 Envoyer sur WhatsApp</button><a class="btn ghost" download="${fn}" href="${url}">Télécharger PNG</a><button class=ghost id=rc>Fermer</button></div><img src="${url}" alt="Reçu">`);
+    const d = show(`<h3>Reçu ${p.receipt_no ? rno(p) : 'provisoire'}</h3><div class=col><button id=rw>📤 Envoyer sur WhatsApp</button>${s.parent_phone ? '<button class=ghost id=rs>💬 Envoyer par SMS</button>' : ''}<a class="btn ghost" download="${fn}" href="${url}">Télécharger PNG</a><button class=ghost id=rc>Fermer</button></div><img src="${url}" alt="Reçu">`);
     d.querySelector('#rc').onclick = () => d.close();
+    const rsb = d.querySelector('#rs'); if (rsb) rsb.onclick = () => openSms(s.parent_phone, txt);
     d.querySelector('#rw').onclick = async () => {
         if (can) { try { await navigator.share({ files: [file], text: txt }); } catch (e) { if (e.name !== 'AbortError') toast('Partage impossible.'); } }
         else { const a = document.createElement('a'); a.href = url; a.download = fn; a.click(); const u = waLink(s.parent_phone, txt); if (u) window.open(u, '_blank'); else toast('Image téléchargée.'); }
@@ -1159,17 +1175,23 @@ function icsRappel() {
 }
 
 /* ---------- Sanctions et équipe ---------- */
+const WARN_KINDS = ['Avertissement oral', 'Avertissement écrit'];
+const SANC_KINDS = ['Retenue', 'Exclusion temporaire', 'Travail d’intérêt', 'Autre'];
+const isWarn = k => /^avertissement/i.test(String(k || ''));
 async function sanc(id) {
     const s = S.stu.find(x => x.id === id);
     const { data, error } = await db.from('sanctions').select('*').eq('student_id', id).order('created_at', { ascending: false });
     if (error) return toast(error.message);
-    const d = show(`<h3>Sanctions — ${esc(s.name)}</h3>${data.length ? data.map(x => `<div class="card col"><b>${esc(x.kind)}</b><small>${new Date(x.day + 'T00:00').toLocaleDateString('fr-FR')}${x.note ? ' · ' + esc(x.note) : ''}</small>${dir() ? `<button class=ghost data-x=${x.id}>Supprimer</button>` : ''}</div>`).join('') : '<p class=empty>Aucune sanction.</p>'}<div class=col><button id=sa>+ Ajouter</button><button class=ghost id=sc>Fermer</button></div>`);
+    const nW = data.filter(x => isWarn(x.kind)).length, nS = data.length - nW;
+    const d = show(`<h3>Avertissements et sanctions — ${esc(s.name)}</h3>${data.length ? `<small>${nW} avertissement(s) · ${nS} sanction(s)${nW >= 3 ? ' · <b class=due>3 avertissements atteints</b>' : ''}</small>` : ''}${data.length ? data.map(x => `<div class="card col" style="border-left:3px solid ${isWarn(x.kind) ? 'var(--gold)' : 'var(--bad)'}"><b>${esc(x.kind)}</b><small>${new Date(x.day + 'T00:00').toLocaleDateString('fr-FR')}${x.note ? ' · ' + esc(x.note) : ''}</small>${dir() ? `<button class=ghost data-x=${x.id}>Supprimer</button>` : ''}</div>`).join('') : '<p class=empty>Aucun avertissement ni sanction.</p>'}<div class=col><button id=sw>+ Avertissement</button><button class=ghost id=sa>+ Sanction</button><button class=ghost id=sc>Fermer</button></div>`);
     d.querySelector('#sc').onclick = () => d.close();
     d.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => { if (!confirm('Supprimer ?')) return; const { error } = await db.from('sanctions').delete().eq('id', b.dataset.x); error ? toast(error.message) : sanc(id); });
-    d.querySelector('#sa').onclick = () => ask('Nouvelle sanction', [{ n: 'kind', l: 'Type', o: ['Avertissement', 'Retenue', 'Exclusion temporaire', 'Autre'].map(k => [k, k]) }, { n: 'day', l: 'Date', t: 'date', v: tdy() }, { n: 'note', l: 'Détail', r: false }], async v => {
+    const add = (title, kinds) => ask(title + ' — ' + esc(s.name), [{ n: 'kind', l: 'Type', o: kinds.map(k => [k, k]) }, { n: 'day', l: 'Date', t: 'date', v: tdy() }, { n: 'note', l: 'Motif / détail', r: false }], async v => {
         const { error } = await db.from('sanctions').insert({ school_id: S.school.id, student_id: id, kind: v.kind, day: v.day, note: v.note.trim() || null });
-        if (error) throw error; toast('Enregistrée'); sanc(id);
+        if (error) throw error; toast(isWarn(v.kind) ? 'Avertissement enregistré' : 'Sanction enregistrée'); sanc(id);
     });
+    d.querySelector('#sw').onclick = () => add('Nouvel avertissement', WARN_KINDS);
+    d.querySelector('#sa').onclick = () => add('Nouvelle sanction', SANC_KINDS);
 }
 async function team() {
     const { data, error } = await db.from('profiles').select('*').order('full_name');
@@ -1463,14 +1485,20 @@ async function reminders() {
     const since = new Date(Date.now() - 7 * 864e5).toISOString();
     const r = await db.from('messages_log').select('student_id,created_at').eq('kind', 'frais').gte('created_at', since);
     const sent = new Map(); (r.data || []).forEach(m => { const t = +new Date(m.created_at); if (!(sent.get(m.student_id) > t)) sent.set(m.student_id, t); });
-    const f = { cls: '', late: false };
-    const go = s => { const m = getTpl('frais', s), u = waLink(s.parent_phone, m); if (!u) return toast('Numéro invalide'); window.open(u, '_blank'); logMsg(s.id, 'frais', m); sent.set(s.id, Date.now()); draw(); };
+    const f = { cls: '', late: false, sms: localStorage.getItem('orea_relance_sms') === '1' };
+    const go = s => {
+        const m = getTpl('frais', s);
+        if (f.sms) { if (!openSms(s.parent_phone, m)) return; }
+        else { const u = waLink(s.parent_phone, m); if (!u) return toast('Numéro invalide'); window.open(u, '_blank'); }
+        logMsg(s.id, 'frais', m); sent.set(s.id, Date.now()); draw();
+    };
     const draw = () => {
         const all = ys().filter(s => s.balance_cdf > 0 && (!f.cls || s.class_id === f.cls) && (!f.late || status(s) === 'late')), no = all.filter(s => !s.parent_phone).length;
         const l = all.filter(s => s.parent_phone).sort((a, b) => (sent.has(a.id) - sent.has(b.id)) || b.balance_cdf - a.balance_cdf), done = l.filter(s => sent.has(s.id)).length, nx = l.find(s => !sent.has(s.id)), pc = l.length ? Math.round(100 * done / l.length) : 0;
-        const d = show(`<h3>Relance des parents</h3><select id=rcl><option value="">Toutes les classes</option>${yc().map(c => `<option value="${c.id}" ${c.id === f.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>${hasTerms() ? `<div class=chips><button class="chip ${f.late ? '' : 'on'}" data-f=all>Tous les impayés</button><button class="chip ${f.late ? 'on' : ''}" data-f=late>En retard</button></div>` : ''}<small>Relancés ces 7 derniers jours : <b>${done} / ${l.length}</b></small><div class=pbar style="margin:6px 0 10px"><i style="width:${pc}%;background:var(--gold)"></i></div>${nx ? `<button id=rn>▶ Relancer le suivant · ${esc(nx.name)}</button>` : l.length ? '<p class=ok style="text-align:center">✓ Tous les parents ont été relancés</p>' : ''}${l.length ? l.map(s => `<div class=card><span>${status(s) === 'late' ? '🔴 ' : ''}${esc(s.name)}<br><small>${fmt(s.balance_cdf)}${sent.has(s.id) ? ' · ✓ relancé ' + ago(sent.get(s.id)) : ''}</small></span><button class=ghost style=width:auto data-w=${s.id}>${sent.has(s.id) ? 'Renvoyer' : 'WhatsApp'}</button></div>`).join('') : '<p class=empty>Aucun impayé avec numéro.</p>'}${no ? `<small>${no} élève(s) sans numéro ignoré(s).</small>` : ''}<button class=ghost id=rc2>Fermer</button>`);
+        const d = show(`<h3>Relance des parents</h3><select id=rcl><option value="">Toutes les classes</option>${yc().map(c => `<option value="${c.id}" ${c.id === f.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>${hasTerms() ? `<div class=chips><button class="chip ${f.late ? '' : 'on'}" data-f=all>Tous les impayés</button><button class="chip ${f.late ? 'on' : ''}" data-f=late>En retard</button></div>` : ''}<div class=chips><button class="chip ${f.sms ? '' : 'on'}" data-v=wa>Par WhatsApp</button><button class="chip ${f.sms ? 'on' : ''}" data-v=sms>Par SMS</button></div><small>Relancés ces 7 derniers jours : <b>${done} / ${l.length}</b></small><div class=pbar style="margin:6px 0 10px"><i style="width:${pc}%;background:var(--gold)"></i></div>${nx ? `<button id=rn>▶ Relancer le suivant · ${esc(nx.name)}</button>` : l.length ? '<p class=ok style="text-align:center">✓ Tous les parents ont été relancés</p>' : ''}${l.length ? l.map(s => `<div class=card><span>${status(s) === 'late' ? '🔴 ' : ''}${esc(s.name)}<br><small>${fmt(s.balance_cdf)}${sent.has(s.id) ? ' · ✓ relancé ' + ago(sent.get(s.id)) : ''}</small></span><button class=ghost style=width:auto data-w=${s.id}>${sent.has(s.id) ? 'Renvoyer' : f.sms ? 'SMS' : 'WhatsApp'}</button></div>`).join('') : '<p class=empty>Aucun impayé avec numéro.</p>'}${no ? `<small>${no} élève(s) sans numéro ignoré(s).</small>` : ''}<button class=ghost id=rc2>Fermer</button>`);
         d.querySelector('#rcl').onchange = e => { f.cls = e.target.value; draw(); };
         d.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { f.late = b.dataset.f === 'late'; draw(); });
+        d.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { f.sms = b.dataset.v === 'sms'; localStorage.setItem('orea_relance_sms', f.sms ? '1' : '0'); draw(); });
         const rn = d.querySelector('#rn'); if (rn) rn.onclick = () => go(nx);
         d.querySelectorAll('[data-w]').forEach(b => b.onclick = () => go(S.stu.find(x => x.id === b.dataset.w)));
         d.querySelector('#rc2').onclick = () => d.close();
@@ -1498,8 +1526,8 @@ function vMenu() {
     if (canCollect()) h += menuCard('caisse', 'Caisse', null, "menuGo('caisse')");
     if (R !== 'enseignant') h += menuCard('impayes', 'Finance', 'Impayés · Dépenses · Bilan', "menuGo('finance_home')");
     h += `<div class=menu-title>Pédagogie</div>`;
-    h += menuCard('absences', 'Suivi des absences', null, "menuGo('absences')");
-    h += menuCard('sanctions', 'Sanctions', null, "menuGo('sanctions')");
+    if (dir()) h += menuCard('absences', 'Suivi des absences', null, "menuGo('absences')");
+    h += menuCard('sanctions', 'Sanctions', 'Avertissements · Sanctions', "menuGo('sanctions')");
     h += menuCard('calendrier', 'Programme', 'Calendrier · Horaires', "menuGo('programme_home')");
     h += menuCard('devoirs', 'Devoirs', null, "menuGo('devoirs')");
     if (dir()) {
@@ -1665,14 +1693,17 @@ async function vSanctions() {
     const [mA, mB] = monthRange(S.sanM);
     const { data, error } = await db.from('sanctions').select('*').gte('day', mA).lt('day', mB).order('day', { ascending: false });
     if (error) return failView(error);
-    const sanc = data || [], byStu = {};
-    sanc.forEach(x => byStu[x.student_id] = (byStu[x.student_id] || 0) + 1);
-    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Vue globale des sanctions</h3>`;
+    const sanc = data || [], byStu = {}, byW = {};
+    sanc.forEach(x => { if (isWarn(x.kind)) byW[x.student_id] = (byW[x.student_id] || 0) + 1; else byStu[x.student_id] = (byStu[x.student_id] || 0) + 1; });
+    const nW = sanc.filter(x => isWarn(x.kind)).length;
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Avertissements et sanctions</h3>`;
     h += `<div class=bar><input type=month id=sm value="${S.sanM}"></div>`;
     const l = Object.entries(byStu).map(([id, n]) => ({ s: S.stu.find(z => z.id === id), n })).filter(x => x.s && x.n >= 3).sort((a, b) => b.n - a.n);
+    const lw = Object.entries(byW).map(([id, n]) => ({ s: S.stu.find(z => z.id === id), n })).filter(x => x.s && x.n >= 3).sort((a, b) => b.n - a.n);
     h += `<div class="card col"><b>Élèves à dossier (≥ 3 sanctions)</b>${l.length ? l.map(x => `<div style="display:flex;justify-content:space-between;margin:4px 0"><span>${esc(x.s.name)} (${esc(cnm(x.s.class_id))})</span><b class=due>${x.n} fois</b></div>`).join('') : '<small>Aucun élève avec un tel dossier.</small>'}</div>`;
-    h += `<h3>Sanctions du mois (${sanc.length})</h3>`;
-    h += sanc.length ? sanc.map(x => { const s = S.stu.find(z => z.id === x.student_id); return `<div class="card col"><b>${esc(s ? s.name : '?')} · ${esc(x.kind)}</b><small>${esc(cnm(s ? s.class_id : ''))} · ${new Date(x.day + 'T00:00').toLocaleDateString('fr-FR')}${x.note ? ' · ' + esc(x.note) : ''}</small></div>`; }).join('') : '<p class=empty>Aucune sanction enregistrée.</p>';
+    h += `<div class="card col"><b>3 avertissements ou plus</b>${lw.length ? lw.map(x => `<div style="display:flex;justify-content:space-between;margin:4px 0"><span>${esc(x.s.name)} (${esc(cnm(x.s.class_id))})</span><b style="color:var(--gold)">${x.n} fois</b></div>`).join('') : '<small>Aucun élève concerné.</small>'}</div>`;
+    h += `<h3>Ce mois : ${nW} avertissement(s) · ${sanc.length - nW} sanction(s)</h3>`;
+    h += sanc.length ? sanc.map(x => { const s = S.stu.find(z => z.id === x.student_id); return `<div class="card col" style="border-left:3px solid ${isWarn(x.kind) ? 'var(--gold)' : 'var(--bad)'}"><b>${esc(s ? s.name : '?')} · ${esc(x.kind)}</b><small>${esc(cnm(s ? s.class_id : ''))} · ${new Date(x.day + 'T00:00').toLocaleDateString('fr-FR')}${x.note ? ' · ' + esc(x.note) : ''}</small></div>`; }).join('') : '<p class=empty>Aucun avertissement ni sanction ce mois-ci.</p>';
     if (S.tab !== 'sanctions') return;
     $('#main').innerHTML = h;
     $('#sm').onchange = e => { S.sanM = e.target.value; vSanctions(); };
@@ -1689,7 +1720,7 @@ async function vCalendrier() {
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Calendrier scolaire</h3>`;
     if (dir()) h += `<button onclick=addEvent()>+ Ajouter un événement</button>`;
     h += evs.length ? evs.map(x => `<div class="card col" onclick="editEvent('${x.id}')"><b>${esc(x.title)}</b><span>${fdate(x.start_date)}${x.end_date ? ' au ' + fdate(x.end_date) : ''}</span><small>${esc((x.type || '').toUpperCase())}${x.description ? ' · ' + esc(x.description) : ''}</small></div>`).join('') : '<p class=empty data-ic="📅">Aucun événement à venir.</p>';
-    h += `<h3>Exporter</h3><button class=ghost onclick=icsEvents()>📅 Ajouter à mon agenda (.ics)</button>`;
+    h += `<h3>Exporter</h3><button class=ghost onclick=icsEvents()>📅 Ajouter à mon agenda</button>`;
     if (S.tab !== 'calendrier') return;
     $('#main').innerHTML = h;
 }
@@ -2031,12 +2062,7 @@ function classAtt() {
 function attBack() { if (S.attFromCls && history.state && history.state.att) { history.back(); return; } attLeave(); }
 function attLeave() { const f = S.attFromCls; S.attFromCls = false; if (f) { S.tab = 'eleves'; S.view = 'class'; } else S.tab = 'menu'; render(); }
 
-// Horaire par défaut copié dans chaque nouvelle classe (copie indépendante, modifiable ensuite)
-async function applyDefaultTT(classes) {
-    const L = (classes || []).filter(c => c && c.id); if (!L.length) return;
-    const r = await Promise.all(L.map(c => db.rpc('apply_default_timetable', { p_class: c.id, p_replace: true })));
-    const e = r.find(x => x.error); if (e) toast('Classe créée, mais l’horaire par défaut n’a pas pu être appliqué : ' + e.error.message);
-}
+// Horaire par défaut : appliqué automatiquement par la base à la création de chaque classe (déclencheur trg_classes_default_tt)
 
 // ---------- Plan de paiement (échéances promises) ----------
 const PPS0 = { prevu: ['Prévu', ''], tenu: ['Tenu ✓', 'ok'], non_tenu: ['Non tenu', 'due'] }, PPS = new Proxy(PPS0, { get: (o, k) => o[k] || o.prevu });
@@ -2119,9 +2145,10 @@ async function ppHome() {
         const msg = p => p.status === 'non_tenu'
             ? `Bonjour, ici ${S.school.name}. Le versement de ${fmt(p.amount_cdf)} prévu le ${fdate(p.due_date)} pour ${nm(p.student_id)} n’a pas encore été reçu. Merci de régulariser ou de contacter l’école.`
             : `Bonjour, ici ${S.school.name}. Petit rappel : le versement de ${fmt(p.amount_cdf)} pour ${nm(p.student_id)} est prévu demain (${fdate(p.due_date)}). Merci !`;
-        const d = show(`<h3>Promesses de paiement</h3>${L.map((p, i) => { const st = S.stu.find(x => x.id === p.student_id) || {}; return `<div class="card col"><div style="display:flex;justify-content:space-between"><b>${esc(nm(p.student_id))}</b><b>${fmt(p.amount_cdf)}</b></div><small class="${PPS[p.status][1]}">${fdate(p.due_date)} · ${PPS[p.status][0]}</small><div class=row>${st.parent_phone ? `<button class=ghost data-w=${i}>WhatsApp</button>` : ''}${D ? `<button class=ghost data-o=${i}>ORÉA</button>` : ''}<button class=ghost data-p=${i}>Paiement</button></div></div>`; }).join('')}<button class=ghost id=ppx>Fermer</button>`);
+        const d = show(`<h3>Promesses de paiement</h3>${L.map((p, i) => { const st = S.stu.find(x => x.id === p.student_id) || {}; return `<div class="card col"><div style="display:flex;justify-content:space-between"><b>${esc(nm(p.student_id))}</b><b>${fmt(p.amount_cdf)}</b></div><small class="${PPS[p.status][1]}">${fdate(p.due_date)} · ${PPS[p.status][0]}</small><div class=row>${st.parent_phone ? `<button class=ghost data-w=${i}>WhatsApp</button><button class=ghost data-sm=${i}>SMS</button>` : ''}${D ? `<button class=ghost data-o=${i}>ORÉA</button>` : ''}<button class=ghost data-p=${i}>Paiement</button></div></div>`; }).join('')}<button class=ghost id=ppx>Fermer</button>`);
         d.querySelector('#ppx').onclick = () => d.close();
         d.querySelectorAll('[data-w]').forEach(b => b.onclick = () => { const p = L[b.dataset.w], st = S.stu.find(x => x.id === p.student_id), u = st && waLink(st.parent_phone, msg(p)); if (u) window.open(u, '_blank'); else toast('Numéro invalide'); });
+        d.querySelectorAll('[data-sm]').forEach(b => b.onclick = () => { const p = L[b.dataset.sm], st = S.stu.find(x => x.id === p.student_id); if (st) openSms(st.parent_phone, msg(p)); });
         d.querySelectorAll('[data-o]').forEach(b => b.onclick = async () => {
             const p = L[b.dataset.o]; b.disabled = true;
             const { error } = await db.from('messages').insert({ school_id: S.school.id, channel: 'parent_ecole', thread_key: 'student:' + p.student_id, student_id: p.student_id, content: msg(p) });

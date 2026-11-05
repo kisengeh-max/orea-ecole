@@ -146,7 +146,7 @@ function ambSchoolCard(s) {
         + '<span>Directeur : ' + esc(s.director_name || '—') + '</span>'
         + '<small>' + s.students + ' élève(s) · ' + s.members + ' compte(s)</small>'
         + '<span class="' + (left > 7 ? 'ok' : 'due') + '">' + st + '</span>' + price
-        + '<div class=row>' + (wa ? '<a class="btn ghost amb-btn" target=_blank href="' + wa + '">💬 Relancer</a><button class=ghost style=width:auto onclick="ambPhone(\'' + s.id + '\')">✏ N°</button>' : '<button class=ghost style=width:auto onclick="ambPhone(\'' + s.id + '\')">📞 Ajouter WhatsApp</button>')
+        + '<div class=row>' + (wa ? '<a class="btn ghost amb-btn" target=_blank href="' + wa + '">💬 Relancer</a><a class="btn ghost amb-btn" href="' + esc(smsLink(s.phone, msg)) + '">SMS</a><button class=ghost style=width:auto onclick="ambPhone(\'' + s.id + '\')">✏ N°</button>' : '<button class=ghost style=width:auto onclick="ambPhone(\'' + s.id + '\')">📞 Ajouter WhatsApp</button>')
         + '<button class=ghost style=width:auto onclick="ambPrice(\'' + s.id + '\')">💰 Prix</button></div></div>';
 }
 
@@ -179,7 +179,7 @@ function ambProspectCard(p) {
         + (p.contact_name || p.phone ? '<span>' + esc([p.contact_name, p.phone].filter(Boolean).join(' · ')) + '</span>' : '')
         + '<span class="amb-pill' + (p.status === 'inscrite' ? ' in' : '') + '">' + (p.status === 'inscrite' ? '✅ ' : '') + AMB_ST[p.status] + '</span>'
         + (p.note ? '<small>' + esc(p.note) + '</small>' : '')
-        + '<div class=row>' + (wa ? '<a class="btn ghost amb-btn" target=_blank href="' + wa + '">💬 WhatsApp</a>' : '')
+        + '<div class=row>' + (wa ? '<a class="btn ghost amb-btn" target=_blank href="' + wa + '">💬 WhatsApp</a><a class="btn ghost amb-btn" href="' + esc(smsLink(p.phone, msg)) + '">SMS</a>' : '')
         + '<button class=ghost style=width:auto onclick="ambProspect(\'' + p.id + '\')">✏</button>'
         + '<button class=ghost style=width:auto onclick="ambProspectDel(\'' + p.id + '\')">🗑</button></div></div>';
 }
