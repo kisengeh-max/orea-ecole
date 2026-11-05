@@ -1056,8 +1056,10 @@ function previsionCard() {
     const due = st.reduce((a, s) => a + Number(s['due' + t + '_cdf'] || 0), 0);
     const paid = st.reduce((a, s) => a + Number(s['p' + t + '_cdf'] || 0), 0);
     const rem = Math.max(0, due - paid);
-    const tm = S.terms[S.year];
-    const dt = tm ? tm['t' + t] : null;
+    // Fin du trimestre = veille du début du trimestre suivant (ou fin de l'année scolaire)
+    const tm = S.terms[S.year] || {}, nx = t < 3 ? tm['t' + (+t + 1)] : null;
+    const end = window.FinP ? FinP.termRange(S.year, +t)[1] : nx;
+    const dt = end ? new Date(Date.parse(end + 'T00:00:00Z') - 864e5).toISOString().slice(0, 10) : null;
     const pct = due > 0 ? Math.max(0, Math.min(100, Math.round(100 * paid / due))) : 0;
     return `<div class="card col" style="padding:14px 16px"><div style="display:flex;align-items:center;gap:10px"><div class=menu-ic style="width:34px;height:34px;border-radius:9px">${svgI('graph')}</div><b style="font-family:var(--serif);font-size:15px">Prévision T${t}</b></div><small style="margin-top:8px">Encaissé ${fmt(paid)} / ${fmt(due)}</small><div class=tri-bar style="margin:6px 0"><i style="width:${pct}%"></i></div><small class=due>Reste à encaisser : ${fmt(rem)}</small><small>Fin du trimestre : ${dt ? fdate(dt) : '—'}</small></div>`;
 }
@@ -2032,7 +2034,7 @@ function attLeave() { const f = S.attFromCls; S.attFromCls = false; if (f) { S.t
 // Horaire par défaut copié dans chaque nouvelle classe (copie indépendante, modifiable ensuite)
 async function applyDefaultTT(classes) {
     const L = (classes || []).filter(c => c && c.id); if (!L.length) return;
-    const r = await Promise.all(L.map(c => db.rpc('apply_default_timetable', { p_class: c.id, p_replace: false })));
+    const r = await Promise.all(L.map(c => db.rpc('apply_default_timetable', { p_class: c.id, p_replace: true })));
     const e = r.find(x => x.error); if (e) toast('Classe créée, mais l’horaire par défaut n’a pas pu être appliqué : ' + e.error.message);
 }
 

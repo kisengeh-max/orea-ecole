@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v60 — timetable.js
+   ORÉA École v68 — timetable.js (modèle d'horaire par défaut modifiable par le directeur)
    « Horaires des cours » : grille 2x3 (Lundi/Mardi, Mercredi/Jeudi, 
    Vendredi/Samedi). Le cours en cours est surligné.
    ===================================================================== */
@@ -84,7 +84,11 @@
     document.addEventListener('visibilitychange', () => { if (!document.hidden) paintNow(); });
 
     /* ---- ÉCOLE : écran « Horaires des cours » ---- */
-    const TT = { rows: [], sel: null };
+    const TT = { rows: [], sel: null, model: false };
+    // Modèle par défaut de l'école (table timetable_model) : copié dans chaque nouvelle classe
+    const MODEL = '__model';
+    const STD = [['06:30', '07:00', 'Arrivée à l’école', 0], ['07:00', '07:50', 'Cours 1', 0], ['07:50', '08:40', 'Cours 2', 0], ['08:40', '09:30', 'Cours 3', 0], ['09:30', '10:20', 'Cours 4', 0], ['10:20', '10:35', 'RÉCRÉATION', 1], ['10:35', '11:25', 'Cours 5', 0], ['11:25', '12:15', 'Cours 6', 0], ['12:15', '12:15', 'FIN', 1]];
+    const tbl = () => TT.model ? 'timetable_model' : 'timetable';
     const canEdit = () => typeof S !== 'undefined' && S.me && S.me.role === 'directeur';
     const clsName = id => ((S.classes || []).find(c => c.id === (id || S.cls)) || {}).name || '';
 
@@ -95,14 +99,19 @@
         if (!yc().length) { $('#main').innerHTML = yb + back + `<p class=empty>Crée d'abord une classe.</p>`; return; }
         if (!yc().some(c => c.id === S.cls)) S.cls = yc()[0].id;
         TT.sel = null;
+        if (!canEdit()) TT.model = false;
         let h = back + '<h3>Horaires des cours</h3>' + yb;
-        h += `<div class=bar><select id=ttc>${yc().map(c => `<option value="${c.id}" ${c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
-        if (canEdit()) h += `<div class=row><button class=ghost id=tt-cp>📋 Copier vers une classe</button><button class=ghost id=tt-df>↺ Modèle par défaut</button></div>`;
+        h += `<div class=bar><select id=ttc>${canEdit() ? `<option value="${MODEL}" ${TT.model ? 'selected' : ''}>★ Modèle par défaut (nouvelles classes)</option>` : ''}${yc().map(c => `<option value="${c.id}" ${!TT.model && c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
+        if (canEdit()) h += `<small class=tt-ro id=tt-mi style="display:${TT.model ? 'block' : 'none'}">Ce modèle est copié automatiquement dans chaque nouvelle classe. Les classes existantes ne changent pas, sauf si tu touches « Appliquer le modèle » dans une classe.</small><div class=row id=tt-cr style="display:${TT.model ? 'none' : 'flex'}"><button class=ghost id=tt-cp>📋 Copier vers une classe</button><button class=ghost id=tt-df>↺ Appliquer le modèle</button></div>`;
         else h += `<small class=tt-ro>Seul le directeur peut modifier les horaires.</small>`;
         h += `<div id=ttl><div class=sk></div><div class=sk></div><div class=sk></div></div>`;
         if (canEdit()) h += `<div class=tt-bar><button id=tt-ed disabled>✏️ Modifier</button><button class=ghost id=tt-rm disabled>🗑 Supprimer</button><button id=tt-ad>＋ Ajouter</button></div><small class=tt-ro>Touche un créneau pour le choisir, puis « Modifier » ou « Supprimer ».</small>`;
         $('#main').innerHTML = h;
-        $('#ttc').onchange = e => { S.cls = e.target.value; TT.sel = null; loadTT(); };
+        $('#ttc').onchange = e => {
+            TT.model = e.target.value === MODEL; if (!TT.model) S.cls = e.target.value; TT.sel = null;
+            const mi = $('#tt-mi'), cr = $('#tt-cr'); if (mi) mi.style.display = TT.model ? 'block' : 'none'; if (cr) cr.style.display = TT.model ? 'none' : 'flex';
+            loadTT();
+        };
         if (canEdit()) {
             $('#tt-ad').onclick = addSlot;
             $('#tt-ed').onclick = editSlot;
@@ -115,9 +124,10 @@
     window.drawTT = () => loadTT();
 
     async function loadTT() {
-        const cid = S.cls;
-        const { data, error } = await db.from('timetable').select('*').eq('class_id', cid).order('day').order('start_time');
-        if (S.tab !== 'emploi_temps' || cid !== S.cls) return;
+        const cid = S.cls, mod = TT.model;
+        const q = mod ? db.from('timetable_model').select('*').eq('school_id', S.school.id) : db.from('timetable').select('*').eq('class_id', cid);
+        const { data, error } = await q.order('day').order('start_time');
+        if (S.tab !== 'emploi_temps' || cid !== S.cls || mod !== TT.model) return;
         const el = document.getElementById('ttl'); if (!el) return;
         if (error) { el.innerHTML = `<p class=empty>${esc(error.message)}</p>`; return; }
         TT.rows = data || [];
@@ -128,7 +138,11 @@
     function drawGrid() {
         const el = document.getElementById('ttl'); if (!el) return;
         el.innerHTML = TT.rows.length ? grid(TT.rows, canEdit(), TT.sel)
-            : `<p class=empty data-ic="📅">Aucun horaire pour cette classe.${canEdit() ? '<br>Touche « Modèle par défaut » ou « Ajouter ».' : ''}</p>`;
+            : TT.model ? `<p class=empty data-ic="📅">Le modèle est vide : les nouvelles classes reçoivent l’horaire standard (6h30 → 12h15).</p><div class=col><button id=tt-ms>Partir de l’horaire standard</button>${yc().length ? `<button class=ghost id=tt-mc>Partir de l’horaire d’une classe</button>` : ''}</div>`
+            : `<p class=empty data-ic="📅">Aucun horaire pour cette classe.${canEdit() ? '<br>Touche « Appliquer le modèle » ou « Ajouter ».' : ''}</p>`;
+        const ms = document.getElementById('tt-ms'), mc = document.getElementById('tt-mc');
+        if (ms) ms.onclick = modelFromStd;
+        if (mc) mc.onclick = modelFromClass;
         if (canEdit()) el.querySelectorAll('.tt-s').forEach(c => c.onclick = () => {
             TT.sel = TT.sel === c.dataset.id ? null : c.dataset.id;
             el.querySelectorAll('.tt-s').forEach(x => x.classList.toggle('sel', x.dataset.id === TT.sel));
@@ -161,12 +175,17 @@
         if (sp ? v.end < v.start : v.end <= v.start) throw Error("L'heure de fin doit être après le début.");
         return { subject, start_time: v.start, end_time: v.end, room: (v.room || '').trim() || null, is_special: sp, is_default: false };
     }
+    // Une ligne prête pour la table affichée (classe ou modèle)
+    const rowFor = (d, p) => TT.model
+        ? { school_id: S.school.id, day: d, subject: p.subject, start_time: p.start_time, end_time: p.end_time, room: p.room, is_special: p.is_special }
+        : Object.assign({ school_id: S.school.id, class_id: S.cls, year: S.year || '', day: d }, p);
+    const modelRow = p => { const o = Object.assign({}, p); if (TT.model) delete o.is_default; return o; };
     function addSlot() {
-        ask('Nouveau créneau — ' + esc(clsName()), slotFields(), async v => {
+        ask('Nouveau créneau — ' + esc(TT.model ? 'Modèle par défaut' : clsName()), slotFields(), async v => {
             const p = payload(v);
             const days = v.day === 'all' ? [1, 2, 3, 4, 5, 6] : [+v.day];
-            const rows = days.map(d => Object.assign({ school_id: S.school.id, class_id: S.cls, year: S.year || '', day: d }, p));
-            const { error } = await db.from('timetable').insert(rows);
+            const rows = days.map(d => rowFor(d, p));
+            const { error } = await db.from(tbl()).insert(rows);
             if (error) throw error;
             say(rows.length > 1 ? 'Créneau ajouté aux 6 jours' : 'Créneau ajouté'); loadTT();
         });
@@ -175,7 +194,7 @@
         const t = TT.rows.find(r => r.id === TT.sel); if (!t) return say('Touche d’abord un créneau.');
         ask('Modifier le créneau', slotFields(t), async v => {
             const p = payload(v);
-            const { data, error } = await db.from('timetable').update(Object.assign({ day: +v.day }, p)).eq('id', t.id).select('id');
+            const { data, error } = await db.from(tbl()).update(Object.assign({ day: +v.day }, modelRow(p))).eq('id', t.id).select('id');
             if (error) throw error;
             if (!data || !data.length) throw Error('Modification refusée (seul le directeur peut modifier).');
             say('Créneau modifié'); loadTT();
@@ -184,7 +203,7 @@
     async function removeSlot() {
         const t = TT.rows.find(r => r.id === TT.sel); if (!t) return say('Touche d’abord un créneau.');
         if (!confirm('Supprimer « ' + t.subject + ' » (' + DAYN[t.day] + ' ' + hh(t.start_time) + ') ?')) return;
-        const { data, error } = await db.from('timetable').delete().eq('id', t.id).select('id');
+        const { data, error } = await db.from(tbl()).delete().eq('id', t.id).select('id');
         if (error) return say(error.message);
         if (!data || !data.length) return say('Suppression refusée.');
         TT.sel = null; say('Créneau supprimé'); loadTT();
@@ -203,8 +222,28 @@
             say((data || 0) + ' créneaux copiés vers ' + to.name);
         });
     }
+    // Remplit le modèle avec l'horaire standard (lundi → samedi)
+    async function modelFromStd() {
+        const rows = [];
+        for (let d = 1; d <= 6; d++) STD.forEach(x => rows.push({ school_id: S.school.id, day: d, start_time: x[0], end_time: x[1], subject: x[2], is_special: !!x[3], room: null }));
+        const { error } = await db.from('timetable_model').insert(rows);
+        if (error) return say(error.message);
+        say('Modèle créé : modifie-le librement'); loadTT();
+    }
+    // Remplit le modèle avec l'horaire d'une classe existante
+    function modelFromClass() {
+        ask('Partir de l’horaire d’une classe', [{ n: 'c', l: 'Classe', o: yc().map(c => [c.id, esc(c.name)]) }], async v => {
+            const { data, error } = await db.from('timetable').select('*').eq('class_id', v.c);
+            if (error) throw error;
+            if (!(data || []).length) throw Error('Cette classe n’a pas encore d’horaire.');
+            const rows = data.map(t => ({ school_id: S.school.id, day: t.day, start_time: t.start_time, end_time: t.end_time, subject: t.subject, is_special: !!t.is_special, room: t.room || null }));
+            const r = await db.from('timetable_model').insert(rows);
+            if (r.error) throw r.error;
+            say(rows.length + ' créneaux copiés dans le modèle'); loadTT();
+        });
+    }
     async function applyDefault() {
-        if (!confirm('Remplacer TOUS les horaires de « ' + clsName() + ' » par le modèle par défaut (6h30 → 12h15, lundi → samedi) ?')) return;
+        if (!confirm('Remplacer TOUS les horaires de « ' + clsName() + ' » par le modèle par défaut de l’école ?')) return;
         const { data, error } = await db.rpc('apply_default_timetable', { p_class: S.cls, p_replace: true });
         if (error) return say(error.message);
         say((data || 0) + ' créneaux créés'); TT.sel = null; loadTT();
