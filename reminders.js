@@ -31,10 +31,18 @@
         b.hidden = false;
     }
 
-    // On remplace la bannière d'origine d'app.js (appelée à chaque render)
+    // On enveloppe la bannière d'origine d'app.js (appelée à chaque render) :
+    // abonnement expiré -> bannière « expiré » ; 1 à 7 jours restants -> bannière d'origine « il reste X jours ».
     function hook() {
         if (typeof subBanner === 'undefined') { setTimeout(hook, 100); return; }
-        subBanner = expiredBanner;
+        if (subBanner.__rem) return;
+        const orig = subBanner;
+        const wrapped = function () {
+            if (typeof S !== 'undefined' && S.me && S.school && subLeft() <= 0) return expiredBanner();
+            return orig.apply(this, arguments);
+        };
+        wrapped.__rem = true;
+        subBanner = wrapped;
     }
     hook();
 })();

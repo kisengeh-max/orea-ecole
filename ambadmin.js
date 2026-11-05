@@ -58,7 +58,7 @@ function admSchoolSection() {
         return `<div class="card col"><b>${esc(s.name)}</b><span>${esc(s.director_name || '—')} · ${esc(s.director_email || '')}</span><small>${s.students} élèves · ${s.members} compte(s) · code ${esc(s.code)}</small><span class="${ok && left > 7 ? 'ok' : 'due'}">${ok ? 'Actif jusqu’au ' + d.toLocaleDateString('fr-FR') + ' (' + left + ' j)' : '⛔ Expiré'}</span><span>${sp}</span><span>${pr}</span>`
             + `<div class=row>${waUrl ? `<a class="btn ghost" style="width:auto;text-decoration:none" href="${waUrl}" target="_blank">💬 Relance WhatsApp</a>` : `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}')">📞 Ajouter WhatsApp</button>`}${s.phone ? `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}','${esc(s.phone)}')">✏</button>` : ''}</div>`
             + `<div class=row><button class=ghost onclick="admSponsor('${s.id}')">🤝 Parrain</button><button class=ghost onclick="admPrice('${s.id}')">💰 Prix</button></div>`
-            + `<div class=row>${[1, 2, 3, 6].map(n => `<button class=ghost onclick="extModal('${s.id}','${esc(s.name)}',${n})">+${n} m</button>`).join('')}</div></div>`;
+            + `<div class=row>${[1, 2, 3, 6].map(n => `<button class=ghost onclick="extModal('${s.id}',${n})">+${n} m</button>`).join('')}</div></div>`;
     }).join('') : '<p class=empty>Aucune école pour le moment.</p>');
 }
 

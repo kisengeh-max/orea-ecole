@@ -19,6 +19,7 @@ const hhmm = t => t ? String(t).slice(0, 5) : '';
 
 const P = { me: null, school: null, school_id: null, children: [], tab: 'accueil', msgs: [], annonces: [], convocs: [], justifs: [], events: [], assign: [], tt: [], msgChild: null };
 document.documentElement.dataset.theme = localStorage.theme || 'dark';
+const schoolOf = sid => ((P.children.find(c => c.id === sid) || {}).school_id) || P.school_id || (P.school && P.school.id) || null;
 
 // --- Injection CSS pour la navigation et le chat ---
 document.head.insertAdjacentHTML('beforeend', `<style>
@@ -90,7 +91,7 @@ async function loadK2() {
     const [m, a, c, j, e] = await Promise.all([
         db.rpc('parent_messages_list'), db.rpc('parent_announcements'), db.rpc('parent_convocations'), db.rpc('parent_justifications'), db.rpc('parent_events')
     ]);
-    P.msgs = m.data || []; P.annonces = a.data || []; P.convoces = c.data || []; P.justifs = j.data || []; P.events = e.data || [];
+    P.msgs = m.data || []; P.annonces = a.data || []; P.convocs = c.data || []; P.justifs = j.data || []; P.events = e.data || [];
 }
 async function loadK5() {
     if (!P.children.length) return;
@@ -202,7 +203,7 @@ async function sendMsg() {
     const txt = $('#chat_input').value.trim();
     if (!txt) return;
     const sid = P.msgChild;
-    const { error } = await db.from('parent_messages').insert({ school_id: P.school_id || P.school?.id, student_id: sid, parent_id: P.me.id, sender_role: 'parent', content: txt });
+    const { error } = await db.from('parent_messages').insert({ school_id: schoolOf(sid), student_id: sid, parent_id: P.me.id, sender_role: 'parent', content: txt });
     if (error) return toast(error.message);
     $('#chat_input').value = '';
     await loadK2(); msgView(); toast('Envoyé ✓');
@@ -227,7 +228,7 @@ function ecoleView() {
     h += `</div>`;
 
     h += `<div class=p-sec><h4>📢 Convocations</h4>`;
-    const activeConvocs = P.convoces.filter(c => c.status !== 'archivee');
+    const activeConvocs = (P.convocs || []).filter(c => c.status !== 'archivee');
     if (activeConvocs.length) {
         h += activeConvocs.map(c => { 
             const ch = P.children.find(x => x.id === c.student_id); 
@@ -308,9 +309,10 @@ async function sendJustif() {
 
     if (!txt || !day) return toast('Remplissez la date et le motif');
     if (type === 'absence' && $('#j_duration').value === 'multi' && !end_date) return toast('Précisez la date de fin');
+    if (end_date && end_date < day) return toast('La date de fin doit être après la date de début');
     
     const { error } = await db.from('absence_justifications').insert({ 
-        school_id: P.school_id || P.school?.id, 
+        school_id: schoolOf(sid), 
         student_id: sid, 
         parent_id: P.me.id, 
         day, 
@@ -362,7 +364,7 @@ function scolariteView() {
     else {
         const byDay = {};
         P.tt.forEach(t => { (byDay[t.day] = byDay[t.day] || []).push(t); });
-        const days = Object.keys(byDay).map(Number).sort((a, b) => a - b);
+        const days = Object.keys(byDay).map(Number).sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
         h += days.map(d => `<div class="p-tt-day"><h5>${DAYS[d] || ''}</h5>${byDay[d].sort((a, b) => String(a.start_time).localeCompare(String(b.start_time))).map(t => `<div class="p-tt-row"><span class="p-tt-h">${hhmm(t.start_time)} – ${hhmm(t.end_time)}</span><div><b>${esc(t.subject)}</b>${t.room ? `<small>${esc(t.room)}</small>` : ''}</div></div>`).join('')}</div>`).join('');
     }
     h += `</div>`;
@@ -406,15 +408,16 @@ async function childDetail(id) {
     
     // Paiements avec option de signalement
     const all = [...pays.map(p => ({ ...p, _f: 0 })), ...fpays.map(p => ({ ...p, _f: 1 }))].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    P._payList = all.slice(0, 10);
     if (all.length) {
         h += `<div class=p-sec><h4>🧾 Paiements</h4>`;
-        h += all.slice(0, 10).map(p => `
+        h += P._payList.map((p, i) => `
             <div class="p-row" style="flex-direction:column;align-items:flex-start;gap:4px">
                 <div style="display:flex;width:100%;justify-content:space-between">
                     <span>${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f ? esc(p.fee_name || 'Frais') : 'T' + p.term}</span>
                     <b>${nf(p.amount)} ${p.currency}</b>
                 </div>
-                <button class="ghost" style="width:auto;min-height:28px;padding:2px 8px;font-size:11px;margin-top:4px" onclick="signalerPaiement('${p.id}', ${p._f})">⚠ Signaler une erreur</button>
+                <button class="ghost" style="width:auto;min-height:28px;padding:2px 8px;font-size:11px;margin-top:4px" onclick="signalerPaiement(${i}, '${s.id}')">⚠ Signaler une erreur</button>
             </div>
         `).join('');
         h += `</div>`;
@@ -425,26 +428,27 @@ async function childDetail(id) {
 }
 
 // --- Signalement de paiement ---
-window.signalerPaiement = function(paymentId, isFee) {
-    ask('Signaler une erreur', [
-        { n: 'reason', l: 'Décrivez l\'erreur (ex: mauvais montant, déjà payé...)', t: 'textarea', r: true }
-    ], async v => {
-        const payload = isFee ? {
-            fee_payment_id: paymentId,
-            kind: 'edit_fee_payment',
-            reason: 'Signalement parent : ' + v.reason.trim(),
-            new_amount: 0
-        } : {
-            payment_id: paymentId,
-            kind: 'edit_payment',
-            reason: 'Signalement parent : ' + v.reason.trim(),
-            new_amount: 0
-        };
-        
-        const { error } = await db.from('change_requests').insert(payload);
-        if (error) return toast(error.code === '23505' ? 'Demande déjà en attente' : error.message);
-        toast('Signalement envoyé au directeur ✓');
-    });
+// Le signalement part dans la messagerie parent ↔ école (table « messages »), comme un message normal.
+window.signalerPaiement = function (idx, studentId) {
+    const p = (P._payList || [])[idx]; if (!p) return;
+    const d = $('#pdlg');
+    d.innerHTML = `<form method=dialog><h3>Signaler une erreur</h3><p style="font-size:14px;color:var(--muted)">Décris l'erreur (mauvais montant, déjà payé…). L'école la recevra dans vos messages.</p><textarea name=reason rows=4 style="width:100%;padding:10px" required></textarea><div class=row style="display:flex;gap:8px;margin-top:10px"><button value=x class=ghost formnovalidate style="flex:1">Annuler</button><button value=ok style="flex:2">Envoyer</button></div></form>`;
+    if (!d.open) d.showModal();
+    d.querySelector('form').onsubmit = async e => {
+        if (e.submitter.value !== 'ok') return;
+        e.preventDefault();
+        const reason = e.target.reason.value.trim();
+        if (!reason) return;
+        const what = (p._f ? (p.fee_name || 'Frais') : 'T' + p.term) + ' · ' + nf(p.amount) + ' ' + p.currency + ' · ' + new Date(p.created_at).toLocaleDateString('fr-FR') + (p.receipt_no ? ' · REC-' + String(p.receipt_no).padStart(4, '0') : '');
+        const { error } = await db.from('messages').insert({
+            school_id: schoolOf(studentId), channel: 'parent_ecole', thread_key: 'student:' + studentId, student_id: studentId,
+            ambassador_id: null, recipient_id: null, subject: 'Signalement de paiement',
+            content: '⚠ Paiement signalé (' + what + ')\n' + reason, parent_id: P.me.id
+        });
+        if (error) return toast(error.message);
+        d.close(); toast('Signalement envoyé à l’école ✓');
+        if (window.OreaMsg && OreaMsg.refresh) OreaMsg.refresh();
+    };
 };
 
 async function logout() { if (!confirm('Se déconnecter ?')) return; await db.auth.signOut(); location.reload(); }
@@ -459,7 +463,7 @@ async function boot() {
     await loadSchool(); await loadChildren(); await loadK2(); await loadK5(); render();
 }
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
 boot();
 
 // --- FIN DU FICHIER ---

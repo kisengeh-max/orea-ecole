@@ -17,16 +17,17 @@
     const tdy = () => new Date().toLocaleDateString('sv-SE');
     const thisMonth = () => tdy().slice(0, 7); // YYYY-MM
 
-    // Hook pour s'accrocher au rendu de app.js sans le modifier
-    const hook = (name, fn) => {
-        const o = window[name];
-        if (typeof o !== 'function' || o.__fin) return;
-        const w = fn(o); w.__fin = true; window[name] = w;
-    };
+    // Début du mois courant (minuit LOCAL, converti en UTC) : évite le décalage de fuseau horaire
+    const monthStartIso = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1).toISOString(); };
+    const dateFr = d => d ? new Date(d + 'T00:00').toLocaleDateString('fr-FR') : '—';
+    // Après un chargement asynchrone : l'utilisateur est-il toujours sur cet onglet ?
+    const still = tab => S.tab === 'finance_home' && S.finTab === tab && $('#fin-content');
 
-    // Remplace le placeholder laissé par Claude
+    // Page Finance : tableau de bord complet pour le directeur.
+    // Les autres rôles (percepteur) gardent la page de repli définie dans app.js (Impayés uniquement).
+    const baseFin = window.vFinanceHome;
     window.vFinanceHome = function () {
-        if (S.me.role !== 'directeur') return toast('Accès réservé au directeur.');
+        if (S.me.role !== 'directeur') return baseFin();
         if (S.finTab === undefined) S.finTab = 'dash';
         S.tab = 'finance_home';
         renderFin();
@@ -42,9 +43,10 @@
             ['dettes', 'Dettes'],
             ['revenus', 'Revenus'],
             ['impayes', 'Impayés'],
-            ['depenses', 'Dépenses']
+            ['depenses', 'Dépenses'],
+            ['bilan', 'Bilan']
         ];
-        h += `<div class="chips" style="margin-bottom:15px">${tabs.map(t => `<button class="chip ${S.finTab === t[0] ? 'on' : ''}" onclick="S.finTab='${t[0]}';renderFin()">${t[1]}</button>`).join('')}</div>`;
+        h += `<div class="chips" style="margin-bottom:15px">${tabs.map(t => `<button class="chip ${S.finTab === t[0] ? 'on' : ''}" onclick="${t[0] === 'bilan' ? "S.tab='bilan';render()" : `S.finTab='${t[0]}';renderFin()`}">${t[1]}</button>`).join('')}</div>`;
         
         $('#main').innerHTML = h + `<div id="fin-content"><div class=sk></div><div class=sk></div></div>`;
 
@@ -62,14 +64,16 @@
     // ==========================================
     async function loadDash() {
         const m = thisMonth();
-        const [enc, dep, rev, det] = await Promise.all([
-            db.from('payments').select('amount_cdf').gte('created_at', m + '-01'),
+        const [enc, fenc, dep, rev, det] = await Promise.all([
+            db.from('payments').select('amount_cdf').gte('created_at', monthStartIso()),
+            db.from('fee_payments').select('amount_cdf').gte('created_at', monthStartIso()),
             db.from('expenses').select('amount_cdf').gte('date', m + '-01'),
             db.from('revenues').select('amount_cdf').gte('date', m + '-01'),
             db.from('debts').select('amount_cdf,type').eq('status', 'en_attente')
         ]);
+        if (!still('dash')) return;
 
-        const totEnc = (enc.data || []).reduce((a, b) => a + Number(b.amount_cdf), 0);
+        const totEnc = (enc.data || []).concat(fenc.data || []).reduce((a, b) => a + Number(b.amount_cdf), 0);
         const totDep = (dep.data || []).reduce((a, b) => a + Number(b.amount_cdf), 0);
         const totRev = (rev.data || []).reduce((a, b) => a + Number(b.amount_cdf), 0);
         const solde = totEnc + totRev - totDep;
@@ -112,6 +116,7 @@
             db.from('budgets').select('*').eq('month', m),
             db.from('expenses').select('category,amount_cdf').gte('date', m + '-01')
         ]);
+        if (!still('budget')) return;
 
         const budgets = bud.data || [];
         const depenses = dep.data || [];
@@ -122,7 +127,8 @@
 
         cats.forEach(c => {
             const b = budgets.find(x => x.category === c);
-            const prevu = b ? Number(b.planned_amount) : 0;
+            // planned_amount est stocké en FC ; anciennes lignes enregistrées dans une autre devise -> converties
+            const prevu = b ? Number(b.planned_amount) * (b.currency && b.currency !== 'CDF' ? (S.school.rates[b.currency] || 1) : 1) : 0;
             const reel = depenses.filter(x => x.category === c).reduce((a, x) => a + Number(x.amount_cdf), 0);
             
             if (prevu === 0 && reel === 0) return; // On n'affiche pas les catégories vides
@@ -154,9 +160,10 @@
         const cats = ['salaires', 'loyer', 'electricite', 'fournitures', 'transport', 'entretien', 'examens', 'communication', 'autre'];
         const options = cats.map(c => [c, c.charAt(0).toUpperCase() + c.slice(1)]);
         
+        const rate = S.school.rates[S.cur] || 1;
         ask('Budget prévisionnel', [
             { n: 'cat', l: 'Catégorie', o: options, v: cat !== 'nouvelle' ? cat : 'salaires' },
-            { n: 'amount', l: 'Montant prévu (' + S.cur + ')', t: 'number', v: current || '' }
+            { n: 'amount', l: 'Montant prévu (' + S.cur + ')', t: 'number', v: current ? Math.round(current / rate * 100) / 100 : '' }
         ], async v => {
             const m = thisMonth();
             // Upsert (met à jour si existe, crée sinon)
@@ -165,8 +172,8 @@
                 year: S.year,
                 month: m,
                 category: v.cat,
-                planned_amount: +v.amount,
-                currency: S.cur
+                planned_amount: +v.amount * rate,   // toujours enregistré en FC (comme les dépenses)
+                currency: 'CDF'
             }, { onConflict: 'school_id,year,month,category' });
             
             if (error) throw error;
@@ -180,23 +187,25 @@
     // ==========================================
     async function loadDettes() {
         const { data } = await db.from('debts').select('*').eq('status', 'en_attente').order('due_date');
+        if (!still('dettes')) return;
         const dettes = data || [];
         const aPayer = dettes.filter(d => d.type === 'a_payer');
         const aRecevoir = dettes.filter(d => d.type === 'a_recevoir');
 
         const card = d => {
             const isLate = d.due_date < tdy();
+            const wl = d.contact_phone ? waLink(d.contact_phone, 'Bonjour, concernant « ' + d.label + ' ».') : null;
             return `
                 <div class="card col" style="margin-bottom:8px;border-left:3px solid ${isLate ? 'var(--bad)' : 'var(--line)'}">
                     <div style="display:flex;justify-content:space-between">
                         <b>${esc(d.label)}</b>
                         <b class="${d.type === 'a_payer' ? 'due' : 'ok'}">${fmt(d.amount_cdf)}</b>
                     </div>
-                    <small>Échéance : ${new Date(d.due_date).toLocaleDateString('fr-FR')} ${isLate ? '⚠ En retard' : ''}</small>
+                    <small>Échéance : ${dateFr(d.due_date)} ${isLate ? '⚠ En retard' : ''}</small>
                     ${d.contact_name ? `<small>Contact : ${esc(d.contact_name)}</small>` : ''}
                     <div class="row" style="margin-top:8px">
                         <button class="ghost" style="flex:1;padding:6px;font-size:12px" onclick="payDette('${d.id}')">Marquer comme payé/reçu</button>
-                        ${d.contact_phone ? `<a class="btn ghost" style="flex:1;padding:6px;font-size:12px;text-decoration:none" href="https://wa.me/${d.contact_phone.replace(/[^0-9]/g, '')}?text=Bonjour, concernant ${encodeURIComponent(d.label)}..." target="_blank">WhatsApp</a>` : ''}
+                        ${wl ? `<a class="btn ghost" style="flex:1;padding:6px;font-size:12px;text-decoration:none" href="${wl}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
                     </div>
                 </div>
             `;
@@ -251,12 +260,13 @@
     // ==========================================
     async function loadRevenus() {
         const { data } = await db.from('revenues').select('*').order('date', { ascending: false }).limit(30);
+        if (!still('revenus')) return;
         const l = data || [];
 
         let h = `<div class="card col" style="margin-bottom:15px"><b>Derniers revenus</b><small>Dons, subventions, locations...</small></div>`;
         h += l.length ? l.map(r => `
             <div class="card" style="margin-bottom:6px">
-                <span>${esc(r.label)}<br><small>${new Date(r.date).toLocaleDateString('fr-FR')}</small></span>
+                <span>${esc(r.label)}<br><small>${dateFr(r.date)}</small></span>
                 <b class="ok">${fmt(r.amount_cdf)}</b>
             </div>
         `).join('') : '<p class=empty>Aucun revenu enregistré.</p>';

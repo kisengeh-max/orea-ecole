@@ -26,12 +26,14 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const nf = (n, d = 2) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: d }).format(n);
 const fmt = n => nf(n / (S.school.rates[S.cur] || 1), S.cur === 'CDF' ? 0 : 2) + ' ' + SYM[S.cur];
 const isNet = e => !!e && (e.name === 'AuthRetryableFetchError' || e.status === 0 || /fetch|network|abort|load failed|timed? ?out/i.test(e.message || ''));
+let toastTimer = 0;
 const toast = m => {
     m = /failed to fetch|networkerror|network request|abort|load failed/i.test(m) ? 'Pas de connexion internet.' : m;
     const t = $('#toast');
     t.textContent = m;
     t.hidden = false;
-    setTimeout(() => t.hidden = true, 4000);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.hidden = true, 4000);
 };
 
 let dlgPushed = false, ignorePop = false;
@@ -324,7 +326,13 @@ async function boot() {
     S.me = p;
     db.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', p.id).then(() => { }, () => { });
     const { data: s, error: es } = await db.from('schools').select('*').eq('id', p.school_id).single();
-    if (!s) return isNet(es) && snap && snap.uid === p.id ? goOffline(snap) : netView();
+    if (!s) {
+        if (isNet(es) && snap && snap.uid === p.id) return goOffline(snap);
+        if (isNet(es) || !es) return netView();
+        $('#nav').hidden = true;
+        $('#main').innerHTML = '<div class=auth><h2>École introuvable</h2><p>' + esc(es.message || 'Impossible de charger ton école.') + '</p><button onclick=boot()>Réessayer</button><button class=ghost onclick=out()>Déconnexion</button></div>';
+        return;
+    }
     S.school = s; $('#hs').textContent = s.name;
     if (s.sub_until) { const left = Math.ceil((new Date(s.sub_until) - Date.now()) / 864e5); if (left <= 0) return lockView(); }
     await autoRate(); await qsync(); await load(); render();
@@ -833,12 +841,13 @@ async function adminDraw() {
         const ok = left > 0;
         const waMsg = ok ? `Bonjour, l’abonnement de ${s.name} arrive à échéance dans ${left} jour(s).` : `Bonjour, l’abonnement de ${s.name} est arrivé à échéance.`;
         const waUrl = s.phone ? waLink(s.phone, waMsg) : null;
-        return `<div class="card col"><b>${esc(s.name)}</b><span>${esc(s.director_name || '—')} · ${esc(s.director_email || '')}</span><small>${s.students} élèves · ${s.members} compte(s) · code ${esc(s.code)}</small><span class="${ok && left > 7 ? 'ok' : 'due'}">${ok ? 'Actif jusqu’au ' + d.toLocaleDateString('fr-FR') + ' (' + left + ' j)' : '⛔ Expiré'}</span><div class=row>${waUrl ? `<a class="btn ghost" style="width:auto;text-decoration:none" href="${waUrl}" target="_blank">💬 Relance WhatsApp</a>` : `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}')">📞 Ajouter WhatsApp</button>`}${s.phone ? `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}','${esc(s.phone)}')">✏</button>` : ''}</div><div class=row>${[1, 2, 3, 6].map(n => `<button class=ghost onclick="extModal('${s.id}','${esc(s.name)}',${n})">+${n} m</button>`).join('')}</div></div>`;
+        return `<div class="card col"><b>${esc(s.name)}</b><span>${esc(s.director_name || '—')} · ${esc(s.director_email || '')}</span><small>${s.students} élèves · ${s.members} compte(s) · code ${esc(s.code)}</small><span class="${ok && left > 7 ? 'ok' : 'due'}">${ok ? 'Actif jusqu’au ' + d.toLocaleDateString('fr-FR') + ' (' + left + ' j)' : '⛔ Expiré'}</span><div class=row>${waUrl ? `<a class="btn ghost" style="width:auto;text-decoration:none" href="${waUrl}" target="_blank">💬 Relance WhatsApp</a>` : `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}')">📞 Ajouter WhatsApp</button>`}${s.phone ? `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}','${esc(s.phone)}')">✏</button>` : ''}</div><div class=row>${[1, 2, 3, 6].map(n => `<button class=ghost onclick="extModal('${s.id}',${n})">+${n} m</button>`).join('')}</div></div>`;
     }).join('') : '<p class=empty>Aucune école pour le moment.</p>') + installCard() + '<button class=ghost onclick=out()>Déconnexion</button>';
     $('#main').innerHTML = h;
 }
-function extModal(sid, sname, n) {
-    ask('Prolonger ' + sname + ' (+' + n + ' mois)', [{ n: 'amount', l: 'Montant perçu', t: 'number', v: '0' }, { n: 'cur', l: 'Devise', o: CUR.map(c => [c, c]), v: 'USD' }, { n: 'note', l: 'Remarque', r: false }], async v => {
+function extModal(sid, n) {
+    const sname = ((typeof ADM !== 'undefined' && ADM.sch ? ADM.sch.find(x => x.id === sid) : null) || {}).name || 'l’école';
+    ask('Prolonger ' + esc(sname) + ' (+' + n + ' mois)', [{ n: 'amount', l: 'Montant perçu', t: 'number', v: '0' }, { n: 'cur', l: 'Devise', o: CUR.map(c => [c, c]), v: 'USD' }, { n: 'note', l: 'Remarque', r: false }], async v => {
         const { error } = await db.rpc('admin_extend', { sid, n: +n, pay_amount: +v.amount || 0, pay_cur: v.cur, pay_note: v.note.trim() || null });
         if (error) return toast(error.message);
         toast('Abonnement prolongé de ' + n + ' mois'); adminView();
@@ -852,8 +861,9 @@ function setSchoolPhone(sid, curr = '') {
     });
 }
 async function adminHistory() {
-    const [{ data: p = [], error }, { data: sc = [] }] = await Promise.all([db.from('sub_payments').select('*').order('created_at', { ascending: false }).limit(100), db.from('schools').select('id,name')]);
+    const [{ data: p0, error }, { data: sc0 }] = await Promise.all([db.from('sub_payments').select('*').order('created_at', { ascending: false }).limit(100), db.from('schools').select('id,name')]);
     if (error) return toast(error.message);
+    const p = p0 || [], sc = sc0 || [];
     const nm = Object.fromEntries(sc.map(s => [s.id, s.name]));
     const totUSD = p.filter(x => x.currency === 'USD').reduce((t, x) => t + Number(x.amount), 0);
     const totCDF = p.filter(x => x.currency === 'CDF').reduce((t, x) => t + Number(x.amount), 0);
@@ -892,10 +902,11 @@ async function hist(id) {
     const data = [...d1.map(p => ({ ...p, _f: 0 })), ...(d2 || []).map(p => ({ ...p, _f: 1 }))].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     const ids = d1.map(p => p.id);
     const fids = (d2 || []).map(p => p.id);
-    const [{ data: pend = [] }, { data: fpend = [] }] = await Promise.all([
+    const [{ data: pend0 }, { data: fpend0 }] = await Promise.all([
         ids.length ? db.from('change_requests').select('payment_id').eq('status', 'en_attente').in('payment_id', ids) : { data: [] },
         fids.length ? db.from('change_requests').select('fee_payment_id').eq('status', 'en_attente').in('fee_payment_id', fids) : { data: [] }
     ]);
+    const pend = pend0 || [], fpend = fpend0 || [];
     const pe = new Set(pend.map(r => r.payment_id));
     const fpe = new Set(fpend.map(r => r.fee_payment_id));
     const d = show(`<h3>Reçus</h3>${data.length ? data.map((p, i) => {
@@ -918,7 +929,7 @@ function fixPay(p, sid) {
     d.querySelector('#f3').onclick = () => hist(sid);
     d.querySelector('#f1').onclick = () => ask(D ? 'Modifier' : 'Demande de modification', [{ n: 'amount', l: 'Montant', t: 'number', v: p.amount }, ...(p._f ? [] : [{ n: 'term', l: 'Trimestre', o: T, v: String(p.term) }]), ...(D ? [] : [{ n: 'reason', l: 'Motif', r: false }])], async v => {
         if (D) {
-            if (p._f) { const { data, error } = await db.from('fee_payments').update({ amount: +v.amount, amount_cdf: +v.amount * p.rate, fee_paid: (+v.amount * p.rate) / rateOf(S.fees.find(f => f.id === p.fee_id).currency) }).eq('id', p.id).select(); if (error) throw error; if (!data.length) throw Error('Refusé'); }
+            if (p._f) { const { data, error } = await db.from('fee_payments').update({ amount: +v.amount, amount_cdf: +v.amount * (p.rate || rateOf(p.currency)), fee_paid: +v.amount * (p.rate || rateOf(p.currency)) / rateOf(((S.fees.find(f => f.id === p.fee_id) || {}).currency) || p.currency) }).eq('id', p.id).select(); if (error) throw error; if (!data.length) throw Error('Refusé'); }
             else { const { data, error } = await db.from('payments').update({ amount: +v.amount, term: +v.term }).eq('id', p.id).select(); if (error) throw error; if (!data.length) throw Error('Refusé'); }
             await load(); render(); toast('Modifié');
         }
@@ -942,7 +953,8 @@ async function decide(id, ok) {
     await load(); render(); toast(ok ? 'Approuvée' : 'Refusée');
 }
 async function journal() {
-    const [{ data: a = [] }, { data: pr = [] }] = await Promise.all([db.from('audit_log').select('*').order('created_at', { ascending: false }).limit(60), db.from('profiles').select('id,full_name')]);
+    const [ra, rpr] = await Promise.all([db.from('audit_log').select('*').order('created_at', { ascending: false }).limit(60), db.from('profiles').select('id,full_name')]);
+    const a = ra.data || [], pr = rpr.data || [];
     const nm = Object.fromEntries(pr.map(p => [p.id, p.full_name])), T = { payments: 'Paiement', fee_payments: 'Paiement de frais', students: 'Élève', classes: 'Classe' };
     const line = r => {
         const o = r.old_row || {}, n = r.new_row || {};
@@ -1148,14 +1160,17 @@ async function vCaisse() {
     const [c, m] = tot(dir() ? ps : mine);
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Aujourd’hui ${dir() ? '(toute l’école)' : '(ma caisse)'}</h3><div class=card><span>Espèces</span><b>${fmt(c)}</b></div><div class=card><span>Mobile Money</span><b>${fmt(m)}</b></div><div class=card><span>Paiements</span><b>${(dir() ? ps : mine).length}</b></div>`;
     if (S.me.role === 'percepteur') h += '<button onclick=closeDay()>Clôturer ma journée</button>';
-    let { data: cl = [] } = await db.from('closures').select('*').order('created_at', { ascending: false }).limit(30);
+    let { data: cl } = await db.from('closures').select('*').order('created_at', { ascending: false }).limit(30);
+    cl = cl || [];
     if (!dir()) cl = cl.filter(k => k.collector_id === S.me.id);
-    const { data: pr = [] } = await db.from('profiles').select('id,full_name');
-    const nm = Object.fromEntries(pr.map(p => [p.id, p.full_name]));
-    let { data: rq = [] } = await db.from('change_requests').select('*').order('created_at', { ascending: false }).limit(20);
+    const { data: pr0 } = await db.from('profiles').select('id,full_name');
+    const nm = Object.fromEntries((pr0 || []).map(p => [p.id, p.full_name]));
+    let { data: rq } = await db.from('change_requests').select('*').order('created_at', { ascending: false }).limit(20);
+    rq = rq || [];
     if (!dir()) rq = rq.filter(r => r.requested_by === S.me.id);
     const st = { en_attente: '⏳ En attente', approuvee: '✓ Approuvée', refusee: '✗ Refusée' };
-    const reqHtml = rq.length ? '<h3>Demandes de correction</h3>' + rq.map(r => `<div class="card col"><b>${esc(r.info || 'Paiement supprimé')}</b><span>${r.kind === 'delete_payment' ? 'Suppression' : 'Correction → ' + nf(r.new_amount) + ' · T' + r.new_term}${nm[r.requested_by] ? ' · ' + esc(nm[r.requested_by]) : ''}</span><small>${st[r.status]}${r.reason ? ' · ' + esc(r.reason) : ''}</small>${dir() && r.status === 'en_attente' ? `<div class=row><button onclick="decide('${r.id}',true)">Approuver</button><button class=ghost onclick="decide('${r.id}',false)">Refuser</button></div>` : ''}</div>`).join('') : '';
+    const isSig = r => /^Signalement parent/.test(r.reason || ''), reqLabel = r => isSig(r) ? 'Signalement d’un parent (aucune modification demandée)' : /^delete/.test(r.kind || '') ? 'Suppression' : 'Correction → ' + nf(r.new_amount || 0) + (r.new_term ? ' · T' + r.new_term : '');
+    const reqHtml = rq.length ? '<h3>Demandes de correction</h3>' + rq.map(r => `<div class="card col"><b>${esc(r.info || 'Paiement')}</b><span>${reqLabel(r)}${nm[r.requested_by] ? ' · ' + esc(nm[r.requested_by]) : ''}</span><small>${st[r.status] || ''}${r.reason ? ' · ' + esc(r.reason) : ''}</small>${dir() && r.status === 'en_attente' ? `<div class=row>${isSig(r) ? '' : `<button onclick="decide('${r.id}',true)">Approuver</button>`}<button class=ghost onclick="decide('${r.id}',false)">${isSig(r) ? 'Classer' : 'Refuser'}</button></div>` : ''}</div>`).join('') : '';
     h += reqHtml + '<h3>Clôtures</h3>' + (cl.length ? cl.map(k => {
         const e = k.declared_cash - k.expected_cash, bad = Math.abs(e) > 0.5;
         return `<div class="card col"><b>${k.day} · ${esc(nm[k.collector_id] || '')}</b><span>Attendu ${fmt(k.expected_cash)} · Compté ${fmt(k.declared_cash)}</span><span class="${bad ? 'due' : 'ok'}">${bad ? '⚠ Écart : ' + fmt(e) : '✓ Aucun écart'}</span><small>${k.status === 'controlee' ? 'Contrôlée' : 'À contrôler'}${k.note ? ' · ' + esc(k.note) : ''}</small>${dir() && k.status === 'enregistree' ? `<button class=ghost onclick="ctl('${k.id}')">Marquer comme contrôlée</button>` : ''}</div>`;
@@ -1182,7 +1197,7 @@ async function ctl(id) {
 function vReglages() {
     const sc = S.school;
     let h = `<div class=card><span>Devise d’affichage</span><select id=cu style=width:auto;margin:0>${CUR.map(c => `<option ${c === S.cur ? 'selected' : ''}>${c}</option>`).join('')}</select></div><div class=card><span>Thème</span><button class=ghost style=width:auto id=th>Clair / Sombre</button></div>` + installCard();
-    if (dir()) h += `<div class="card col"><b>Taux de change (1 unité en FC)</b><label>USD<input id=r1 type=number step=any value="${sc.rates.USD}"></label><label>EUR<input id=r2 type=number step=any value="${sc.rates.EUR}"></label><label><input id=au type=checkbox style=width:auto ${sc.auto_rates ? 'checked' : ''}> Mise à jour automatique</label><button id=sr>Enregistrer les taux</button><small>Code d’invitation : <b>${sc.code}</b></small></div>`;
+    if (dir()) h += `<div class="card col"><b>Taux de change (1 unité en FC)</b><label>USD<input id=r1 type=number step=any value="${sc.rates.USD}"></label><label>EUR<input id=r2 type=number step=any value="${sc.rates.EUR}"></label><label><input id=au type=checkbox style=width:auto ${sc.auto_rates ? 'checked' : ''}> Mise à jour automatique</label><button id=sr>Enregistrer les taux</button><small>Code d’invitation : <b>${esc(sc.code)}</b></small></div>`;
     if (dir()) h += `<div class="card col"><b>Frais par trimestre</b>${yc().length ? yc().map(c => `<button class=ghost onclick="editFees('${c.id}')">${esc(c.name)} · T1: ${nf(c.fee_t1 || 0)} / T2: ${nf(c.fee_t2 || 0)} / T3: ${nf(c.fee_t3 || 0)} ${c.fee_currency}</button>`).join('') : '<small>Aucune classe.</small>'}<small>Touche une classe pour modifier T1, T2 et T3.</small></div>`;
     if (dir()) {
         const yf = S.fees.filter(f => cy(f) === S.year && !f.student_id), tm = S.terms[S.year] || {};
@@ -1196,7 +1211,9 @@ function vReglages() {
     $('#cu').onchange = e => { S.cur = e.target.value; localStorage.cur = S.cur; toast('Devise : ' + S.cur); };
     $('#th').onclick = () => { const t = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; document.documentElement.dataset.theme = localStorage.theme = t; };
     if (dir()) $('#sr').onclick = async () => {
-        const rates = { CDF: 1, USD: +$('#r1').value, EUR: +$('#r2').value };
+        const usd = +$('#r1').value, eur = +$('#r2').value;
+        if (!(usd > 0) || !(eur > 0)) return toast('Les taux doivent être supérieurs à 0.');
+        const rates = { CDF: 1, USD: usd, EUR: eur };
         const { data, error } = await db.from('schools').update({ rates, auto_rates: $('#au').checked, rates_at: new Date().toISOString() }).eq('id', sc.id).select().single();
         if (error) return toast(error.message); S.school = data; await load(); toast('Taux enregistrés');
     };
@@ -1236,7 +1253,9 @@ function openSearch() {
     setTimeout(() => $('#globalSearch').focus(), 100);
 }
 function closeSearch() { const m = $('#searchModal'); if (m) m.hidden = true; }
+let searchSeq = 0;
 async function doGlobalSearch(q) {
+    const seq = ++searchSeq;
     q = nrm(q).trim();
     const res = $('#searchRes');
     if (!q) { res.innerHTML = ''; return; }
@@ -1253,8 +1272,7 @@ async function doGlobalSearch(q) {
         h += '<h3>🏫 Classes</h3>' + cls.map(c => `<div class="card" onclick="closeSearch();openClass('${c.id}')"><span>${esc(c.name)}</span><small>${cy(c)}</small></div>`).join('');
     }
     const isRec = q.startsWith('rec') || /^\d+$/.test(q);
-    if (!h) res.innerHTML = '<p class=empty>Recherche...</p>';
-    else res.innerHTML = h;
+    res.innerHTML = h || '<p class=empty>' + (isRec ? 'Recherche…' : 'Aucun résultat.') + '</p>';
     if (isRec) {
         const num = q.replace('rec-', '').replace('rec', '');
         const rno = parseInt(num, 10);
@@ -1263,7 +1281,9 @@ async function doGlobalSearch(q) {
                 db.from('payments').select('*, students(name)').eq('receipt_no', rno).limit(1),
                 db.from('fee_payments').select('*, students(name)').eq('receipt_no', rno).limit(1)
             ]);
+            if (seq !== searchSeq) return;
             const found = (p && p.length ? p[0] : (f && f.length ? f[0] : null));
+            if (!found && !h) res.innerHTML = '<p class=empty>Aucun résultat.</p>';
             if (found) {
                 h += '<h3>🧾 Reçu trouvé</h3>' + `<div class="card" onclick="closeSearch();hist('${found.student_id}')"><span>REC-${String(found.receipt_no).padStart(4, '0')}<br><small>${esc(found.students ? found.students.name : '')}</small></span><b>${nf(found.amount)} ${found.currency}</b></div>`;
                 res.innerHTML = h;
@@ -1444,7 +1464,7 @@ function vMenu() {
         h += menuCard('annonces', 'Annonces', null, "pAdminAnnonce()");
     }
     h += `<div class=menu-title>Jeux</div>`;
-    h += menuCard('alerte', 'Génie en Herbe', 'Quiz', "OreaQuizUI.openNewGame()");
+    h += menuCard('alerte', 'Génie en Herbe', 'Quiz', "openQuiz()");
     $('#main').innerHTML = h;
 }
 
@@ -1457,13 +1477,13 @@ function vImpayes() {
     if (S.impf === '60j') l = l.filter(s => { const last = s.last_pay ? new Date(s.last_pay).getTime() : 0; return Date.now() - last > 60 * 864e5; });
     l.sort((a, b) => { if (S.imps === 'montant') return b.balance_cdf - a.balance_cdf; const la = a.last_pay ? new Date(a.last_pay).getTime() : 0, lb = b.last_pay ? new Date(b.last_pay).getTime() : 0; return la - lb; });
     const tot = l.reduce((a, s) => a + Number(s.balance_cdf || 0), 0);
-    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Impayés</h3>`;
+    let h = subBack() + `<h3>Impayés</h3>`;
     h += `<div class=bar><select id=icl><option value="">Toutes classes</option>${yc().map(c => `<option value="${c.id}" ${S.impcls === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
     h += `<div class=chips><button class="chip ${S.impf === 'all' ? 'on' : ''}" onclick="S.impf='all';render()">Tous</button><button class="chip ${S.impf === '30j' ? 'on' : ''}" onclick="S.impf='30j';render()">> 30j</button><button class="chip ${S.impf === '60j' ? 'on' : ''}" onclick="S.impf='60j';render()">> 60j</button></div>`;
     h += `<div class=card><span>${l.length} élève(s)</span><b class=due>${fmt(tot)}</b></div>`;
     h += `<div class=row><button class=ghost onclick=impayesPDF()>📄 PDF</button>${dir() ? `<button onclick=reminders()>💬 Relancer</button>` : ''}</div>`;
     h += l.length ? l.map(s => `<div class=card onclick="menu('${s.id}')"><span>${esc(s.name)}<br><small>${esc(cnm(s.class_id))} · ${s.last_pay ? 'Dernier paiement il y a ' + Math.floor((Date.now() - new Date(s.last_pay)) / 864e5) + 'j' : 'Jamais payé'}</small></span><b class=due>${fmt(s.balance_cdf)}</b></div>`).join('') : '<p class=empty>Aucun impayé pour ces critères.</p>';
-    $('#main').innerHTML = h;
+    subHost().innerHTML = h;
     $('#icl').onchange = e => { S.impcls = e.target.value; render(); };
 }
 function impayesPDF() {
@@ -1480,19 +1500,25 @@ function impayesPDF() {
 
 /* ---------- Dépenses ---------- */
 function nextMonth(ym) { const [y, m] = ym.split('-').map(Number), d = new Date(y, m, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+// Quand Impayés / Dépenses s'affichent dans l'onglet Finance (finance.js), on écrit dans #fin-content
+const finEmb = () => S.tab === 'finance_home' ? $('#fin-content') : null;
+const subHost = () => finEmb() || $('#main');
+const subBack = () => finEmb() ? '' : '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>';
+function failView(e) { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><p class=empty>' + esc((e && e.message) || e || 'Erreur') + '</p><div class=row><button onclick=render()>Réessayer</button></div>'; }
+const monthRange = ym => { const [y, m] = ym.split('-').map(Number), n = new Date(y, m, 1); return [ym + '-01', n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-01']; };
 async function vDepenses() {
-    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
+    subHost().innerHTML = subBack() + SK;
     const d = new Date(); if (!S.depDate) S.depDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
     const { data, error } = await db.from('expenses').select('*').gte('date', S.depDate + '-01').lt('date', nextMonth(S.depDate) + '-01').order('date', { ascending: false });
-    if (error) return toast(error.message);
+    if (error) { if (S.tab === 'depenses' || finEmb()) subHost().innerHTML = subBack() + '<p class=empty>' + esc(error.message) + '</p>'; return; }
     S.depenses = data;
     const tot = data.reduce((a, x) => a + Number(x.amount_cdf), 0);
-    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Dépenses</h3>`;
+    let h = subBack() + `<h3>Dépenses</h3>`;
     h += `<div class=bar><input type=month value="${S.depDate}" id=dpm></div>`;
     h += `<div class=card><span>Total du mois</span><b class=due>${fmt(tot)}</b></div><button onclick=addExpense()>+ Ajouter une dépense</button>`;
     h += data.length ? data.map(x => `<div class=card onclick="editExpense('${x.id}')"><span>${esc(x.label)}<br><small>${new Date(x.date + 'T00:00').toLocaleDateString('fr-FR')} · ${x.category}</small></span><b>${nf(x.amount)} ${SYM[x.currency]}</b></div>`).join('') : '<p class=empty>Aucune dépense ce mois-ci.</p>';
-    if (S.tab !== 'depenses') return;
-    $('#main').innerHTML = h;
+    if (S.tab !== 'depenses' && !(S.tab === 'finance_home' && S.finTab === 'depenses' && $('#fin-content'))) return;
+    subHost().innerHTML = h;
     $('#dpm').onchange = e => { S.depDate = e.target.value; vDepenses(); };
 }
 function addExpense() {
@@ -1507,7 +1533,7 @@ function editExpense(id) {
     const d = show(`<h3>${esc(x.label)}</h3><p>${nf(x.amount)} ${x.currency} · ${x.category} · ${new Date(x.date + 'T00:00').toLocaleDateString('fr-FR')}</p><div class=col><button id=e1>Modifier</button><button class=ghost id=e2>Supprimer</button><button class=ghost id=e3>Fermer</button></div>`);
     d.querySelector('#e3').onclick = () => d.close();
     d.querySelector('#e1').onclick = () => ask('Modifier la dépense', [{ n: 'label', l: 'Libellé', v: x.label }, { n: 'amount', l: 'Montant (' + x.currency + ')', t: 'number', v: x.amount }], async v => {
-        const { error } = await db.from('expenses').update({ label: v.label.trim(), amount: +v.amount, amount_cdf: +v.amount * x.rate }).eq('id', id);
+        const { error } = await db.from('expenses').update({ label: v.label.trim(), amount: +v.amount, amount_cdf: +v.amount * (x.rate || rateOf(x.currency)) }).eq('id', id);
         if (error) throw error; d.close(); await vDepenses(); toast('Dépense modifiée');
     });
     d.querySelector('#e2').onclick = async () => {
@@ -1520,22 +1546,22 @@ function editExpense(id) {
 /* ---------- Bilan mensuel ---------- */
 async function vBilan() {
     const d = new Date(); if (!S.bilDate) S.bilDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
+    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=dir()?\'finance_home\':\'menu\';render()">← Finance</button></div>' + SK;
     const [y, m] = S.bilDate.split('-').map(Number), a = new Date(y, m - 1, 1), b = new Date(y, m, 1), nk = b.getFullYear() + '-' + String(b.getMonth() + 1).padStart(2, '0') + '-01';
     const [p, f, ex] = await Promise.all([
         pageAll(() => db.from('payments').select('amount_cdf,method').gte('created_at', a.toISOString()).lt('created_at', b.toISOString())),
         pageAll(() => db.from('fee_payments').select('amount_cdf,method').gte('created_at', a.toISOString()).lt('created_at', b.toISOString())),
         db.from('expenses').select('*').gte('date', S.bilDate + '-01').lt('date', nk)
     ]);
-    if (p.error || f.error || ex.error) return toast((p.error || f.error || ex.error).message);
+    if (p.error || f.error || ex.error) return failView(p.error || f.error || ex.error);
     const enc = p.data.concat(f.data), totEnc = sum(enc), esp = sum(enc.filter(x => x.method === 'especes')), mm = totEnc - esp;
     const dep = ex.data, totDep = dep.reduce((t, x) => t + Number(x.amount_cdf), 0);
     const solde = totEnc - totDep;
     S._bilan = { esp, mm, totEnc, dep, totDep, solde, date: S.bilDate };
-    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Bilan mensuel</h3>`;
+    let h = `<div class=bar><button class=ghost onclick="S.tab=dir()?'finance_home':'menu';render()">← Finance</button></div><h3>Bilan mensuel</h3>`;
     h += `<div class=bar><input type=month id=bm value="${S.bilDate}"></div>`;
-    h += `<div class=card col"><b>Encaissé</b><span>Espèces : ${fmt(esp)}</span><span>Mobile Money : ${fmt(mm)}</span><b class=ok style="margin-top:6px">Total : ${fmt(totEnc)}</b></div>`;
-    h += `<div class=card col"><b>Dépensé</b>${dep.length ? dep.map(x => `<span style="display:flex;justify-content:space-between"><small>${esc(x.label)}</small><small>${fmt(x.amount_cdf)}</small></span>`).join('') : '<small>Aucune dépense</small>'}<b class=due style="margin-top:6px">Total : ${fmt(totDep)}</b></div>`;
+    h += `<div class="card col"><b>Encaissé</b><span>Espèces : ${fmt(esp)}</span><span>Mobile Money : ${fmt(mm)}</span><b class=ok style="margin-top:6px">Total : ${fmt(totEnc)}</b></div>`;
+    h += `<div class="card col"><b>Dépensé</b>${dep.length ? dep.map(x => `<span style="display:flex;justify-content:space-between"><small>${esc(x.label)}</small><small>${fmt(x.amount_cdf)}</small></span>`).join('') : '<small>Aucune dépense</small>'}<b class=due style="margin-top:6px">Total : ${fmt(totDep)}</b></div>`;
     h += `<div class="card hero col"><small>SOLDE DU MOIS</small><span class="big" style="color:${solde >= 0 ? 'var(--ok)' : 'var(--bad)'}">${fmt(solde)}</span></div>`;
     h += `<button class=ghost onclick=bilanPDF()>📄 Exporter en PDF</button>`;
     if (S.tab !== 'bilan') return;
@@ -1557,15 +1583,15 @@ function bilanPDF() {
 async function vAbsences() {
     const d = new Date(); if (!S.absM) S.absM = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
     $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
-    const [y, m] = S.absM.split('-').map(Number), a = new Date(y, m - 1, 1), b = new Date(y, m, 1);
-    const { data, error } = await db.from('attendance').select('*').eq('status', 'absent').gte('day', a.toISOString().split('T')[0]).lt('day', b.toISOString().split('T')[0]);
-    if (error) return toast(error.message);
+    const [mA, mB] = monthRange(S.absM);
+    const { data, error } = await db.from('attendance').select('*').eq('status', 'absent').gte('day', mA).lt('day', mB);
+    if (error) return failView(error);
     const abs = data || [], byStu = {}, byCls = {};
     abs.forEach(x => { byStu[x.student_id] = (byStu[x.student_id] || 0) + 1; const s = S.stu.find(z => z.id === x.student_id); if (s) byCls[s.class_id] = (byCls[s.class_id] || 0) + 1; });
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Suivi des absences</h3>`;
     h += `<div class=bar><input type=month id=am value="${S.absM}"></div>`;
     const l = Object.entries(byStu).map(([id, n]) => ({ s: S.stu.find(z => z.id === id), n })).filter(x => x.s && x.n >= 3).sort((a, b) => b.n - a.n);
-    h += `<div class=card col"><b>Élèves à surveiller (≥ 3 absences)</b>${l.length ? l.map(x => `<div style="display:flex;justify-content:space-between;margin:4px 0"><span>${esc(x.s.name)} (${esc(cnm(x.s.class_id))})</span><b class=due>${x.n} fois</b></div>`).join('') : '<small>Aucun élève en dessous de la limite.</small>'}</div>`;
+    h += `<div class="card col"><b>Élèves à surveiller (≥ 3 absences)</b>${l.length ? l.map(x => `<div style="display:flex;justify-content:space-between;margin:4px 0"><span>${esc(x.s.name)} (${esc(cnm(x.s.class_id))})</span><b class=due>${x.n} fois</b></div>`).join('') : '<small>Aucun élève en dessous de la limite.</small>'}</div>`;
     const c = Object.entries(byCls).map(([id, n]) => ({ c: S.classes.find(z => z.id === id), n })).filter(x => x.c).sort((a, b) => b.n - a.n);
     h += `<div class="card col"><b>Absences par classe</b>${c.length ? c.map(x => `<div style="display:flex;justify-content:space-between;margin:4px 0"><span>${esc(x.c.name)}</span><b>${x.n} abs.</b></div>`).join('') : '<small>Aucune absence.</small>'}</div>`;
     if (S.tab !== 'absences') return;
@@ -1577,9 +1603,9 @@ async function vAbsences() {
 async function vSanctions() {
     const d = new Date(); if (!S.sanM) S.sanM = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
     $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
-    const [y, m] = S.sanM.split('-').map(Number), a = new Date(y, m - 1, 1), b = new Date(y, m, 1);
-    const { data, error } = await db.from('sanctions').select('*').gte('day', a.toISOString().split('T')[0]).lt('day', b.toISOString().split('T')[0]).order('day', { ascending: false });
-    if (error) return toast(error.message);
+    const [mA, mB] = monthRange(S.sanM);
+    const { data, error } = await db.from('sanctions').select('*').gte('day', mA).lt('day', mB).order('day', { ascending: false });
+    if (error) return failView(error);
     const sanc = data || [], byStu = {};
     sanc.forEach(x => byStu[x.student_id] = (byStu[x.student_id] || 0) + 1);
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Vue globale des sanctions</h3>`;
@@ -1598,11 +1624,12 @@ async function vSanctions() {
 async function vCalendrier() {
     $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
     const { data, error } = await db.from('events').select('*').gte('start_date', tdy()).order('start_date');
-    if (error) return toast(error.message);
+    if (error) return failView(error);
     const evs = data || [];
+    S.calEvents = evs;
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Calendrier scolaire</h3>`;
     if (dir()) h += `<button onclick=addEvent()>+ Ajouter un événement</button>`;
-    h += evs.length ? evs.map(x => `<div class="card col" onclick="editEvent('${x.id}')"><b>${esc(x.title)}</b><span>${fdate(x.start_date)}${x.end_date ? ' au ' + fdate(x.end_date) : ''}</span><small>${x.type.toUpperCase()}${x.description ? ' · ' + esc(x.description) : ''}</small></div>`).join('') : '<p class=empty data-ic="📅">Aucun événement à venir.</p>';
+    h += evs.length ? evs.map(x => `<div class="card col" onclick="editEvent('${x.id}')"><b>${esc(x.title)}</b><span>${fdate(x.start_date)}${x.end_date ? ' au ' + fdate(x.end_date) : ''}</span><small>${esc((x.type || '').toUpperCase())}${x.description ? ' · ' + esc(x.description) : ''}</small></div>`).join('') : '<p class=empty data-ic="📅">Aucun événement à venir.</p>';
     h += `<h3>Exporter</h3><button class=ghost onclick=icsEvents()>📅 Ajouter à mon agenda (.ics)</button>`;
     if (S.tab !== 'calendrier') return;
     $('#main').innerHTML = h;
@@ -1614,18 +1641,22 @@ function addEvent() {
     });
 }
 function editEvent(id) {
-    const e = S.events.find(x => x.id === id);
+    const e = (S.calEvents || S.events || []).find(x => x.id === id);
+    if (!e) return toast('Événement introuvable.');
     const d = show(`<h3>${esc(e.title)}</h3><p>${fdate(e.start_date)}${e.end_date ? ' au ' + fdate(e.end_date) : ''}</p><p><small>${esc(e.description || '')}</small></p><div class=col><button class=ghost id=e2>Supprimer</button><button class=ghost id=e3>Fermer</button></div>`);
     d.querySelector('#e3').onclick = () => d.close();
     d.querySelector('#e2').onclick = async () => { if (!confirm('Supprimer ?')) return; const { error } = await db.from('events').delete().eq('id', id); if (error) return toast(error.message); d.close(); await load(); vCalendrier(); toast('Supprimé'); };
 }
 function icsEvents() {
-    if (!S.events || !S.events.length) return toast('Aucun événement.');
-    const p = n => String(n).padStart(2, '0'), stamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const evs = S.calEvents && S.calEvents.length ? S.calEvents : S.events;
+    if (!evs || !evs.length) return toast('Aucun événement.');
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const esc2 = t => String(t || '').replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/([,;])/g, '\\$1');
+    const day = (iso, plus) => { const [y, m, d] = iso.split('-').map(Number), t = new Date(Date.UTC(y, m - 1, d + (plus || 0))); return t.getUTCFullYear() + String(t.getUTCMonth() + 1).padStart(2, '0') + String(t.getUTCDate()).padStart(2, '0'); };
     const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//OREA Ecole//FR'];
-    S.events.forEach(e => { const d = e.start_date.split('-'), ds = d[0] + d[1] + d[2]; lines.push('BEGIN:VEVENT', 'UID:' + e.id + '@orea', 'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + ds, 'SUMMARY:' + e.title, 'DESCRIPTION:' + (e.description || ''), 'END:VEVENT'); });
+    evs.forEach(e => lines.push('BEGIN:VEVENT', 'UID:' + e.id + '@orea', 'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + day(e.start_date), 'DTEND;VALUE=DATE:' + day(e.end_date || e.start_date, 1), 'SUMMARY:' + esc2(e.title), 'DESCRIPTION:' + esc2(e.description), 'END:VEVENT'));
     lines.push('END:VCALENDAR');
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/calendar' })); a.download = 'calendrier-orea.ics'; a.click();
+    dl(new Blob([lines.join('\r\n')], { type: 'text/calendar' }), 'calendrier-orea.ics');
 }
 
 /* ---------- Rapport mensuel (image PNG partageable) ---------- */
@@ -1752,7 +1783,7 @@ async function drawTT() {
     const l = data || [], R = S.me.role;
     if (!l.length) { el.innerHTML = `<p class=empty data-ic="📅">Aucun créneau pour cette classe.</p>`; return; }
     const byDay = {}; l.forEach(t => (byDay[t.day] = byDay[t.day] || []).push(t));
-    const days = Object.keys(byDay).map(Number).sort((a, b) => a - b);
+    const days = Object.keys(byDay).map(Number).sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
     el.innerHTML = days.map(d => `<h3>${['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'][d] || ''}</h3>` + byDay[d].map(t => {
         const can = R === 'directeur' || R === 'enseignant';
         return `<div class=card><span><b>${esc(t.subject)}</b><br><small>${hhmmP(t.start_time)} – ${hhmmP(t.end_time)}${t.room ? ' · ' + esc(t.room) : ''}</small></span>${can ? `<div class=row style="margin:0"><button class=ghost data-e="${t.id}" style="width:auto;min-height:36px;padding:6px 10px">✏️</button><button class=ghost data-x="${t.id}" style="width:auto;min-height:36px;padding:6px 10px">🗑</button></div>` : ''}</div>`;
@@ -1792,7 +1823,7 @@ async function editSlot(id) {
 
 // --- FIN DE LA TRANCHE 11. La tranche suivante (et dernière) commencera par : /* ---------- Initialisation finale ---------- */ ---
 /* ---------- Initialisation finale ---------- */
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
 window.addEventListener('online', () => { S.offline ? boot() : qsync(); });
 window.addEventListener('offline', qui);
 setInterval(qsync, 30000);
@@ -1848,7 +1879,8 @@ window.pAdminJustifs = async function() {
 
 // --- MODIFICATION : Mise à jour de l'appel si approuvé ---
 window.pAdminJustifAct = async function(id, st, studentId, day, endDate) {
-    await db.from('absence_justifications').update({ status: st }).eq('id', id);
+    const { error: ue } = await db.from('absence_justifications').update({ status: st }).eq('id', id);
+    if (ue) return toast(ue.message);
     if (st === 'approuve' && studentId && day) {
         // Mise à jour automatique de l'appel
         const dates = [day];
@@ -1857,12 +1889,12 @@ window.pAdminJustifAct = async function(id, st, studentId, day, endDate) {
             const end = new Date(endDate + 'T00:00');
             while (d < end) {
                 d.setDate(d.getDate() + 1);
-                if (d <= end) dates.push(d.toLocaleDateString('sv-SE'));
+                if (d <= end && d.getDay() !== 0) dates.push(d.toLocaleDateString('sv-SE'));
             }
         }
         const rows = dates.map(d => ({ school_id: S.school.id, student_id: studentId, day: d, status: 'present' }));
-        await db.from('attendance').upsert(rows, { onConflict: 'student_id,day' });
-        toast('Justificatif accepté et présence mise à jour ✓');
+        const { error: ae } = await db.from('attendance').upsert(rows, { onConflict: 'student_id,day' });
+        toast(ae ? 'Justificatif accepté, mais l’appel n’a pas pu être mis à jour : ' + ae.message : 'Justificatif accepté et présence mise à jour ✓');
     } else {
         toast('Mis à jour');
     }
@@ -1882,13 +1914,24 @@ window.pAdminAnnonce = function() {
 };
 
 /* ---------- Fonctions de classe (seront fournies dans une autre tranche) ---------- */
-window.openDevoirsClasse = window.openDevoirsClasse || (() => { });
-window.openHoraireClasse = window.openHoraireClasse || (() => { });
-window.openSanctionsClasse = window.openSanctionsClasse || (() => { });
+window.openDevoirsClasse = window.openDevoirsClasse || (() => menuGo('devoirs'));
+window.openHoraireClasse = window.openHoraireClasse || (() => menuGo('emploi_temps'));
+window.openSanctionsClasse = window.openSanctionsClasse || (() => menuGo('sanctions'));
 
 /* ---------- Sous-menus (placeholders, remplacés plus tard) ---------- */
-function vFinanceHome() { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><h3>Finance</h3><p>Bientôt disponible.</p>'; }
-function vProgrammeHome() { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><h3>Programme</h3><p>Bientôt disponible.</p>'; }
-function vDonneesHome() { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><h3>Données</h3><p>Bientôt disponible.</p>'; }
+function subMenuPage(title, cards) { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><h3>' + title + '</h3>' + cards; }
+// Repli pour les rôles autres que directeur (finance.js remplace cette page pour le directeur)
+function vFinanceHome() {
+    subMenuPage('Finance', menuCard('impayes', 'Impayés', 'Élèves à relancer', "menuGo('impayes')") + (dir() ? menuCard('depenses', 'Dépenses', null, "menuGo('depenses')") + menuCard('bilan', 'Bilan mensuel', null, "menuGo('bilan')") : ''));
+}
+function vProgrammeHome() {
+    subMenuPage('Programme', menuCard('calendrier', 'Calendrier scolaire', 'Événements à venir', "menuGo('calendrier')") + menuCard('emploi_temps', 'Emploi du temps', 'Par classe', "menuGo('emploi_temps')"));
+}
+function vDonneesHome() {
+    if (!dir()) { S.tab = 'menu'; return render(); }
+    subMenuPage('Données', menuCard('exports', 'Exporter', 'Élèves · Paiements · Caisse (CSV / PDF)', 'exportMenu()') + menuCard('rapport', 'Rapport mensuel', 'Image à partager', 'monthReport()') + menuCard('sauvegarde', 'Sauvegarde complète', 'Fichier JSON à garder', 'runBackup()') + menuCard('journal', 'Journal d’activité', 'Qui a modifié quoi', 'journal()'));
+}
+async function runBackup() { try { toast('Sauvegarde en cours…'); await backupAll(); } catch (e) { toast(e.message || 'Sauvegarde impossible'); } }
+function openQuiz() { if (window.OreaQuizUI && OreaQuizUI.openNewGame) OreaQuizUI.openNewGame(); else toast('Le module Quiz n’est pas chargé.'); }
 
 // --- FIN DU FICHIER APP.JS ---

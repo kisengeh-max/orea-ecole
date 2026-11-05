@@ -73,6 +73,59 @@ async function canEditSubject(subjectId) {
     return !!data;
 }
 
+// ---------- Gérer les cours d'une classe (création des cours + rattachement à la classe) ----------
+// NB : manageClassCourses() était appelée par les boutons « Gérer les cours de cette classe » mais n'était définie nulle part.
+async function manageClassCourses() {
+    if (S.me.role !== 'directeur') return toast('Seul le directeur gère les cours de la classe.');
+    const c = cotCls(); if (!c) return;
+    let d = show(`<h3>Cours · ${esc(c.name)}</h3>${SK}`);
+    const [sj, cs] = await Promise.all([
+        db.from('subjects').select('id,name').order('name'),
+        db.from('class_subjects').select('subject_id').eq('class_id', S.cls)
+    ]);
+    if (sj.error || cs.error) {
+        d.innerHTML = `<h3>Cours · ${esc(c.name)}</h3><p class=empty>${esc((sj.error || cs.error).message)}</p><button class=ghost onclick="this.closest('dialog').close()">Fermer</button>`;
+        return;
+    }
+    const subs = sj.data || [], on = new Set((cs.data || []).map(x => x.subject_id));
+    d.addEventListener('close', () => { S.cotSubs = []; if (S.tab === 'cotation' && S.cotScreen === 'home') render(); }, { once: true });
+    // rattache / détache un cours de la classe (school_id peut ne pas exister sur cette table : on retente sans)
+    const link = async (sid, yes) => {
+        if (!yes) return db.from('class_subjects').delete().eq('class_id', S.cls).eq('subject_id', sid);
+        let r = await db.from('class_subjects').insert({ school_id: S.school.id, class_id: S.cls, subject_id: sid });
+        if (r.error && /school_id|column/i.test(r.error.message || '')) r = await db.from('class_subjects').insert({ class_id: S.cls, subject_id: sid });
+        return r;
+    };
+    const draw = () => {
+        d = show(`<h3>Cours · ${esc(c.name)}</h3><small>Coche les cours enseignés dans cette classe.</small>
+            <div style="max-height:42vh;overflow-y:auto;margin:8px 0">${subs.length ? subs.map(s => `<label class=card style="flex-direction:row;align-items:center;justify-content:flex-start;gap:10px;padding:10px 14px;margin:5px 0"><input type=checkbox data-s="${esc(s.id)}" ${on.has(s.id) ? 'checked' : ''} style="width:auto;margin:0;transform:scale(1.4)"><span>${esc(s.name)}</span></label>`).join('') : '<p class=empty data-ic="📚">Aucun cours créé pour le moment. Ajoute le premier ci-dessous.</p>'}</div>
+            <div class=row style="margin:0"><input id=nsn placeholder="Nouveau cours (ex : Mathématiques)" maxlength=60 style="flex:1;margin:0"><button id=nsa style="width:auto">Ajouter</button></div>
+            <button class=ghost id=nsc style="margin-top:10px">Fermer</button>`);
+        d.querySelectorAll('input[data-s]').forEach(cb => cb.onchange = async () => {
+            const sid = cb.dataset.s, yes = cb.checked;
+            cb.disabled = true;
+            const r = await link(sid, yes);
+            cb.disabled = false;
+            if (r.error) { cb.checked = !yes; return toast(r.error.message); }
+            yes ? on.add(sid) : on.delete(sid);
+        });
+        d.querySelector('#nsc').onclick = () => d.close();
+        d.querySelector('#nsa').onclick = async e => {
+            const name = d.querySelector('#nsn').value.trim().replace(/\s+/g, ' ');
+            if (!name) return toast('Écris le nom du cours.');
+            if (subs.some(s => nrm(s.name) === nrm(name))) return toast('Ce cours existe déjà : coche-le dans la liste.');
+            e.target.disabled = true;
+            const { data, error } = await db.from('subjects').insert({ school_id: S.school.id, name }).select('id,name').single();
+            if (error) { e.target.disabled = false; return toast(error.message); }
+            subs.push(data); subs.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+            const r = await link(data.id, true);   // le nouveau cours est tout de suite ajouté à cette classe
+            if (!r.error) on.add(data.id); else toast(r.error.message);
+            draw();
+        };
+    };
+    draw();
+}
+
 // ---------- COTATION : accueil (historique par trimestre) ----------
 async function vCotation() {
     if (S.cotScreen === 'eval') return vCotEval();
@@ -112,10 +165,8 @@ async function cotNew() {
     if (!subs.length) return toast('Ajoute d’abord des cours à cette classe.');
     
     // On filtre les cours où l'enseignant a le droit d'ajouter des notes
-    const allowedSubs = [];
-    for (const s of subs) {
-        if (await canEditSubject(s.id)) allowedSubs.push(s);
-    }
+    const okFlags = await Promise.all(subs.map(s => canEditSubject(s.id)));
+    const allowedSubs = subs.filter((s, i) => okFlags[i]);
     
     if (!allowedSubs.length) return toast('Vous n\'êtes pas autorisé à ajouter des notes dans cette classe.');
 
@@ -179,6 +230,8 @@ async function vCotEval() {
     if (locked) {
         if (!hasPermission) h += `<div class="card" style="padding:10px 14px;border-color:var(--bad)">🔒 <small>Vous n'êtes pas l'enseignant de ce cours. Lecture seule.</small></div>`;
         else h += `<div class="card" style="padding:10px 14px;border-color:var(--gold)">⏳ <small>Modification en attente de l'approbation de l'enseignant titulaire.</small></div>`;
+    } else if (rows.some(r => r.status === 'pending')) {
+        h += `<div class="card" style="padding:10px 14px;border-color:var(--gold)">⏳ <small>Le directeur a modifié des cotes de cette évaluation. Vérifie-les puis touche « Enregistrer » pour les valider.</small></div>`;
     }
     
     if (!st.length) { $('#main').innerHTML = h + '<p class=empty>Aucun élève dans cette classe.</p>'; return; }

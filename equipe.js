@@ -56,7 +56,7 @@
                                 </button>
                             ` : ''}
                             ${isEnseignant || isPercepteur ? `
-                                <button class="ghost" style="width:auto;flex:1;padding:6px;min-height:36px;font-size:12px" onclick="manageTeacherCourses('${p.id}', '${esc(p.full_name)}')">
+                                <button class="ghost" style="width:auto;flex:1;padding:6px;min-height:36px;font-size:12px" data-mtc="${p.id}">
                                     📚 Gérer les cours
                                 </button>
                             ` : ''}
@@ -71,6 +71,10 @@
             </div>
             <button class="ghost" style="margin-top:15px" onclick="this.closest('dialog').close()">Fermer</button>
         `);
+        d.querySelectorAll('[data-mtc]').forEach(b => b.onclick = () => {
+            const p = l.find(x => x.id === b.dataset.mtc);
+            if (p) manageTeacherCourses(p.id, p.full_name);
+        });
     };
 
     // Changer le rôle (enseignant <-> percepteur)
@@ -97,10 +101,8 @@
     window.manageTeacherCourses = async function (teacherId, teacherName) {
         const { data: classes } = await db.from('classes').select('*').eq('school_id', S.school.id).eq('year', S.year).order('name');
         const { data: subjects } = await db.from('subjects').select('*').eq('school_id', S.school.id).order('name');
-        const { data: assigned } = await db.from('teacher_subjects').select('*').eq('teacher_id', teacherId).eq('year', S.year);
-        
-        const myAssigned = assigned || [];
-        
+
+
         // On va créer une modale avec une liste déroulante pour la classe, puis une liste de checkboxes pour les cours
         const d = show(`<h3>Cours de ${esc(teacherName)}</h3>
             <div class="card col" style="margin-bottom:15px">
@@ -115,6 +117,7 @@
         const drawCourses = async () => {
             const classId = $('#course_class').value;
             const box = $('#course_list');
+            if (!classId) { box.innerHTML = '<p class="empty">Aucune classe pour l’année ' + esc(S.year || '') + '.</p>'; return; }
             box.innerHTML = '<div class="sk"></div>';
             
             // Récupérer les cours attribués à cette classe spécifiquement
