@@ -69,6 +69,7 @@ window.addEventListener('popstate', () => {
     }
     if (S.me && (S.tab === 'cotation' || S.tab === 'bulletins')) { if (S.tab === 'cotation' && S.cotScreen === 'eval') S.cotScreen = 'home'; else S.tab = 'eleves'; render(); return; }
     if (S.me && S.tab === 'eleves' && S.view === 'class') { S.view = 'grid'; S.q = ''; render(); return; }
+    if (S.me && S.tab === 'bilan' && dir()) { S.tab = 'finance_home'; render(); return; }
     if (S.me && !['accueil', 'menu'].includes(S.tab)) {
         if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'finance_home', 'programme_home', 'donnees_home'].includes(S.tab)) {
             S.tab = 'menu';
@@ -1544,9 +1545,12 @@ function editExpense(id) {
 }
 
 /* ---------- Bilan mensuel ---------- */
+// Retour depuis le Bilan. NB : ne jamais écrire dir() dans un onclick="..." HTML :
+// là, « dir » désigne la propriété dir du bouton (sens du texte) et non notre fonction.
+function finBack() { S.tab = dir() ? 'finance_home' : 'menu'; render(); }
 async function vBilan() {
     const d = new Date(); if (!S.bilDate) S.bilDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=dir()?\'finance_home\':\'menu\';render()">← Finance</button></div>' + SK;
+    $('#main').innerHTML = '<div class=bar><button class=ghost onclick="finBack()">← Finance</button></div>' + SK;
     const [y, m] = S.bilDate.split('-').map(Number), a = new Date(y, m - 1, 1), b = new Date(y, m, 1), nk = b.getFullYear() + '-' + String(b.getMonth() + 1).padStart(2, '0') + '-01';
     const [p, f, ex] = await Promise.all([
         pageAll(() => db.from('payments').select('amount_cdf,method').gte('created_at', a.toISOString()).lt('created_at', b.toISOString())),
@@ -1558,7 +1562,7 @@ async function vBilan() {
     const dep = ex.data, totDep = dep.reduce((t, x) => t + Number(x.amount_cdf), 0);
     const solde = totEnc - totDep;
     S._bilan = { esp, mm, totEnc, dep, totDep, solde, date: S.bilDate };
-    let h = `<div class=bar><button class=ghost onclick="S.tab=dir()?'finance_home':'menu';render()">← Finance</button></div><h3>Bilan mensuel</h3>`;
+    let h = `<div class=bar><button class=ghost onclick="finBack()">← Finance</button></div><h3>Bilan mensuel</h3>`;
     h += `<div class=bar><input type=month id=bm value="${S.bilDate}"></div>`;
     h += `<div class="card col"><b>Encaissé</b><span>Espèces : ${fmt(esp)}</span><span>Mobile Money : ${fmt(mm)}</span><b class=ok style="margin-top:6px">Total : ${fmt(totEnc)}</b></div>`;
     h += `<div class="card col"><b>Dépensé</b>${dep.length ? dep.map(x => `<span style="display:flex;justify-content:space-between"><small>${esc(x.label)}</small><small>${fmt(x.amount_cdf)}</small></span>`).join('') : '<small>Aucune dépense</small>'}<b class=due style="margin-top:6px">Total : ${fmt(totDep)}</b></div>`;

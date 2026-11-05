@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v64 — finance.js
+   ORÉA École v65 — finance.js (lot 1 : erreurs affichées, budget branché sur la nouvelle table)
    Module complet de gestion financière pour le Directeur.
    - Tableau de bord (Encaissements vs Dépenses)
    - Budget prévisionnel (Programmé vs Réel)
@@ -22,6 +22,13 @@
     const dateFr = d => d ? new Date(d + 'T00:00').toLocaleDateString('fr-FR') : '—';
     // Après un chargement asynchrone : l'utilisateur est-il toujours sur cet onglet ?
     const still = tab => S.tab === 'finance_home' && S.finTab === tab && $('#fin-content');
+    // Affiche une erreur lisible dans l'onglet, avec un bouton Réessayer (au lieu d'un écran vide)
+    const finErr = e => {
+        const m = String((e && e.message) || e || 'Erreur inconnue');
+        const txt = /failed to fetch|networkerror|load failed/i.test(m) ? 'Pas de connexion internet.' : m;
+        $('#fin-content').innerHTML = `<p class=empty>${esc(txt)}</p><div class=row><button onclick="renderFin()">Réessayer</button></div>`;
+    };
+    const firstErr = (...r) => (r.find(x => x && x.error) || {}).error;
 
     // Page Finance : tableau de bord complet pour le directeur.
     // Les autres rôles (percepteur) gardent la page de repli définie dans app.js (Impayés uniquement).
@@ -63,15 +70,18 @@
     // 1. TABLEAU DE BORD (DASHBOARD)
     // ==========================================
     async function loadDash() {
-        const m = thisMonth();
+        const m = thisMonth(), [mA, mB] = monthRange(m), sid = S.school.id;
+        // pageAll : au-delà de 1000 paiements par mois, les totaux restent justes
         const [enc, fenc, dep, rev, det] = await Promise.all([
-            db.from('payments').select('amount_cdf').gte('created_at', monthStartIso()),
-            db.from('fee_payments').select('amount_cdf').gte('created_at', monthStartIso()),
-            db.from('expenses').select('amount_cdf').gte('date', m + '-01'),
-            db.from('revenues').select('amount_cdf').gte('date', m + '-01'),
-            db.from('debts').select('amount_cdf,type').eq('status', 'en_attente')
+            pageAll(() => db.from('payments').select('id,amount_cdf').eq('school_id', sid).gte('created_at', monthStartIso())),
+            pageAll(() => db.from('fee_payments').select('id,amount_cdf').eq('school_id', sid).gte('created_at', monthStartIso())),
+            pageAll(() => db.from('expenses').select('id,amount_cdf').eq('school_id', sid).gte('date', mA).lt('date', mB)),
+            db.from('revenues').select('amount_cdf').eq('school_id', sid).gte('date', mA).lt('date', mB),
+            db.from('debts').select('amount_cdf,type').eq('school_id', sid).eq('status', 'en_attente')
         ]);
         if (!still('dash')) return;
+        const err = firstErr(enc, fenc, dep, rev, det);
+        if (err) return finErr(err);
 
         const totEnc = (enc.data || []).concat(fenc.data || []).reduce((a, b) => a + Number(b.amount_cdf), 0);
         const totDep = (dep.data || []).reduce((a, b) => a + Number(b.amount_cdf), 0);
@@ -111,12 +121,14 @@
     // 2. BUDGET PRÉVISIONNEL
     // ==========================================
     async function loadBudget() {
-        const m = thisMonth();
+        const m = thisMonth(), [mA, mB] = monthRange(m), sid = S.school.id;
         const [bud, dep] = await Promise.all([
-            db.from('budgets').select('*').eq('month', m),
-            db.from('expenses').select('category,amount_cdf').gte('date', m + '-01')
+            db.from('budgets').select('*').eq('school_id', sid).eq('year', S.year).eq('period_type', 'mois').eq('period_key', m).eq('kind', 'depense'),
+            pageAll(() => db.from('expenses').select('id,category,amount_cdf').eq('school_id', sid).gte('date', mA).lt('date', mB))
         ]);
         if (!still('budget')) return;
+        const err = firstErr(bud, dep);
+        if (err) return finErr(err);
 
         const budgets = bud.data || [];
         const depenses = dep.data || [];
@@ -127,8 +139,7 @@
 
         cats.forEach(c => {
             const b = budgets.find(x => x.category === c);
-            // planned_amount est stocké en FC ; anciennes lignes enregistrées dans une autre devise -> converties
-            const prevu = b ? Number(b.planned_amount) * (b.currency && b.currency !== 'CDF' ? (S.school.rates[b.currency] || 1) : 1) : 0;
+            const prevu = b ? Number(b.planned_cdf) : 0; // toujours stocké en FC
             const reel = depenses.filter(x => x.category === c).reduce((a, x) => a + Number(x.amount_cdf), 0);
             
             if (prevu === 0 && reel === 0) return; // On n'affiche pas les catégories vides
@@ -152,6 +163,7 @@
             `;
         });
 
+        if (!budgets.length && !depenses.length) h += '<p class=empty>Aucune ligne de budget pour ce mois.</p>';
         h += `<button class="ghost" style="margin-top:15px" onclick="editBudget('nouvelle', 0)">+ Ajouter une ligne de budget</button>`;
         $('#fin-content').innerHTML = h;
     }
@@ -166,15 +178,17 @@
             { n: 'amount', l: 'Montant prévu (' + S.cur + ')', t: 'number', v: current ? Math.round(current / rate * 100) / 100 : '' }
         ], async v => {
             const m = thisMonth();
-            // Upsert (met à jour si existe, crée sinon)
+            if (!(+v.amount >= 0)) throw Error('Montant invalide');
+            // Upsert (met à jour si la ligne existe, la crée sinon)
             const { error } = await db.from('budgets').upsert({
                 school_id: S.school.id,
                 year: S.year,
-                month: m,
+                period_type: 'mois',
+                period_key: m,
+                kind: 'depense',
                 category: v.cat,
-                planned_amount: +v.amount * rate,   // toujours enregistré en FC (comme les dépenses)
-                currency: 'CDF'
-            }, { onConflict: 'school_id,year,month,category' });
+                planned_cdf: +v.amount * rate      // toujours enregistré en FC (comme les dépenses)
+            }, { onConflict: 'school_id,year,period_type,period_key,kind,category' });
             
             if (error) throw error;
             toast('Budget mis à jour');
@@ -186,8 +200,9 @@
     // 3. DETTES (On doit / On nous doit)
     // ==========================================
     async function loadDettes() {
-        const { data } = await db.from('debts').select('*').eq('status', 'en_attente').order('due_date');
+        const { data, error } = await db.from('debts').select('*').eq('school_id', S.school.id).eq('status', 'en_attente').order('due_date');
         if (!still('dettes')) return;
+        if (error) return finErr(error);
         const dettes = data || [];
         const aPayer = dettes.filter(d => d.type === 'a_payer');
         const aRecevoir = dettes.filter(d => d.type === 'a_recevoir');
@@ -205,7 +220,7 @@
                     ${d.contact_name ? `<small>Contact : ${esc(d.contact_name)}</small>` : ''}
                     <div class="row" style="margin-top:8px">
                         <button class="ghost" style="flex:1;padding:6px;font-size:12px" onclick="payDette('${d.id}')">Marquer comme payé/reçu</button>
-                        ${wl ? `<a class="btn ghost" style="flex:1;padding:6px;font-size:12px;text-decoration:none" href="${wl}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
+                        ${wl ? `<a class="btn ghost" style="flex:1;padding:6px;font-size:12px;text-decoration:none" href="${esc(wl)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
                     </div>
                 </div>
             `;
@@ -259,8 +274,9 @@
     // 4. REVENUS DIVERS
     // ==========================================
     async function loadRevenus() {
-        const { data } = await db.from('revenues').select('*').order('date', { ascending: false }).limit(30);
+        const { data, error } = await db.from('revenues').select('*').eq('school_id', S.school.id).order('date', { ascending: false }).limit(30);
         if (!still('revenus')) return;
+        if (error) return finErr(error);
         const l = data || [];
 
         let h = `<div class="card col" style="margin-bottom:15px"><b>Derniers revenus</b><small>Dons, subventions, locations...</small></div>`;
@@ -316,9 +332,9 @@
             
             // NOUVEAU : Publier automatiquement une annonce
             const changes = [];
-            if (+v.t1 !== c.fee_t1) changes.push('T1: ' + nf(v.t1) + ' ' + v.cur);
-            if (+v.t2 !== c.fee_t2) changes.push('T2: ' + nf(v.t2) + ' ' + v.cur);
-            if (+v.t3 !== c.fee_t3) changes.push('T3: ' + nf(v.t3) + ' ' + v.cur);
+            if (+v.t1 !== Number(c.fee_t1)) changes.push('T1: ' + nf(v.t1) + ' ' + v.cur);
+            if (+v.t2 !== Number(c.fee_t2)) changes.push('T2: ' + nf(v.t2) + ' ' + v.cur);
+            if (+v.t3 !== Number(c.fee_t3)) changes.push('T3: ' + nf(v.t3) + ' ' + v.cur);
             
             if (changes.length > 0 && typeof window.publishAnnonceWithNotif === 'function') {
                 await window.publishAnnonceWithNotif(
