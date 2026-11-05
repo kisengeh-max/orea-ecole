@@ -1,4 +1,4 @@
-// ORÉA École — Interface Parent (v67 : dette par trimestre, échéances promises)
+// ORÉA École — Interface Parent (v71 : dette par trimestre, échéances, accusés de lecture, suppression de compte)
 // PARTIE 1/2 — Initialisation, Connexion, Navigation, Accueil, Messages
 
 const tfetch = (u, o = {}) => {
@@ -151,7 +151,7 @@ function homeView() {
                 : due > 0 ? `<div class="p-bal p-due">Doit ${fmtCDF(due)}</div>` : `<div class="p-bal p-ok">✓ À jour</div>`;
             return `<div class=p-card onclick="childDetail('${s.id}')"><h3>👤 ${esc(s.name)}</h3>${tag}<div class=p-line>Total payé : ${fmtCDF(Number(s.paid_cdf || 0))}</div></div>`;
         }).join('');
-        h += `<div class=p-actions><button class=p-btn onclick=addChildView()>+ Ajouter un autre enfant</button><button class=ghost style="padding:12px;background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:10px" onclick=logout()>Se déconnecter</button></div>`;
+        h += `<div class=p-actions><button class=p-btn onclick=addChildView()>+ Ajouter un autre enfant</button><button class=ghost style="padding:12px;background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:10px" onclick=logout()>Se déconnecter</button></div><p style="text-align:center;margin:16px 0 4px"><a href="#" onclick="deleteAccountP();return false" style="font-size:11px;color:var(--muted)">Supprimer mon compte</a></p>`;
     }
     $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
 }
@@ -367,6 +367,7 @@ function scolariteView() {
     h += `<div class=p-sec><h4>📝 Devoirs</h4>`;
     if (!as.length) h += `<div class=p-empty>Aucun devoir pour l'instant.</div>`;
     else {
+        pAck('devoir', upcoming.map(a => a.id));
         if (upcoming.length) h += upcoming.map(a => `<div class="p-assign"><h5>${esc(a.subject)}</h5><div class="p-meta">${esc(a.class_name || '')} · À rendre le ${fdate(a.due_date)}</div><div class="p-desc">${esc(a.description)}</div></div>`).join('');
         if (past.length) h += `<details style="margin-top:8px"><summary style="color:var(--muted);cursor:pointer;font-size:12px">Devoirs passés (${past.length})</summary>${past.map(a => `<div class="p-assign late"><h5>${esc(a.subject)}</h5><div class="p-meta">Rendu le ${fdate(a.due_date)}</div></div>`).join('')}</details>`;
     }
@@ -421,6 +422,7 @@ async function childDetail(id) {
     const plans = (ppl && ppl.data) || [], PST = { prevu: ['Prévu', ''], tenu: ['Versé ✓', 'p-ok'], non_tenu: ['En retard', 'p-due'] };
     if (plans.length) h += `<div class=p-sec><h4>🗓️ Échéances promises</h4>${plans.map(p => `<div class=p-row><span>${fdate(p.due_date)} · <small class="${(PST[p.status] || PST.prevu)[1]}">${(PST[p.status] || PST.prevu)[0]}</small></span><b>${fmtCDF(Number(p.amount_cdf))}</b></div>`).join('')}</div>`;
     h += `<div class=p-sec><h4>📋 Présences (30j)</h4>${atts.length ? atts.slice(0, 8).map(a => `<div class=p-row><span>${fdate(a.day)}</span><b class="${a.status === 'absent' ? 'p-due' : a.status === 'retard' ? '' : 'p-ok'}">${a.status === 'present' ? '✓ Présent' : a.status === 'absent' ? '✗ Absent' : '🕐 Retard'}</b></div>`).join('') : '<div class=p-row><small>Aucun</small></div>'}</div>`;
+    if (sans.length) pAck('sanction', sans.slice(0, 5).map(x => x.id));
     if (sans.length) h += `<div class=p-sec><h4>⚖️ Sanctions</h4>${sans.slice(0, 5).map(x => `<div class=p-row><span>${fdate(x.day)} · ${esc(x.kind)}</span></div>`).join('')}</div>`;
     
     // Paiements avec option de signalement
@@ -469,6 +471,21 @@ window.signalerPaiement = function (idx, studentId) {
 };
 
 async function logout() { if (!confirm('Se déconnecter ?')) return; await db.auth.signOut(); location.reload(); }
+// Suppression de son compte (confirmation : « SUPPRIMER MON COMPTE »). On peut se réinscrire ensuite avec le même e-mail.
+async function deleteAccountP() {
+    const t = prompt('Votre compte sera définitivement supprimé et vous ne verrez plus vos enfants dans ORÉA École.\nVous pourrez créer un nouveau compte plus tard.\n\nPour confirmer, tapez : SUPPRIMER MON COMPTE');
+    if (t === null) return;
+    if (t.trim() !== 'SUPPRIMER MON COMPTE') return toast('Texte de confirmation incorrect : rien n’a été supprimé.');
+    const { error } = await db.rpc('delete_my_account', { p_confirm: t.trim() });
+    if (error) return toast(error.message);
+    try { await db.auth.signOut(); } catch (_) { }
+    alert('Votre compte a été supprimé.'); location.reload();
+}
+// Accusé de lecture : l'école voit « Vu par le parent »
+function pAck(type, ids) {
+    const rows = [...new Set((ids || []).filter(Boolean))].map(id => ({ item_type: type, item_id: id }));
+    if (rows.length) db.from('parent_acks').upsert(rows, { onConflict: 'parent_id,item_type,item_id', ignoreDuplicates: true }).then(() => { }, () => { });
+}
 
 async function boot() {
     const r = await db.auth.getSession();

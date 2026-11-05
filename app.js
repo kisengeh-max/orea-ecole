@@ -1185,21 +1185,65 @@ function icsRappel() {
 /* ---------- Sanctions et équipe ---------- */
 const WARN_KINDS = ['Avertissement oral', 'Avertissement écrit'];
 const SANC_KINDS = ['Retenue', 'Exclusion temporaire', 'Travail d’intérêt', 'Autre'];
+const SIG_KINDS = ['Signalement · comportement', 'Signalement · retard répété', 'Signalement · tenue', 'Signalement · autre'];
+const isSig = k => /^signalement/i.test(String(k || ''));
 const isWarn = k => /^avertissement/i.test(String(k || ''));
 async function sanc(id) {
-    const s = S.stu.find(x => x.id === id);
-    const { data, error } = await db.from('sanctions').select('*').eq('student_id', id).order('created_at', { ascending: false });
-    if (error) return toast(error.message);
+    const s = S.stu.find(x => x.id === id); if (!s) return;
+    const D = dir();
+    const [r1, r2] = await Promise.all([
+        db.from('sanctions').select('*').eq('student_id', id).order('created_at', { ascending: false }),
+        db.from('sanction_requests').select('*').eq('student_id', id).order('created_at', { ascending: false })
+    ]);
+    if (r1.error) return toast(r1.error.message);
+    const data = r1.data || [], req = r2.error ? [] : (r2.data || []);
+    const pend = req.filter(r => r.status === 'en_attente'), mineDone = req.filter(r => r.status !== 'en_attente' && r.requested_by === S.me.id).slice(0, 5);
+    const acks = await ackMap('sanction', data.map(x => x.id));
     const nW = data.filter(x => isWarn(x.kind)).length, nS = data.length - nW;
-    const d = show(`<h3>Avertissements et sanctions — ${esc(s.name)}</h3>${data.length ? `<small>${nW} avertissement(s) · ${nS} sanction(s)${nW >= 3 ? ' · <b class=due>3 avertissements atteints</b>' : ''}</small>` : ''}${data.length ? data.map(x => `<div class="card col" style="border-left:3px solid ${isWarn(x.kind) ? 'var(--gold)' : 'var(--bad)'}"><b>${esc(x.kind)}</b><small>${new Date(x.day + 'T00:00').toLocaleDateString('fr-FR')}${x.note ? ' · ' + esc(x.note) : ''}</small>${dir() ? `<button class=ghost data-x=${x.id}>Supprimer</button>` : ''}</div>`).join('') : '<p class=empty>Aucun avertissement ni sanction.</p>'}<div class=col><button id=sw>+ Avertissement</button><button class=ghost id=sa>+ Sanction</button><button class=ghost id=sc>Fermer</button></div>`);
+    const RS = { validee: ['Validé ✓', 'ok'], refusee: ['Refusé', 'due'], traitee: ['Pris en compte ✓', 'ok'], en_attente: ['En attente de la direction', ''] };
+    let h = `<h3>Avertissements et sanctions — ${esc(s.name)}</h3>`;
+    if (data.length) h += `<small>${nW} avertissement(s) · ${nS} sanction(s)${nW >= 3 ? ' · <b class=due>3 avertissements atteints</b>' : ''}</small>`;
+    if (pend.length) h += `<p style="margin:10px 0 4px"><small>${D ? 'PROPOSITIONS À VALIDER' : 'EN ATTENTE DE LA DIRECTION'}</small></p>` + pend.map(r => `<div class="card col" style="border-left:3px dashed var(--gold)"><b>${esc(r.kind)}</b><small>${fdate(r.day)}${r.note ? ' · ' + esc(r.note) : ''}</small>${D ? `<div class=row><button data-ok=${r.id}>Valider</button><button class=ghost data-no=${r.id}>Refuser</button></div>` : ''}</div>`).join('');
+    h += data.length ? data.map(x => `<div class="card col" style="border-left:3px solid ${isWarn(x.kind) ? 'var(--gold)' : 'var(--bad)'}"><b>${esc(x.kind)}</b><small>${fdate(x.day)}${x.note ? ' · ' + esc(x.note) : ''}</small>${acks[x.id] ? `<small class=ok>👁 Vu par le parent le ${new Date(acks[x.id]).toLocaleDateString('fr-FR')}</small>` : ''}${D ? `<button class=ghost data-x=${x.id}>Supprimer</button>` : ''}</div>`).join('') : (pend.length ? '' : '<p class=empty>Aucun avertissement ni sanction.</p>');
+    if (mineDone.length) h += `<p style="margin:10px 0 4px"><small>MES DERNIÈRES PROPOSITIONS</small></p>` + mineDone.map(r => `<div class=card><span>${esc(r.kind)}<br><small>${fdate(r.day)}</small></span><small class="${(RS[r.status] || RS.en_attente)[1]}">${(RS[r.status] || RS.en_attente)[0]}</small></div>`).join('');
+    h += `<div class=col><button id=sw>+ Avertissement</button><button class=ghost id=sa>+ Sanction</button>${D ? '' : '<button class=ghost id=sg>+ Signaler un comportement</button>'}<button class=ghost id=sc>Fermer</button></div>`;
+    if (!D) h += `<small>Vos avertissements, sanctions et signalements sont envoyés à la direction. Les parents sont prévenus dès que la direction valide (un signalement reste interne).</small>`;
+    const d = show(h);
     d.querySelector('#sc').onclick = () => d.close();
     d.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => { if (!confirm('Supprimer ?')) return; const { error } = await db.from('sanctions').delete().eq('id', b.dataset.x); error ? toast(error.message) : sanc(id); });
-    const add = (title, kinds) => ask(title + ' — ' + esc(s.name), [{ n: 'kind', l: 'Type', o: kinds.map(k => [k, k]) }, { n: 'day', l: 'Date', t: 'date', v: tdy() }, { n: 'note', l: 'Motif / détail', r: false }], async v => {
-        const { error } = await db.from('sanctions').insert({ school_id: S.school.id, student_id: id, kind: v.kind, day: v.day, note: v.note.trim() || null });
-        if (error) throw error; toast(isWarn(v.kind) ? 'Avertissement enregistré' : 'Sanction enregistrée'); sanc(id);
+    d.querySelectorAll('[data-ok]').forEach(b => b.onclick = async () => { b.disabled = true; await decideReq(req.find(r => r.id === b.dataset.ok), true); sanc(id); });
+    d.querySelectorAll('[data-no]').forEach(b => b.onclick = async () => { b.disabled = true; await decideReq(req.find(r => r.id === b.dataset.no), false); sanc(id); });
+    const add = (title, kinds) => ask(title + ' — ' + esc(s.name), [{ n: 'kind', l: 'Type', o: kinds.map(k => [k, k]) }, { n: 'day', l: 'Date', t: 'date', v: tdy() }, { n: 'note', l: 'Motif / détail', r: kinds === SIG_KINDS }], async v => {
+        const row = { school_id: S.school.id, student_id: id, kind: v.kind, day: v.day, note: v.note.trim() || null };
+        if (D) { const { error } = await db.from('sanctions').insert(row); if (error) throw error; toast(isWarn(v.kind) ? 'Avertissement enregistré · parents prévenus' : 'Sanction enregistrée · parents prévenus'); }
+        else { const { error } = await db.from('sanction_requests').insert(Object.assign(row, { requested_by: S.me.id, status: 'en_attente' })); if (error) throw error; toast('Envoyé à la direction pour validation'); }
+        sanc(id);
     });
     d.querySelector('#sw').onclick = () => add('Nouvel avertissement', WARN_KINDS);
     d.querySelector('#sa').onclick = () => add('Nouvelle sanction', SANC_KINDS);
+    const sg = d.querySelector('#sg'); if (sg) sg.onclick = () => add('Signaler un comportement', SIG_KINDS);
+}
+// Décision du directeur sur une proposition (avertissement / sanction -> enregistrée et parents prévenus ; signalement -> interne)
+async function decideReq(r, ok) {
+    if (!r) return;
+    let note = null;
+    if (!ok) { note = prompt('Motif du refus (facultatif) :') || null; }
+    if (ok && !isSig(r.kind)) {
+        const { error } = await db.from('sanctions').insert({ school_id: r.school_id, student_id: r.student_id, kind: r.kind, day: r.day, note: r.note, by_id: r.requested_by });
+        if (error) return toast(error.message);
+    }
+    const { error } = await db.from('sanction_requests').update({ status: ok ? (isSig(r.kind) ? 'traitee' : 'validee') : 'refusee', decided_by: S.me.id, decided_at: new Date().toISOString(), decision_note: note }).eq('id', r.id);
+    if (error) return toast(error.message);
+    toast(ok ? (isSig(r.kind) ? 'Signalement pris en compte' : 'Validé · parents prévenus') : 'Proposition refusée');
+}
+// Accusés de lecture des parents : { id: date }
+async function ackMap(type, ids) {
+    if (!ids.length) return {};
+    const { data, error } = await db.from('parent_acks').select('item_id,seen_at').eq('item_type', type).in('item_id', ids);
+    const m = {}; if (error) return m;
+    (data || []).forEach(a => { if (!m[a.item_id] || a.seen_at < m[a.item_id]) m[a.item_id] = a.seen_at; });
+    m.__n = {}; (data || []).forEach(a => { m.__n[a.item_id] = (m.__n[a.item_id] || 0) + 1; });
+    return m;
 }
 async function team() {
     const { data, error } = await db.from('profiles').select('*').order('full_name');
@@ -1282,9 +1326,10 @@ function vReglages() {
         h += `<div class="card col"><b>Dates des trimestres</b><small>${hasTerms() ? 'T1 dès le ' + fdate(tm.t1) + ' · T2 dès le ' + fdate(tm.t2) + ' · T3 dès le ' + fdate(tm.t3) : 'Non réglées : le statut « en retard » est désactivé.'}</small><button class=ghost onclick=setTerms()>Régler les dates · ${esc(S.year || '—')}</button></div>`;
         h += `<div class="card col"><b>Modèles de messages</b><small>Personnalise les messages WhatsApp (frais).</small><button class=ghost onclick=editTemplates()>✏️ Modifier les modèles</button></div>`;
     }
-    h += `<details><summary>Guide rapide</summary><p><b>Encaisser</b> : École → ouvre la classe → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu.<br><b>Clôture</b> : Menu → Caisse → Clôturer.<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel.<br><b>Correction</b> : Élève → Historique et reçus → Corriger.</p></details><button class=ghost id=lo>Déconnexion</button>`;
+    h += `<details><summary>Guide rapide</summary><p><b>Encaisser</b> : École → ouvre la classe → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu.<br><b>Clôture</b> : Menu → Caisse → Clôturer.<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel.<br><b>Correction</b> : Élève → Historique et reçus → Corriger.</p></details><button class=ghost id=lo>Déconnexion</button><p style="text-align:center;margin:18px 0 6px"><a href="#" id=delacc style="font-size:11px;color:var(--mut)">Supprimer mon compte</a></p>`;
     $('#main').innerHTML = h;
     $('#lo').onclick = out;
+    $('#delacc').onclick = e => { e.preventDefault(); deleteAccount(); };
     $('#cu').onchange = e => { S.cur = e.target.value; localStorage.cur = S.cur; toast('Devise : ' + S.cur); };
     $('#th').onclick = () => { const t = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; document.documentElement.dataset.theme = localStorage.theme = t; };
     if (dir()) $('#sr').onclick = async () => {
@@ -1711,7 +1756,11 @@ async function vSanctions() {
     const sanc = data || [], byStu = {}, byW = {};
     sanc.forEach(x => { if (isWarn(x.kind)) byW[x.student_id] = (byW[x.student_id] || 0) + 1; else byStu[x.student_id] = (byStu[x.student_id] || 0) + 1; });
     const nW = sanc.filter(x => isWarn(x.kind)).length;
+    const rq = await db.from('sanction_requests').select('*').order('created_at', { ascending: false }).limit(100);
+    const REQ = rq.error ? [] : (rq.data || []), pendR = REQ.filter(r => r.status === 'en_attente');
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Avertissements et sanctions</h3>`;
+    if (dir()) h += `<div class="card col" style="border-color:var(--gold)"><b>À valider (${pendR.length})</b>${pendR.length ? pendR.map(r => { const st = S.stu.find(z => z.id === r.student_id); return `<div style="padding:8px 0;border-bottom:1px solid var(--line)"><b>${esc(st ? st.name : '?')} · ${esc(r.kind)}</b><br><small>${esc(cnm(st ? st.class_id : ''))} · ${fdate(r.day)}${r.note ? ' · ' + esc(r.note) : ''}</small><div class=row style="margin-top:6px"><button data-ok=${r.id}>Valider</button><button class=ghost data-no=${r.id}>Refuser</button></div></div>`; }).join('') : '<small>Aucune proposition en attente.</small>'}</div>`;
+    else if (REQ.length) h += `<div class="card col"><b>Mes propositions</b>${REQ.slice(0, 10).map(r => { const st = S.stu.find(z => z.id === r.student_id); return `<div style="display:flex;justify-content:space-between;gap:8px;margin:4px 0"><span>${esc(st ? st.name : '?')} · ${esc(r.kind)}</span><small class="${r.status === 'refusee' ? 'due' : r.status === 'en_attente' ? '' : 'ok'}">${({ en_attente: 'En attente', validee: 'Validé', refusee: 'Refusé', traitee: 'Pris en compte' }[r.status] || 'En attente')}</small></div>`; }).join('')}</div>`;
     h += `<div class=bar><input type=month id=sm value="${S.sanM}"></div>`;
     const l = Object.entries(byStu).map(([id, n]) => ({ s: S.stu.find(z => z.id === id), n })).filter(x => x.s && x.n >= 3).sort((a, b) => b.n - a.n);
     const lw = Object.entries(byW).map(([id, n]) => ({ s: S.stu.find(z => z.id === id), n })).filter(x => x.s && x.n >= 3).sort((a, b) => b.n - a.n);
@@ -1722,6 +1771,8 @@ async function vSanctions() {
     if (S.tab !== 'sanctions') return;
     $('#main').innerHTML = h;
     $('#sm').onchange = e => { S.sanM = e.target.value; vSanctions(); };
+    document.querySelectorAll('#main [data-ok]').forEach(b => b.onclick = async () => { b.disabled = true; await decideReq(REQ.find(r => r.id === b.dataset.ok), true); vSanctions(); });
+    document.querySelectorAll('#main [data-no]').forEach(b => b.onclick = async () => { b.disabled = true; await decideReq(REQ.find(r => r.id === b.dataset.no), false); vSanctions(); });
 }
 
 // --- FIN DE LA TRANCHE 10. La tranche suivante commencera par : /* ---------- Calendrier scolaire ---------- */ ---
@@ -1836,21 +1887,29 @@ async function drawDevoirs() {
     const el = $('#dvl'); if (!el) return;
     if (error) { el.innerHTML = `<p class=empty>${esc(error.message)}</p>`; return; }
     const R = S.me.role, l = data || [];
-    if (!l.length) { el.innerHTML = `<p class=empty data-ic="📝">Aucun devoir pour cette classe.</p>`; return; }
+    if (!l.length) { el.innerHTML = `<p class=empty data-ic="📝">${dir() ? 'Aucun devoir pour cette classe.' : 'Aucun devoir de vos cours pour cette classe.'}</p>`; return; }
+    const ak = await ackMap('devoir', l.map(a => a.id)); if (S.tab !== 'devoirs') return;
     const today = tdy();
     el.innerHTML = l.map(a => {
         const late = String(a.due_date) < today;
         const can = R === 'directeur' || R === 'enseignant' || R === 'percepteur';
-        return `<div class="card col" style="${late ? 'border-left:3px solid var(--bad)' : 'border-left:3px solid var(--gold)'}"><b>${esc(a.subject)}</b><small>${late ? '⚠ Rendu' : 'À rendre'} le ${fdate(a.due_date)}</small><span>${esc(a.description)}</span>${can ? `<div class=row><button class=ghost data-e="${a.id}">✏️ Modifier</button><button class=ghost data-x="${a.id}">🗑</button></div>` : ''}</div>`;
+        return `<div class="card col" style="${late ? 'border-left:3px solid var(--bad)' : 'border-left:3px solid var(--gold)'}"><b>${esc(a.subject)}</b><small>${late ? '⚠ Rendu' : 'À rendre'} le ${fdate(a.due_date)}</small><span>${esc(a.description)}</span>${ak.__n && ak.__n[a.id] ? `<small class=ok>👁 Vu par ${ak.__n[a.id]} parent(s)</small>` : ''}${can ? `<div class=row><button class=ghost data-e="${a.id}">✏️ Modifier</button><button class=ghost data-x="${a.id}">🗑</button></div>` : ''}</div>`;
     }).join('');
     el.querySelectorAll('[data-e]').forEach(b => b.onclick = () => editAssignment(b.dataset.e));
     el.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => { if (!confirm('Supprimer ce devoir ?')) return; const { error } = await db.from('assignments').delete().eq('id', b.dataset.x); if (error) return toast(error.message); toast('Supprimé'); drawDevoirs(); });
 }
-function addAssignment() {
+async function addAssignment() {
     if (!S.cls) return toast('Sélectionne une classe');
     const cn = (S.classes.find(c => c.id === S.cls) || {}).name || '';
+    let subj = { n: 'subject', l: 'Matière / titre court' };
+    if (!dir()) {
+        const mc = await myCourses(); if (mc.error) return toast(mc.error.message);
+        const L = mc.data.filter(x => x.class_id === S.cls && x.subjects).map(x => x.subjects.name);
+        if (!L.length) return toast('Aucun cours ne vous est attribué dans ' + cn + '. Demandez au directeur.');
+        subj = { n: 'subject', l: 'Cours', o: L.map(x => [x, esc(x)]) };
+    }
     ask('Nouveau devoir — ' + esc(cn), [
-        { n: 'subject', l: 'Matière / titre court' },
+        subj,
         { n: 'description', l: 'Description', t: 'textarea' },
         { n: 'due', l: 'À rendre le', t: 'date', v: tdy() }
     ], async v => {
@@ -2279,9 +2338,31 @@ const _vAccueil1 = vAccueil;
 vAccueil = async function () {
     const r = await _vAccueil1.apply(this, arguments);
     try { if (isTeach() && S.tab === 'accueil') drawMyDay(); } catch (_) { }
+    try { if (dir() && S.tab === 'accueil') sancHome(); } catch (_) { }
     return r;
 };
 
+async function sancHome() {
+    const { data, error } = await db.from('sanction_requests').select('id').eq('status', 'en_attente');
+    if (error || !(data || []).length || S.tab !== 'accueil' || $('#sqh')) return;
+    const n = data.length, m = $('#main'); if (!m) return;
+    m.insertAdjacentHTML('afterbegin', `<div class=menu-card id=sqh onclick="menuGo('sanctions')" style="border-color:var(--gold)"><div class=menu-ic>${svgI('sanctions')}</div><div class=menu-label>Sanctions à valider<small>Proposées par les enseignants</small></div><b class=due style="font-family:var(--serif);font-size:18px">${n}</b><span class=menu-arrow>›</span></div>`);
+}
+// Suppression de son propre compte (confirmation : « SUPPRIMER MON COMPTE »)
+function deleteAccount() {
+    const d = show(`<h3>Supprimer mon compte</h3><p>Votre compte sera définitivement supprimé et vous serez déconnecté. Les paiements, reçus et notes déjà enregistrés restent dans l’école.</p><p>Vous pourrez créer un nouveau compte plus tard avec la même adresse e-mail.</p><label>Pour confirmer, tapez : <b>SUPPRIMER MON COMPTE</b><input id=dcx autocomplete=off autocapitalize=characters></label><div class=col><button id=dcok style="background:var(--bad);color:#fff" disabled>Supprimer définitivement</button><button class=ghost id=dcno>Annuler</button></div>`);
+    const inp = d.querySelector('#dcx'), ok = d.querySelector('#dcok');
+    inp.oninput = () => { ok.disabled = inp.value.trim() !== 'SUPPRIMER MON COMPTE'; };
+    d.querySelector('#dcno').onclick = () => d.close();
+    ok.onclick = async () => {
+        ok.disabled = true;
+        const { error } = await db.rpc('delete_my_account', { p_confirm: inp.value.trim() });
+        if (error) { ok.disabled = false; return toast(error.message); }
+        try { Object.keys(localStorage).filter(k => k.startsWith('orea')).forEach(k => localStorage.removeItem(k)); } catch (_) { }
+        try { await db.auth.signOut(); } catch (_) { }
+        alert('Votre compte a été supprimé.'); location.reload();
+    };
+}
 // « Ma perception » : uniquement ce que le percepteur a lui-même encaissé
 async function vPerception() {
     const back = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>';

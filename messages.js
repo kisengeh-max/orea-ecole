@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v40 — messages.js
+   ORÉA École v71 — messages.js (+ messagerie entre enseignants : « Salle des profs » et conversations privées)
    Messagerie universelle (style WhatsApp) — table Supabase « messages ».
    Canaux : parent_ecole · admin_ecole · admin_ambassadeur · directeur_equipe
    À charger APRÈS app.js, ambassadeur.js, ambadmin.js (page école)
@@ -361,7 +361,7 @@
             if (d !== last) { h += `<div class="om-day">${esc(d)}</div>`; last = d; }
             const mine = m.sender_id === OM.uid;
             h += `<div class="om-b ${mine ? 'm' : 'o'}" data-id="${esc(m.id)}">`
-                + (!mine ? `<span class="om-who">${esc(ROLE_LBL[m.sender_role] || 'Message')}</span>` : '')
+                + (!mine ? `<span class="om-who">${esc(whoOf(m))}</span>` : '')
                 + (m.subject && !/^Re:/.test(m.content) ? `<span class="om-sub">${esc(m.subject)}</span>` : '')
                 + `<div>${hl(m.content, T.q)}</div>`
                 + `<div class="om-meta">${m.pinned ? '<span>📌</span>' : ''}<span>${timeOf(m.created_at)}</span>${tick(T, m)}</div></div>`;
@@ -542,6 +542,19 @@
         OM.contacts = data || [];
         return OM.contacts;
     }
+    // Collègues (pour la messagerie entre enseignants)
+    async function getStaff() {
+        if (OM.staff) return OM.staff;
+        const { data } = await db.rpc('staff_directory');
+        OM.staff = data || [];
+        return OM.staff;
+    }
+    // Nom de l'expéditeur : le prénom/nom du collègue dans la messagerie d'équipe, sinon le rôle
+    const whoOf = m => {
+        if (m.channel === 'equipe' && OM.staff) { const p = OM.staff.find(x => x.id === m.sender_id); if (p) return p.full_name; }
+        return ROLE_LBL[m.sender_role] || 'Message';
+    };
+    const dmKey = (a, b) => 'dm:' + [a, b].sort().join(':');
     async function stuName(ids) {
         const miss = ids.filter(id => id && !OM.stuNames[id]);
         if (!miss.length) return;
@@ -571,6 +584,8 @@
             if (dirR) {
                 add('admin', 'admin_ecole', 'school:' + sid, 'Administration ORÉA', 'Support et assistance', '🛡️', { school_id: sid, canPin: true });
                 add('equipe', 'directeur_equipe', 'team:all', 'Toute l’équipe', 'Envoi groupé', '📢', { school_id: sid, broadcast: true, canPin: true });
+                add('equipe', 'equipe', 'salle:' + sid, 'Salle des profs', 'Groupe de discussion de l’équipe', '👥', { school_id: sid });
+                getStaff();
                 contacts.forEach(c => add('equipe', 'directeur_equipe', 'team:' + c.uid, c.nom, ROLE_LBL[c.role] || c.role, null, { school_id: sid, recipient_id: c.uid, canPin: true }));
                 const ids = Object.values(last).filter(m => m.student_id && m.channel === 'parent_ecole').map(m => m.student_id);
                 await stuName(ids);
@@ -583,6 +598,10 @@
                 const dr = contacts[0];
                 if (dr) add('equipe', 'directeur_equipe', 'team:' + OM.uid, 'Direction', dr.nom, '🏫', { school_id: sid, recipient_id: dr.uid });
                 add('equipe', 'directeur_equipe', 'team:all', 'Messages à toute l’équipe', 'Lecture seule', '📢', { school_id: sid, readonly: true });
+                // Entre enseignants : groupe + conversations privées
+                add('collegues', 'equipe', 'salle:' + sid, 'Salle des profs', 'Groupe de discussion de l’équipe', '👥', { school_id: sid });
+                const staff = await getStaff();
+                staff.filter(c => c.role !== 'directeur').forEach(c => add('collegues', 'equipe', dmKey(OM.uid, c.id), c.full_name, ROLE_LBL[c.role] || c.role, null, { school_id: sid, recipient_id: c.id }));
             }
         } else if (k === 'admin') {
             if (typeof ADM !== 'undefined') {
@@ -601,7 +620,8 @@
         const ov = overlay('om-inbox');
         const dirR = k === 'staff' && S.me.role === 'directeur';
         const chips = k === 'admin' ? [['all', 'Tous'], ['ecoles', 'Écoles'], ['amb', 'Ambassadeurs']]
-            : dirR ? [['all', 'Tous'], ['parents', 'Parents'], ['equipe', 'Équipe'], ['admin', 'Admin']] : [];
+            : dirR ? [['all', 'Tous'], ['parents', 'Parents'], ['equipe', 'Équipe'], ['admin', 'Admin']]
+            : k === 'staff' ? [['all', 'Tous'], ['equipe', 'Direction'], ['collegues', 'Collègues']] : [];
         const I = OM.inbox = { ov, rows: [], filter: 'all', q: '' };
         ov.innerHTML =
             `<div class="om-head"><button class="om-ic" id="om-bk" aria-label="Retour">‹</button><div class="om-t"><b>Messages</b><small>${esc(k === 'admin' ? 'Écoles et ambassadeurs' : (S.school ? S.school.name : ''))}</small></div>`
