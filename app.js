@@ -22,6 +22,10 @@ document.documentElement.dataset.theme = localStorage.theme || 'dark';
 
 const dir = () => S.me.role === 'directeur';
 const canCollect = () => S.me && (S.me.role === 'directeur' || S.me.role === 'percepteur');
+// Le percepteur est un enseignant qui encaisse en plus, uniquement dans les classes qui lui sont confiées
+const isCol = () => !!(S.me && S.me.role === 'percepteur');
+const isTeach = () => !!(S.me && ['enseignant', 'percepteur'].includes(S.me.role));
+const colOK = cid => dir() || (isCol() && !!(S.myCls && S.myCls.has(cid)));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const nf = (n, d = 2) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: d }).format(n);
 const fmt = n => nf(n / (S.school.rates[S.cur] || 1), S.cur === 'CDF' ? 0 : 2) + ' ' + SYM[S.cur];
@@ -72,7 +76,7 @@ window.addEventListener('popstate', () => {
     if (S.me && S.tab === 'eleves' && S.view === 'class') { S.view = 'grid'; S.q = ''; render(); return; }
     if (S.me && S.tab === 'bilan' && dir()) { S.tab = 'finance_home'; render(); return; }
     if (S.me && !['accueil', 'menu'].includes(S.tab)) {
-        if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'finance_home', 'programme_home', 'donnees_home'].includes(S.tab)) {
+        if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'finance_home', 'programme_home', 'donnees_home', 'perception'].includes(S.tab)) {
             S.tab = 'menu';
             render();
         } else {
@@ -512,6 +516,7 @@ async function load() {
         r.data.forEach(x => { const k = x.student_id + ':' + x.fee_id; fpaid[k] = (fpaid[k] || 0) + Number(x.fee_paid); });
     }
     S.classes = a.data; S.stu = b.data; S.fees = fees; S.fpaid = fpaid; S.terms = terms; S.events = e.error ? [] : e.data;
+    if (isCol()) { const r = await db.from('collector_classes').select('class_id').eq('collector_id', S.me.id); S.myCls = new Set((r.data || []).map(x => x.class_id)); }
     augment(); S.offline = false; overlayQ(); saveSnap();
 }
 async function autoRate() {
@@ -544,7 +549,7 @@ function setupView() {
 function render() {
     $('#nav').hidden = false; subBanner();
     const R = S.me.role, tabs = [['accueil', 'Accueil'], ['eleves', 'École'], ['menu', 'Menu'], ['reglages', 'Réglages']];
-    const SUB = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'cotation', 'bulletins', 'finance_home', 'programme_home', 'donnees_home'];
+    const SUB = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'cotation', 'bulletins', 'finance_home', 'programme_home', 'donnees_home', 'perception'];
     if (!tabs.some(x => x[0] === S.tab) && !SUB.includes(S.tab)) S.tab = 'accueil';
     let activeTab = ['cotation', 'bulletins'].includes(S.tab) ? 'eleves' : SUB.includes(S.tab) ? 'menu' : S.tab;
     $('#nav').innerHTML = tabs.map(x => `<button data-t=${x[0]}>${svgI(x[0])}<span>${x[1]}</span></button>`).join('');
@@ -555,8 +560,9 @@ function render() {
         hs.insertAdjacentHTML('afterend', `<button id="searchBtn" class="ghost" style="width:auto;min-height:40px;padding:8px;margin-left:auto;border:none" onclick="openSearch()">🔍</button>`);
     }
 
-    if (R === 'enseignant' && ['caisse', 'impayes', 'depenses', 'bilan', 'finance_home'].includes(S.tab)) S.tab = 'menu';
-    ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier, devoirs: vDevoirs, emploi_temps: vEmploiTemps, finance_home: vFinanceHome, programme_home: vProgrammeHome, donnees_home: vDonneesHome, cotation: () => vCotation(), bulletins: () => vBulletins() })[S.tab]();
+    if (R !== 'directeur' && ['depenses', 'bilan', 'finance_home'].includes(S.tab)) S.tab = 'menu';
+    if (R === 'enseignant' && ['caisse', 'impayes', 'perception'].includes(S.tab)) S.tab = 'menu';
+    ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier, devoirs: vDevoirs, emploi_temps: vEmploiTemps, finance_home: vFinanceHome, programme_home: vProgrammeHome, donnees_home: vDonneesHome, cotation: () => vCotation(), bulletins: () => vBulletins(), perception: vPerception })[S.tab]();
     qui();
 }
 const sorts = {
@@ -735,7 +741,7 @@ function menu(id) {
             + (fs.length ? '<p><small>Autres frais : ' + fs.map(f => esc(f.name) + ' reste ' + fmt(feeRemCdf(s, f))).join(' · ') + '</small></p>' : '')
             + '<div class=card id=pcode style="display:block"><small>Code parent</small><br><b id=pcv style="font-size:22px;letter-spacing:.14em">…</b><div class=row id=pcb style="display:none;margin-top:8px"><button class=ghost id=pc1>Copier</button><button class=ghost id=pc2>SMS</button><button class=ghost id=pc3>WhatsApp</button></div></div>';
     }
-    const d = show(`<h3>${esc(s.name)}</h3>${head}<div class=col>${R !== 'enseignant' ? '<button id=m2>Paiement</button>' : ''}${R !== 'percepteur' ? '<button class=ghost id=m7>Avertissements et sanctions</button>' : ''}${R === 'directeur' || R === 'enseignant' ? '<button class=ghost id=m9>Cotes</button>' : ''}${D ? '<button class=ghost id=m6>Message au parent</button><button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>' : ''}<button class=ghost id=m3>Fermer</button></div>`);
+    const d = show(`<h3>${esc(s.name)}</h3>${head}<div class=col>${dir() || (isCol() && colOK(s.class_id)) ? '<button id=m2>Paiement</button>' : ''}<button class=ghost id=m7>Avertissements et sanctions</button><button class=ghost id=m9>Cotes</button>${D ? '<button class=ghost id=m6>Message au parent</button><button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>' : ''}<button class=ghost id=m3>Fermer</button></div>`);
     const b = (k, f) => { const e = d.querySelector('#' + k); if (e) e.onclick = f; };
     b('m2', () => hist(id)); b('m3', () => d.close()); b('m4', () => editStudent(id)); b('m5', () => { d.close(); delStudent(id); }); b('m6', () => wa(id)); b('m7', () => sanc(id)); b('m9', () => { if (typeof openStuCotes === 'function') openStuCotes(id); });
     if (D) {
@@ -967,7 +973,7 @@ async function hist(id) {
     const pend = pend0 || [], fpend = fpend0 || [];
     const pe = new Set(pend.map(r => r.payment_id));
     const fpe = new Set(fpend.map(r => r.fee_payment_id));
-    const st = S.stu.find(x => x.id === id), cc = canCollect();
+    const st = S.stu.find(x => x.id === id), cc = canCollect() && (!st || colOK(st.class_id));
     const d = show(`<h3>Paiement${st ? ' · ' + esc(st.name) : ''}</h3>${st ? debtLines(st) : ''}${cc ? '<div class=col><button id=hp>Encaisser un paiement</button><button class=ghost id=hpl>Plan de paiement</button></div>' : ''}<p style="margin:14px 0 4px"><small>HISTORIQUE ET REÇUS</small></p>${data.length ? data.map((p, i) => {
         const isP = pe.has(p.id) || fpe.has(p.id);
         return `<div class="card col"><span>${rno(p)} · ${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f ? esc(p.fee_name || 'Frais') : 'T' + p.term} · ${nf(p.amount)} ${p.currency}</span><div class=row><button class=ghost data-i=${i}>Reçu</button>${p._f ? (dir() ? `<button class=ghost data-x=${i}>Supprimer</button>` : '') : pe.has(p.id) ? '<small>⏳ demande en attente</small>' : `<button class=ghost data-c=${i}>${dir() ? 'Corriger' : 'Demander correction'}</button>`}</div></div>`;
@@ -1088,10 +1094,11 @@ async function vAccueil() {
         R === 'directeur' ? db.from('change_requests').select('id').eq('status', 'en_attente') : { data: [] },
         R === 'directeur' ? db.from('messages_log').select('*').order('created_at', { ascending: false }).limit(5) : { data: [] }
     ]);
-    const st = ys(), sm = k => st.reduce((a, s) => a + Number(s[k] || 0), 0), A = aa.data || [], cnt = k => A.filter(a => a.status === k).length;
+    const st = isCol() ? ys().filter(s => colOK(s.class_id)) : ys(), sm = k => st.reduce((a, s) => a + Number(s[k] || 0), 0), A = aa.data || [], cnt = k => A.filter(a => a.status === k).length;
     const tod = sum((pp.data || []).filter(p => R === 'directeur' || p.collector_id === S.me.id)) + qToday(), pend = (rq.data || []).length;
     const tt = getTermToShow(), tDue = sm('due' + tt + '_cdf'), tPaid = sm('p' + tt + '_cdf'), due = Math.max(0, tDue - tPaid);
     let h = termBar() + ybar() + `<h3>Bonjour ${esc(S.me.full_name)}</h3>`;
+    if (isTeach()) h += `<div id=tday></div>`;
 
     if (S.events && S.events.length) {
         const ev = S.events[0];
@@ -1103,10 +1110,11 @@ async function vAccueil() {
     if (R === 'directeur') h += bkCard();
     if (pend) h += `<div class="menu-card" onclick="menuGo('caisse')"><div class=menu-ic>${svgI('alerte')}</div><div class=menu-label>Demandes à approuver<small>Corrections en attente</small></div><b class=due style="font-family:var(--serif);font-size:18px">${pend}</b><span class=menu-arrow>›</span></div>`;
     if (R !== 'enseignant') {
-        h += lateCard();
+        if (!isCol()) h += lateCard();
         if (R === 'directeur') h += previsionCard();
         const pct = tDue > 0 ? Math.max(0, Math.min(100, Math.round(100 * tPaid / tDue))) : 0;
         h += `<div class="card hero"><small>Encaissé aujourd'hui ${R === 'directeur' ? '· école' : '· ma caisse'}</small><span class=big>${fmt(tod)}</span></div>`;
+        if (isCol()) h += `<small style="display:block;margin:-4px 2px 8px">Chiffres ci-dessous : mes classes uniquement</small>`;
         h += `<div class="stat-pair"><div class="card stat"><span>Total encaissé · T${tt}</span><b>${fmt(tPaid)}</b></div><div class="card stat"><span>Reste à encaisser · T${tt}</span><b class="${due > 0 ? 'due' : ''}">${fmt(due)}</b></div></div>`;
         h += `<div class="card ring-card"><span>Taux de recouvrement · T${tt}</span><div class=ring style="--p:${pct}"><b>${pct} %</b></div></div>`;
         h += '<h3>Par trimestre</h3><div class=tri-list>';
@@ -1116,7 +1124,7 @@ async function vAccueil() {
             h += `<div class="tri-card" ${i === tt ? 'style="border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)"' : ''}><div class=tri-badge>T${i}</div><div class=tri-info><div class=tri-labels><small>Encaissé</small><b>${fmt(paidI)} / ${fmt(dueI)}</b></div><div class=tri-bar><i style="width:${pctI}%"></i></div></div></div>`;
         });
         h += '</div>';
-        h += classBars() + (R === 'directeur' ? '<div id=ch></div>' : '');
+        if (!isCol()) h += classBars() + (R === 'directeur' ? '<div id=ch></div>' : '');
     }
     h += `<h3>Présences du jour</h3><div class=stat-pair><div class="card stat"><span>Présents · Absents · Retards</span><b>${cnt('present')} · ${cnt('absent')} · ${cnt('retard')}</b></div><div class="card stat"><span>Élèves inscrits</span><b>${st.length}</b></div></div>`;
     h += `<div class=row><button onclick="menuGo('presences')">Faire l’appel</button>${R === 'directeur' ? '<button class=ghost onclick=reminders()>Relance des parents</button>' : ''}</div>`;
@@ -1524,7 +1532,8 @@ function vMenu() {
     h += `<div class=menu-title>Gestion quotidienne</div>`;
     h += menuCard('presences', 'Présences', null, "menuGo('presences')");
     if (canCollect()) h += menuCard('caisse', 'Caisse', null, "menuGo('caisse')");
-    if (R !== 'enseignant') h += menuCard('impayes', 'Finance', 'Impayés · Dépenses · Bilan', "menuGo('finance_home')");
+    if (dir()) h += menuCard('impayes', 'Finance', 'Impayés · Dépenses · Bilan', "menuGo('finance_home')");
+    if (isCol()) { h += menuCard('graph', 'Ma perception', 'Ce que j’ai encaissé', "menuGo('perception')"); h += menuCard('impayes', 'Impayés', 'Mes classes', "menuGo('impayes')"); }
     h += `<div class=menu-title>Pédagogie</div>`;
     if (dir()) h += menuCard('absences', 'Suivi des absences', null, "menuGo('absences')");
     h += menuCard('sanctions', 'Sanctions', 'Avertissements · Sanctions', "menuGo('sanctions')");
@@ -1545,16 +1554,22 @@ function vMenu() {
 }
 
 /* ---------- Impayés ---------- */
+// Élèves visibles dans les impayés : tous pour le directeur, ceux des classes confiées pour le percepteur
+const impStu = () => ys().filter(s => dir() || colOK(s.class_id));
+const impCls = () => yc().filter(c => dir() || colOK(c.id));
 function vImpayes() {
     S.impcls = S.impcls || ''; S.impf = S.impf || 'all'; S.imps = S.imps || 'anciennete';
-    let l = ys().filter(s => s.balance_cdf > 0);
+    if (S.impcls && !impCls().some(c => c.id === S.impcls)) S.impcls = '';
+    let l = impStu().filter(s => s.balance_cdf > 0);
     if (S.impcls) l = l.filter(s => s.class_id === S.impcls);
     if (S.impf === '30j') l = l.filter(s => { const last = s.last_pay ? new Date(s.last_pay).getTime() : 0; return Date.now() - last > 30 * 864e5; });
     if (S.impf === '60j') l = l.filter(s => { const last = s.last_pay ? new Date(s.last_pay).getTime() : 0; return Date.now() - last > 60 * 864e5; });
     l.sort((a, b) => { if (S.imps === 'montant') return b.balance_cdf - a.balance_cdf; const la = a.last_pay ? new Date(a.last_pay).getTime() : 0, lb = b.last_pay ? new Date(b.last_pay).getTime() : 0; return la - lb; });
     const tot = l.reduce((a, s) => a + Number(s.balance_cdf || 0), 0);
-    let h = subBack() + `<h3>Impayés</h3>`;
-    h += `<div class=bar><select id=icl><option value="">Toutes classes</option>${yc().map(c => `<option value="${c.id}" ${S.impcls === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
+    let h = subBack() + `<h3>Impayés${isCol() ? ' · mes classes' : ''}</h3>`;
+    if (isCol() && !impCls().length) { subHost().innerHTML = h + '<p class=empty data-ic="🏫">Aucune classe ne vous a encore été confiée. Demandez au directeur de vous attribuer vos classes.</p>'; return; }
+    if (isCol()) h += `<div class="card col"><b>Reste à payer par classe</b>${impCls().map(c => { const v = impStu().filter(s => s.class_id === c.id).reduce((a, s) => a + Math.max(0, Number(s.balance_cdf || 0)), 0); return `<div style="display:flex;justify-content:space-between;margin:3px 0"><span>${esc(c.name)}</span><b class="${v > 0 ? 'due' : 'ok'}">${fmt(v)}</b></div>`; }).join('')}</div>`;
+    h += `<div class=bar><select id=icl><option value="">Toutes ${isCol() ? 'mes ' : ''}classes</option>${impCls().map(c => `<option value="${c.id}" ${S.impcls === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
     h += `<div class=chips><button class="chip ${S.impf === 'all' ? 'on' : ''}" onclick="S.impf='all';render()">Tous</button><button class="chip ${S.impf === '30j' ? 'on' : ''}" onclick="S.impf='30j';render()">> 30j</button><button class="chip ${S.impf === '60j' ? 'on' : ''}" onclick="S.impf='60j';render()">> 60j</button></div>`;
     h += `<div class=card><span>${l.length} élève(s)</span><b class=due>${fmt(tot)}</b></div>`;
     h += `<div class=row><button class=ghost onclick=impayesPDF()>📄 PDF</button><button class=ghost onclick=impayesPNG()>🖼 PNG</button>${dir() ? `<button onclick=reminders()>💬 Relancer</button>` : ''}</div>`;
@@ -1563,7 +1578,7 @@ function vImpayes() {
     $('#icl').onchange = e => { S.impcls = e.target.value; render(); };
 }
 function impayesRep() {
-    let l = ys().filter(s => s.balance_cdf > 0);
+    let l = impStu().filter(s => s.balance_cdf > 0);
     if (S.impcls) l = l.filter(s => s.class_id === S.impcls);
     if (S.impf === '30j') l = l.filter(s => { const last = s.last_pay ? new Date(s.last_pay).getTime() : 0; return Date.now() - last > 30 * 864e5; });
     if (S.impf === '60j') l = l.filter(s => { const last = s.last_pay ? new Date(s.last_pay).getTime() : 0; return Date.now() - last > 60 * 864e5; });
@@ -1809,7 +1824,7 @@ function vDevoirs() {
     if (!yc().some(c => c.id === S.cls)) S.cls = yc()[0].id;
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Devoirs</h3>` + ybar();
     h += `<div class=bar><select id=dvc>${yc().map(c => `<option value="${c.id}" ${c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
-    if (R === 'directeur' || R === 'enseignant') h += `<button onclick=addAssignment()>+ Nouveau devoir</button>`;
+    if (R === 'directeur' || R === 'enseignant' || R === 'percepteur') h += `<button onclick=addAssignment()>+ Nouveau devoir</button>`;
     h += `<div id=dvl><div class=sk></div><div class=sk></div><div class=sk></div></div>`;
     $('#main').innerHTML = h;
     $('#dvc').onchange = e => { S.cls = e.target.value; drawDevoirs(); };
@@ -1825,7 +1840,7 @@ async function drawDevoirs() {
     const today = tdy();
     el.innerHTML = l.map(a => {
         const late = String(a.due_date) < today;
-        const can = R === 'directeur' || R === 'enseignant';
+        const can = R === 'directeur' || R === 'enseignant' || R === 'percepteur';
         return `<div class="card col" style="${late ? 'border-left:3px solid var(--bad)' : 'border-left:3px solid var(--gold)'}"><b>${esc(a.subject)}</b><small>${late ? '⚠ Rendu' : 'À rendre'} le ${fdate(a.due_date)}</small><span>${esc(a.description)}</span>${can ? `<div class=row><button class=ghost data-e="${a.id}">✏️ Modifier</button><button class=ghost data-x="${a.id}">🗑</button></div>` : ''}</div>`;
     }).join('');
     el.querySelectorAll('[data-e]').forEach(b => b.onclick = () => editAssignment(b.dataset.e));
@@ -1863,7 +1878,7 @@ function vEmploiTemps() {
     if (!yc().some(c => c.id === S.cls)) S.cls = yc()[0].id;
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Emploi du temps</h3>` + ybar();
     h += `<div class=bar><select id=ttc>${yc().map(c => `<option value="${c.id}" ${c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
-    if (R === 'directeur' || R === 'enseignant') h += `<button onclick=addSlot()>+ Créneau</button>`;
+    if (R === 'directeur' || R === 'enseignant' || R === 'percepteur') h += `<button onclick=addSlot()>+ Créneau</button>`;
     h += `<div id=ttl><div class=sk></div><div class=sk></div><div class=sk></div></div>`;
     $('#main').innerHTML = h;
     $('#ttc').onchange = e => { S.cls = e.target.value; drawTT(); };
@@ -1879,7 +1894,7 @@ async function drawTT() {
     const byDay = {}; l.forEach(t => (byDay[t.day] = byDay[t.day] || []).push(t));
     const days = Object.keys(byDay).map(Number).sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
     el.innerHTML = days.map(d => `<h3>${['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'][d] || ''}</h3>` + byDay[d].map(t => {
-        const can = R === 'directeur' || R === 'enseignant';
+        const can = R === 'directeur' || R === 'enseignant' || R === 'percepteur';
         return `<div class=card><span><b>${esc(t.subject)}</b><br><small>${hhmmP(t.start_time)} – ${hhmmP(t.end_time)}${t.room ? ' · ' + esc(t.room) : ''}</small></span>${can ? `<div class=row style="margin:0"><button class=ghost data-e="${t.id}" style="width:auto;min-height:36px;padding:6px 10px">✏️</button><button class=ghost data-x="${t.id}" style="width:auto;min-height:36px;padding:6px 10px">🗑</button></div>` : ''}</div>`;
     }).join('')).join('');
     el.querySelectorAll('[data-e]').forEach(b => b.onclick = () => editSlot(b.dataset.e));
@@ -2035,8 +2050,8 @@ function openQuiz() { if (window.OreaQuizUI && OreaQuizUI.openNewGame) OreaQuizU
 // Boutons de la vue classe (sans emojis). Encaisser : directeur + percepteur ; le reste : directeur + enseignant
 function classBtns() {
     const R = S.me.role, B = [];
-    if (canCollect()) B.push(['classPay()', 'Encaisser', 1]);
-    if (R === 'directeur' || R === 'enseignant') B.push(['classAtt()', 'Présence'], ['openCotation()', 'Cotation'], ['openDevoirsClasse()', 'Devoirs'], ['openHoraireClasse()', 'Horaire'], ['openSanctionsClasse()', 'Sanctions']);
+    if (canCollect() && colOK(S.cls)) B.push(['classPay()', 'Encaisser', 1]);
+    if (R === 'directeur' || R === 'enseignant' || R === 'percepteur') B.push(['classAtt()', 'Présence'], ['openCotation()', 'Cotation'], ['openDevoirsClasse()', 'Devoirs'], ['openHoraireClasse()', 'Horaire'], ['openSanctionsClasse()', 'Sanctions']);
     return B.length ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0">${B.map(b => `<button class="${b[2] ? '' : 'ghost'}" style="width:auto" onclick="${b[0]}">${b[1]}</button>`).join('')}</div>` : '';
 }
 // Encaisser depuis la classe : liste des élèves, la plus grosse dette du trimestre en premier
@@ -2220,5 +2235,83 @@ function pngShow(files, title) {
     d.querySelector('#gs').onclick = async () => { if (can) { try { await navigator.share({ files: fl, text: (title || '') + ' — ' + S.school.name }); } catch (e) { if (e.name !== 'AbortError') toast('Partage impossible.'); } } else { files.forEach(f => dl(f.blob, f.fn)); toast('Image enregistrée.'); } };
 }
 async function pngOut(o) { pngShow(await mkPng(o), o.title); }
+
+
+/* =====================================================================
+   PAQUET 2 — Horaire du jour (enseignant / percepteur) et « Ma perception »
+   ===================================================================== */
+const DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+const nrmS = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+async function myCourses() {
+    const { data, error } = await db.from('teacher_subjects').select('class_id, subject_id, subjects(name), classes(name)').eq('teacher_id', S.me.id).eq('year', S.year || '');
+    if (error) return { error };
+    return { data: data || [] };
+}
+// Créneaux de l'enseignant : ceux qui lui sont attribués, ou ceux de ses classes dont la matière est l'un de ses cours
+async function myDay(day) {
+    const mc = await myCourses(); if (mc.error) return mc;
+    const cls = [...new Set(mc.data.map(x => x.class_id))];
+    const subs = new Set(mc.data.map(x => x.class_id + '|' + nrmS(x.subjects && x.subjects.name)));
+    const [a, b] = await Promise.all([
+        cls.length ? db.from('timetable').select('*').in('class_id', cls).eq('day', day) : { data: [] },
+        db.from('timetable').select('*').eq('teacher_id', S.me.id).eq('day', day)
+    ]);
+    if (a.error || b.error) return { error: a.error || b.error };
+    const seen = new Set(), out = [];
+    (b.data || []).concat((a.data || []).filter(t => !t.is_special && subs.has(t.class_id + '|' + nrmS(t.subject)))).forEach(t => { if (!seen.has(t.id)) { seen.add(t.id); out.push(t); } });
+    out.sort((x, y) => String(x.start_time).localeCompare(String(y.start_time)));
+    return { data: out, courses: mc.data.length };
+}
+async function drawMyDay(day) {
+    const el = document.getElementById('tday'); if (!el) return;
+    const today = new Date().getDay(); if (day == null) day = S.tdDay != null ? S.tdDay : (today === 0 ? 1 : today);
+    S.tdDay = day;
+    const chips = [1, 2, 3, 4, 5, 6].map(d => `<button class="chip ${d === day ? 'on' : ''}" data-td=${d}>${DAYS[d].slice(0, 3)}</button>`).join('');
+    el.innerHTML = `<div class="card col"><b>Mon horaire · ${DAYS[day]}${day === today ? ' (aujourd’hui)' : ''}</b><div class=chips style="margin:6px 0">${chips}</div><div id=tdl><div class=sk></div></div></div>`;
+    el.querySelectorAll('[data-td]').forEach(b => b.onclick = () => drawMyDay(+b.dataset.td));
+    const r = await myDay(day), l = document.getElementById('tdl'); if (!l || S.tdDay !== day) return;
+    const hh = t => String(t || '').slice(0, 5), cn = id => (S.classes.find(c => c.id === id) || {}).name || '';
+    if (r.error) { l.innerHTML = `<small>Horaire indisponible pour le moment.</small>`; return; }
+    if (!r.courses && !r.data.length) { l.innerHTML = `<small>Aucun cours ne vous a encore été attribué. Le directeur peut le faire dans « Équipe & Cours ».</small>`; return; }
+    l.innerHTML = r.data.length ? r.data.map(t => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)"><span><b>${hh(t.start_time)} – ${hh(t.end_time)}</b> · ${esc(t.subject)}</span><small>${esc(cn(t.class_id))}${t.room ? ' · ' + esc(t.room) : ''}</small></div>`).join('') : `<small>Pas de cours ce ${DAYS[day].toLowerCase()}.</small>`;
+}
+const _vAccueil1 = vAccueil;
+vAccueil = async function () {
+    const r = await _vAccueil1.apply(this, arguments);
+    try { if (isTeach() && S.tab === 'accueil') drawMyDay(); } catch (_) { }
+    return r;
+};
+
+// « Ma perception » : uniquement ce que le percepteur a lui-même encaissé
+async function vPerception() {
+    const back = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>';
+    if (!canCollect()) { $('#main').innerHTML = back + '<p class=empty>Accès réservé au percepteur.</p>'; return; }
+    $('#main').innerHTML = back + SK;
+    S.perP = S.perP || 'mois';
+    const now = new Date(), d0 = new Date(now); d0.setHours(0, 0, 0, 0);
+    let from = new Date(d0);
+    if (S.perP === 'semaine') from.setDate(from.getDate() - ((from.getDay() + 6) % 7));
+    if (S.perP === 'mois') from = new Date(now.getFullYear(), now.getMonth(), 1);
+    if (S.perP === 'trimestre') { const tm = S.terms[S.year] || {}, k = curTerm(S.year) || 1, st = tm['t' + k]; from = st ? new Date(st + 'T00:00') : new Date(now.getFullYear(), now.getMonth(), 1); }
+    if (S.perP === 'annee') { const tm = S.terms[S.year] || {}; from = tm.t1 ? new Date(tm.t1 + 'T00:00') : new Date(now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1, 8, 1); }
+    const iso = from.toISOString();
+    const [p, f] = await Promise.all([
+        pageAll(() => db.from('payments').select('id,student_id,amount,currency,amount_cdf,method,term,receipt_no,created_at').eq('collector_id', S.me.id).gte('created_at', iso)),
+        pageAll(() => db.from('fee_payments').select('id,student_id,amount,currency,amount_cdf,method,fee_name,receipt_no,created_at').eq('collector_id', S.me.id).gte('created_at', iso))
+    ]);
+    if (S.tab !== 'perception') return;
+    if (p.error || f.error) { $('#main').innerHTML = back + `<p class=empty>${esc((p.error || f.error).message)}</p>`; return; }
+    const L = p.data.map(x => Object.assign({ what: 'T' + x.term }, x)).concat(f.data.map(x => Object.assign({ what: x.fee_name || 'Autres frais' }, x))).sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const tot = L.reduce((a, x) => a + Number(x.amount_cdf || 0), 0), esp = L.filter(x => x.method === 'especes').reduce((a, x) => a + Number(x.amount_cdf || 0), 0);
+    const P = [['jour', 'Aujourd’hui'], ['semaine', 'Semaine'], ['mois', 'Mois'], ['trimestre', 'Trimestre'], ['annee', 'Année']];
+    const nm = id => S.stu.find(s => s.id === id) || {};
+    let h = back + `<h3>Ma perception</h3><div class=chips>${P.map(x => `<button class="chip ${S.perP === x[0] ? 'on' : ''}" data-pp=${x[0]}>${x[1]}</button>`).join('')}</div>`;
+    h += `<div class="card hero"><small>Total encaissé par moi</small><span class=big>${fmt(tot)}</span></div>`;
+    h += `<div class=stat-pair><div class="card stat"><span>Espèces</span><b>${fmt(esp)}</b></div><div class="card stat"><span>Mobile Money</span><b>${fmt(tot - esp)}</b></div></div>`;
+    h += `<p style="margin:12px 0 4px"><small>QUI A PAYÉ QUOI · ${L.length} paiement(s)</small></p>`;
+    h += L.length ? L.map(x => { const s = nm(x.student_id); return `<div class=card><span>${esc(s.name || 'Élève')}<br><small>${esc(cnm(s.class_id))} · ${esc(x.what)} · ${new Date(x.created_at).toLocaleDateString('fr-FR')}${x.receipt_no ? ' · REC-' + String(x.receipt_no).padStart(4, '0') : ''}</small></span><b>${fmt(Number(x.amount_cdf || 0))}</b></div>`; }).join('') : '<p class=empty>Aucun encaissement sur cette période.</p>';
+    $('#main').innerHTML = h;
+    document.querySelectorAll('[data-pp]').forEach(b => b.onclick = () => { S.perP = b.dataset.pp; vPerception(); });
+}
 
 // --- FIN DU FICHIER APP.JS ---

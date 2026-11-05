@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v69 — timetable.js (modèle par défaut appliqué automatiquement, copier vers / depuis une classe)
+   ORÉA École v70 — timetable.js (modèle automatique, copier vers / depuis, enseignant de chaque créneau)
    « Horaires des cours » : grille 2x3 (Lundi/Mardi, Mercredi/Jeudi, 
    Vendredi/Samedi). Le cours en cours est surligné.
    ===================================================================== */
@@ -64,7 +64,7 @@
                 const name = sp ? String(t.subject).toLocaleUpperCase('fr') : t.subject;
                 const e = hh(t.end_time), s = hh(t.start_time);
                 return `<div class="tt-s${sp ? ' sp' : ''}${sel === t.id ? ' sel' : ''}" data-id="${esc(t.id || '')}" data-d="${d}" data-s="${s}" data-e="${e}">`
-                    + `<i>${s}${e && e !== s ? '–' + e : ''}</i><b>${esc(name)}</b>${t.room ? `<small>${esc(t.room)}</small>` : ''}</div>`;
+                    + `<i>${s}${e && e !== s ? '–' + e : ''}</i><b>${esc(name)}</b>${t.room ? `<small>${esc(t.room)}</small>` : ''}${t.teacher_id && TT.staff ? `<small>${esc((TT.staff.find(p => p.id === t.teacher_id) || {}).full_name || '')}</small>` : ''}</div>`;
             }).join('') + '</div>';
         }).join('') + '</div>';
     }
@@ -125,6 +125,7 @@
 
     async function loadTT() {
         const cid = S.cls, mod = TT.model;
+        await loadStaff();
         const q = mod ? db.from('timetable_model').select('*').eq('school_id', S.school.id) : db.from('timetable').select('*').eq('class_id', cid);
         const { data, error } = await q.order('day').order('start_time');
         if (S.tab !== 'emploi_temps' || cid !== S.cls || mod !== TT.model) return;
@@ -177,20 +178,28 @@
             { n: 'start', l: 'Heure de début', t: 'time', v: t ? hh(t.start_time) : '07:00' },
             { n: 'end', l: 'Heure de fin', t: 'time', v: t ? hh(t.end_time) : '07:50' },
             { n: 'room', l: 'Salle (facultatif)', r: false, v: t && t.room || '' }
-        ];
+        ].concat(!TT.model && (TT.staff || []).length ? [{ n: 'teacher', l: 'Enseignant (facultatif)', o: [['', '— Aucun —']].concat(TT.staff.map(p => [p.id, esc(p.full_name)])), v: t && t.teacher_id || '' }] : []);
+    }
+    // Liste du personnel (pour choisir l'enseignant d'un créneau) : chargée une fois
+    async function loadStaff() {
+        if (TT.staff || !canEdit()) return;
+        const { data } = await db.from('profiles').select('id,full_name,role').eq('school_id', S.school.id).in('role', ['enseignant', 'percepteur', 'directeur']).order('full_name');
+        TT.staff = data || [];
     }
     function payload(v) {
         const sp = v.kind === 's' || SPECIAL.includes(norm(v.subject));
         const subject = sp ? v.subject.trim().toLocaleUpperCase('fr') : v.subject.trim();
         if (!subject) throw Error('Écris un nom.');
         if (sp ? v.end < v.start : v.end <= v.start) throw Error("L'heure de fin doit être après le début.");
-        return { subject, start_time: v.start, end_time: v.end, room: (v.room || '').trim() || null, is_special: sp, is_default: false };
+        const o = { subject, start_time: v.start, end_time: v.end, room: (v.room || '').trim() || null, is_special: sp, is_default: false };
+        if (!TT.model && 'teacher' in v) o.teacher_id = sp ? null : (v.teacher || null);
+        return o;
     }
     // Une ligne prête pour la table affichée (classe ou modèle)
     const rowFor = (d, p) => TT.model
         ? { school_id: S.school.id, day: d, subject: p.subject, start_time: p.start_time, end_time: p.end_time, room: p.room, is_special: p.is_special }
         : Object.assign({ school_id: S.school.id, class_id: S.cls, year: S.year || '', day: d }, p);
-    const modelRow = p => { const o = Object.assign({}, p); if (TT.model) delete o.is_default; return o; };
+    const modelRow = p => { const o = Object.assign({}, p); if (TT.model) { delete o.is_default; delete o.teacher_id; } return o; };
     function addSlot() {
         ask('Nouveau créneau — ' + esc(TT.model ? 'Modèle par défaut' : clsName()), slotFields(), async v => {
             const p = payload(v);

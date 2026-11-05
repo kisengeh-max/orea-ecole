@@ -32,7 +32,7 @@ function afterDlg(fn) {
     setTimeout(t, 30);
 }
 function openCotation() {
-    if (!['directeur', 'enseignant'].includes(S.me.role)) return;
+    if (!['directeur', 'enseignant', 'percepteur'].includes(S.me.role)) return;
     if (S.offline) return toast('Hors connexion : la cotation demande internet.');
     S.cotScreen = 'home'; S.cotEval = null; S.cotTerm = S.cotTerm || cotCurTerm();
     history.pushState({ cot: 1 }, ''); S.tab = 'cotation'; render();
@@ -305,7 +305,7 @@ async function cotDelete() {
 
 // ---------- Moyennes de la classe (pastilles + tri) ----------
 async function loadClassAvg() {
-    if (!S.me || S.me.role === 'percepteur' || S.offline || S.view !== 'class' || !S.cls) return;
+    if (!S.me || S.offline || S.view !== 'class' || !S.cls) return;
     const cls = S.cls, c = cotCls(); if (!c) return;
     let term = curTerm(cy(c)); const key = cls + '|' + (term || 'x');
     if (S.avgKey === key) return;

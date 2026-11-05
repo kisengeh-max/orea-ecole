@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v60 — equipe.js
+   ORÉA École v70 — equipe.js (classes confiées au percepteur, « Mes cours » réparé)
    Module de gestion de l'équipe (Directeur uniquement).
    - Nommer / Révoquer un Percepteur
    - Attribuer des cours à un enseignant
@@ -60,6 +60,11 @@
                                     📚 Gérer les cours
                                 </button>
                             ` : ''}
+                            ${isPercepteur ? `
+                                <button class="ghost" style="width:auto;flex:1;padding:6px;min-height:36px;font-size:12px" data-pcl="${p.id}">
+                                    🏫 Classes à percevoir
+                                </button>
+                            ` : ''}
                             <button class="ghost" style="width:auto;padding:6px 12px;min-height:36px;font-size:12px;color:${p.active === false ? 'var(--ok)' : 'var(--bad)'}" onclick="toggleActive('${p.id}', ${p.active})">
                                 ${p.active === false ? 'Réactiver' : 'Désactiver'}
                             </button>
@@ -75,6 +80,10 @@
             const p = l.find(x => x.id === b.dataset.mtc);
             if (p) manageTeacherCourses(p.id, p.full_name);
         });
+        d.querySelectorAll('[data-pcl]').forEach(b => b.onclick = () => {
+            const p = l.find(x => x.id === b.dataset.pcl);
+            if (p) manageCollectorClasses(p.id, p.full_name);
+        });
     };
 
     // Changer le rôle (enseignant <-> percepteur)
@@ -84,7 +93,39 @@
         const { error } = await db.from('profiles').update({ role: newRole }).eq('id', id);
         if (error) return toast(error.message);
         toast('Rôle mis à jour ✓');
+        if (newRole === 'percepteur') {
+            // Nomination : on choisit tout de suite les classes qu'il perçoit
+            const { data: p } = await db.from('profiles').select('full_name').eq('id', id).maybeSingle();
+            return manageCollectorClasses(id, (p && p.full_name) || 'Percepteur', true);
+        }
         team(); // Rafraîchir la modale
+    };
+
+    // Classes confiées à un percepteur : il ne voit et n'encaisse que les élèves de ces classes
+    window.manageCollectorClasses = async function (collectorId, name, isNew) {
+        const [{ data: classes, error: e1 }, { data: mine, error: e2 }] = await Promise.all([
+            db.from('classes').select('id,name,year').eq('school_id', S.school.id).eq('year', S.year).order('name'),
+            db.from('collector_classes').select('class_id').eq('collector_id', collectorId)
+        ]);
+        if (e1 || e2) return toast((e1 || e2).message);
+        const on = new Set((mine || []).map(x => x.class_id));
+        const d = show(`<h3>Classes à percevoir · ${esc(name)}</h3>
+            <small>${isNew ? 'Nommé percepteur ✓ — ' : ''}Coche les classes dont il encaisse les frais. Il ne verra que les impayés de ces classes.</small>
+            <div style="max-height:50vh;overflow-y:auto;margin-top:8px">${(classes || []).length ? classes.map(c => `
+                <label class="card" style="padding:10px;margin:5px 0;justify-content:flex-start;gap:10px;cursor:pointer">
+                    <input type="checkbox" data-cc="${c.id}" ${on.has(c.id) ? 'checked' : ''} style="width:auto;margin:0;transform:scale(1.4)">
+                    <span>${esc(c.name)}</span>
+                </label>`).join('') : '<p class="empty">Aucune classe pour l’année ' + esc(S.year || '') + '.</p>'}</div>
+            <div class=row style="margin-top:12px"><button class=ghost id=ccall>Tout cocher</button><button id=ccok>Terminé</button></div>`);
+        const save = async (cid, val) => {
+            const r = val
+                ? await db.from('collector_classes').insert({ school_id: S.school.id, collector_id: collectorId, class_id: cid })
+                : await db.from('collector_classes').delete().match({ collector_id: collectorId, class_id: cid });
+            if (r.error && !/duplicate/i.test(r.error.message)) toast(r.error.message);
+        };
+        d.querySelectorAll('[data-cc]').forEach(b => b.onchange = () => save(b.dataset.cc, b.checked));
+        d.querySelector('#ccall').onclick = async () => { for (const b of d.querySelectorAll('[data-cc]')) if (!b.checked) { b.checked = true; await save(b.dataset.cc, true); } };
+        d.querySelector('#ccok').onclick = () => team();
     };
 
     // Activer / Désactiver
@@ -168,7 +209,10 @@
             .eq('teacher_id', S.me.id)
             .eq('year', S.year);
             
-        if (error) return toast(error.message);
+        if (error) {
+            $('#main').innerHTML = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Mes cours</h3><p class=empty data-ic="📚">Vos cours ne peuvent pas être affichés pour le moment. Vérifiez votre connexion, puis réessayez.</p><button class=ghost onclick="vMesCours()">Réessayer</button>`;
+            return;
+        }
         
         const l = data || [];
         
@@ -183,7 +227,7 @@
         let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Mes cours · ${esc(S.year)}</h3>`;
         
         if (Object.keys(byClass).length === 0) {
-            h += '<p class=empty data-ic="📚">Aucun cours ne vous a été attribué pour cette année.</p>';
+            h += '<p class=empty data-ic="📚">Aucun cours ne vous a encore été attribué pour cette année.<br>Le directeur peut le faire dans « Équipe & Cours ».</p>';
         } else {
             h += Object.entries(byClass).map(([className, subjects]) => `
                 <div class="card col">
@@ -202,7 +246,7 @@
     hook('vMenu', function(orig) {
         return function() {
             orig.apply(this, arguments);
-            if (S.me.role === 'enseignant' && S.tab === 'menu') {
+            if (['enseignant', 'percepteur'].includes(S.me.role) && S.tab === 'menu') {
                 const main = $('#main');
                 const h3 = main.querySelector('h3');
                 const card = `<div class="menu-card" onclick="vMesCours()"><div class="menu-ic">${svgI('devoirs')}</div><div class="menu-label">Mes cours<small>Voir mes attributions</small></div><span class="menu-arrow">›</span></div>`;
