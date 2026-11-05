@@ -1,10 +1,10 @@
 /* =====================================================================
-   ORÉA École v64 — notifications.js (corrigé)
+   ORÉA École v73 — notifications.js
    1) window.OreaOv : écrans plein écran + bouton Retour Android + toast.
       -> Utilisé par announcements.js (écran « Annonces » du directeur).
          Ce module avait disparu quand notifications.js a été remplacé par la
          version « Push » : le directeur voyait « notifications.js manquant ».
-   2) Notifications Web Push (école).
+   2) (Notifications Web Push : maintenant dans push.js)
    3) publishAnnonceWithNotif() : annonce automatique lors d'un changement de frais.
    ===================================================================== */
 (function () {
@@ -77,79 +77,9 @@
     window.OreaOv = { overlay, back: () => history.back(), toast: ovToast };
 
     /* ================================================================
-       2) Notifications Web Push
+       2) Notifications Web Push : déplacées dans push.js (v73)
+          (commun au personnel et aux parents, vraie clé VAPID).
        ================================================================ */
-    // ⚠️ Cette clé est la clé D'EXEMPLE de la documentation web-push : ce n'est PAS la tienne.
-    // Génère ta paire de clés VAPID (npx web-push generate-vapid-keys), mets la clé PUBLIQUE ici
-    // et la clé PRIVÉE dans ton Edge Function / serveur d'envoi.
-    // Tant que la clé d'exemple est là, les abonnements push sont désactivés (ils ne pourraient jamais recevoir de message).
-    const VAPID_SAMPLE = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8E';
-    const VAPID_PUBLIC_KEY = VAPID_SAMPLE;
-
-    const urlBase64ToUint8Array = (base64String) => {
-        const padding = '='.repeat((4 - base64String.length % 4) % 4);
-        const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
-        const rawData = window.atob(base64);
-        const outputArray = new Uint8Array(rawData.length);
-        for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
-        return outputArray;
-    };
-
-    // navigator.serviceWorker.ready ne se résout jamais si aucun service worker n'est enregistré : on limite l'attente.
-    const swReady = () => Promise.race([
-        navigator.serviceWorker.ready,
-        new Promise((_, rej) => setTimeout(() => rej(new Error('service worker indisponible')), 8000))
-    ]);
-
-    async function initPush() {
-        if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
-            console.log('Push non supporté par ce navigateur.');
-            return;
-        }
-        if (VAPID_PUBLIC_KEY === VAPID_SAMPLE) {
-            console.warn('Push désactivé : remplace VAPID_PUBLIC_KEY par ta propre clé publique (notifications.js).');
-            return;
-        }
-        if (Notification.permission === 'denied') return;
-
-        const { data: { user } } = await db.auth.getUser();
-        if (!user) return;
-
-        try {
-            const reg = await swReady();
-            let sub = await reg.pushManager.getSubscription();
-            if (sub) return;
-
-            if (Notification.permission === 'default') {
-                const perm = await Notification.requestPermission();
-                if (perm !== 'granted') return;
-            }
-            sub = await reg.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-            });
-            const j = sub.toJSON();
-            const { error } = await db.from('push_subscriptions').upsert({
-                user_id: user.id,
-                endpoint: j.endpoint,
-                p256dh: j.keys.p256dh,
-                auth: j.keys.auth
-            }, { onConflict: 'user_id,endpoint' });
-            if (error) console.error('push_subscriptions:', error.message);
-            else console.log('✅ Abonné aux notifications push');
-        } catch (e) {
-            console.error('Erreur Push:', e);
-        }
-    }
-
-    // Une seule initialisation par utilisateur (avant : une par évènement d'authentification, y compris les rafraîchissements de jeton)
-    let pushUid = null;
-    db.auth.onAuthStateChange((event, session) => {
-        if (!session) { pushUid = null; return; }
-        if (pushUid === session.user.id) return;
-        pushUid = session.user.id;
-        setTimeout(initPush, 5000);
-    });
 
     /* ================================================================
        3) Annonce automatique (ex. : modification des frais)
@@ -165,8 +95,7 @@
 
         if (error) return toast(error.message);
 
-        // Pour du vrai push quand l'application est fermée, il faut en plus une Edge Function qui lit
-        // push_subscriptions et envoie le message avec la clé VAPID privée.
+        // Le push (téléphone fermé) part tout seul : la base crée les notifications à la publication.
         toast('Annonce publiée ✓');
         return data;
     };
