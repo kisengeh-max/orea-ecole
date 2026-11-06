@@ -243,7 +243,10 @@
   const readCommon = () => ({ niveau_scolaire: $('#qb-niv').value, matiere: $('#qb-mat').value.trim(), theme: $('#qb-th').value.trim(), niveau_difficulte: +$('#qb-dif').value });
   const bankTarget = () => ($('#qb-bank') && $('#qb-bank').value) || 'ecole';
   async function bankSelect() {
-      return (await bankAdmin()) ? `<label>Ajouter dans</label><select id="qb-bank"><option value="ecole">Banque de mon école</option><option value="commune">Banque ORÉA (toutes les écoles)</option></select>` : '';
+      const hasSchool = typeof S !== 'undefined' && S && S.school;
+      if (!(await bankAdmin())) return '';
+      return hasSchool ? `<label>Ajouter dans</label><select id="qb-bank"><option value="ecole">Banque de mon école</option><option value="commune">Banque ORÉA (toutes les écoles)</option></select>`
+                       : `<select id="qb-bank" hidden><option value="commune">Banque ORÉA</option></select><p style="font-size:13px;color:var(--gold)">Les questions iront dans la banque ORÉA (toutes les écoles).</p>`;
   }
   async function sendRows(rows, dry, bank) {
       const { data, error } = await db.rpc('quiz_add', { p_rows: rows, p_bank: bank || 'ecole', p_dry: !!dry });
@@ -267,7 +270,7 @@
                   <button class="ghost" onclick="OreaQuizUI.openAddForm()">➕ Ajouter une question</button>
                   <button class="ghost" onclick="OreaQuizUI.openQuick()">⚡ Saisie rapide</button>
                   <button class="ghost" onclick="OreaQuizUI.openExcel()">📊 Coller depuis Excel</button>
-                  <button class="ghost" onclick="OreaQuizUI.openSchoolList()">📋 Questions de l’école</button>
+                  ${typeof S !== 'undefined' && S && S.school ? '<button class="ghost" onclick="OreaQuizUI.openSchoolList()">📋 Questions de l’école</button>' : ''}
                   ${isDirQ() ? '<button class="ghost" onclick="OreaQuizUI.openReports()">🚩 Signalements</button>' : ''}
                   <span id="qb-admin"></span>
               </div>
@@ -277,7 +280,7 @@
           </div>
       `);
       loadStockAdmin();
-      if (await bankAdmin()) { const a = $('#qb-admin'); if (a) a.outerHTML = '<button class="ghost" onclick="OreaQuizUI.openImport()">📥 Import JSON (ORÉA)</button>'; }
+      if (await bankAdmin()) { const a = $('#qb-admin'); if (a) a.outerHTML = '<button class="ghost" onclick="OreaQuizUI.openImport()">📥 Import JSON (ORÉA)</button><button class="ghost" onclick="OreaQuizUI.openAI()">🤖 Générer avec l’IA</button>'; }
   }
 
   // ----- 1) Formulaire (ajout ou modification) -----
@@ -448,6 +451,61 @@
           catch (err) { $('#qb-prev').innerHTML = `<p style="color:var(--bad)">${esc(err.message)}</p>`; }
           ready = [];
       };
+  }
+
+
+  // ----- 5) Génération par IA (administrateur seul) : Claude ou Gemini -> relecture -> banque ORÉA -----
+  async function openAI() {
+      if (!(await bankAdmin())) return alert('Réservé à l’administrateur ORÉA.');
+      showOverlay(`
+          <div class="qz-head">${back()}<b>Générer avec l’IA</b></div>
+          <div class="qz-body qz-form">
+              <p style="font-size:13px;color:var(--mut);margin-top:0">L’IA propose des questions avec leur explication. Rien n’est enregistré tant que tu n’as pas coché et validé. Les doublons sont refusés.</p>
+              <label>Intelligence artificielle</label><select id="qb-ai"><option value="claude">Claude (Anthropic)</option><option value="gemini">Gemini (Google)</option></select>
+              ${commonFields(BK.last)}
+              <label>Nombre de questions (30 maximum)</label><input id="qb-n" type="number" min="1" max="30" value="10">
+              <button id="qb-gen" style="width:100%">🤖 Générer</button>
+              <div id="qb-prev"></div>
+          </div>`);
+      let list = [], res = null;
+      $('#qb-gen').onclick = async e => {
+          const btn = e.currentTarget, c = readCommon(); BK.last = c;
+          if (!c.matiere) { $('#qb-prev').innerHTML = '<p style="color:var(--bad)">Indique la matière.</p>'; return; }
+          btn.disabled = true; btn.textContent = '⏳ Génération en cours (jusqu’à 1 minute)…'; $('#qb-prev').innerHTML = '';
+          try {
+              // Questions déjà en banque sur ce sujet : l'IA doit les éviter
+              let q = db.from('quiz_questions').select('question').is('school_id', null).eq('matiere', c.matiere).eq('niveau_scolaire', c.niveau_scolaire);
+              if (c.theme) q = q.eq('theme', c.theme);
+              const { data: ex } = await q.order('created_at', { ascending: false }).limit(60);
+              const { data, error } = await db.functions.invoke('quiz-ai', { body: { provider: $('#qb-ai').value, niveau: c.niveau_scolaire, matiere: c.matiere, theme: c.theme, difficulte: c.niveau_difficulte, n: +$('#qb-n').value || 10, avoid: (ex || []).map(x => x.question) } });
+              let msg = error && error.message;
+              if (error && error.context && typeof error.context.json === 'function') { try { const j = await error.context.json(); msg = j.error || msg; } catch (_) { } }
+              if (error || !data || data.error) throw new Error((data && data.error) || msg || 'Génération impossible');
+              list = data.questions.map(x => Object.assign({}, c, x));
+              res = await sendRows(list, true, 'commune');
+              drawAI();
+          } catch (err) { $('#qb-prev').innerHTML = `<p style="color:var(--bad)">${esc(err.message)}</p>`; }
+          finally { btn.disabled = false; btn.textContent = '🤖 Générer'; }
+      };
+      function drawAI() {
+          const st = i => ((res.rows || [])[i] || {});
+          $('#qb-prev').innerHTML = `<p style="font-size:13px;margin:12px 0 6px"><b>${list.length}</b> question(s) proposée(s) · ${res.duplicates} doublon(s) · ${res.errors} refusée(s). Décoche celles que tu ne veux pas garder.</p>`
+              + list.map((q, i) => { const s = st(i), ok = s.status === 'ok';
+                  return `<label style="display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0;${ok ? '' : 'opacity:.55'}">
+                      <div style="display:flex;gap:10px;align-items:flex-start"><input type="checkbox" data-ai="${i}" ${ok ? 'checked' : 'disabled'} style="width:auto;margin:4px 0 0;transform:scale(1.3)">
+                      <div><b>${esc(q.question)}</b>
+                      <div style="font-size:13px;margin-top:4px">${q.choix.map((x, k) => `<span style="color:${k === q.bonne_reponse ? 'var(--ok)' : 'var(--mut)'}">${k === q.bonne_reponse ? '✓ ' : ''}${esc(x)}</span>`).join(' · ')}</div>
+                      <div style="font-size:12px;color:var(--mut);margin-top:4px">💡 ${esc(q.explication)}</div>
+                      ${ok ? '' : `<div style="font-size:12px;color:var(--bad);margin-top:4px">${s.status === 'doublon' ? '⛔ Doublon' : '✗'} ${esc(s.msg || '')}</div>`}</div></div></label>`; }).join('')
+              + `<button id="qb-ok" style="width:100%">Ajouter à la banque ORÉA</button>`;
+          $('#qb-ok').onclick = async e => {
+              const pick = [...document.querySelectorAll('[data-ai]:checked')].map(x => list[+x.dataset.ai]);
+              if (!pick.length) return alert('Coche au moins une question.');
+              e.currentTarget.disabled = true;
+              try { const r = await sendRows(pick, false, 'commune'); $('#qb-prev').innerHTML = resultHtml(r, pick); loadStockAdmin(); }
+              catch (err) { $('#qb-prev').innerHTML = `<p style="color:var(--bad)">${esc(err.message)}</p>`; }
+          };
+      }
   }
 
   // ----- 4) Questions de l'école (modifier / supprimer) -----
@@ -1163,5 +1221,5 @@ async function endGame(winnerTeam) {
         win.document.close();
     }
 
-    window.OreaQuizUI = { injectCss, initAudio, sound, startConfetti, QUIZ, $, esc, sleep, openNewGame, printCert, openBank, openImport, openReports, restoreQ, deleteQ, editQ, openAddForm, openQuick, openExcel, openSchoolList };
+    window.OreaQuizUI = { injectCss, initAudio, sound, startConfetti, QUIZ, $, esc, sleep, openNewGame, printCert, openBank, openImport, openReports, restoreQ, deleteQ, editQ, openAddForm, openQuick, openExcel, openSchoolList, openAI };
 })();
