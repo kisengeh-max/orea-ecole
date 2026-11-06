@@ -88,6 +88,9 @@ $('#dlg').addEventListener('close', () => setTimeout(() => {
 
 window.addEventListener('popstate', () => {
     if (ignorePop) { ignorePop = false; return; }
+    // v82 : un panneau plein écran est ouvert (messages, notifications, jeu, vérification) :
+    // c'est lui qui gère le retour, la page dessous ne bouge pas
+    if (document.querySelector('.om-ov, .nt-ov, .qz-ov, .fm-ov, .ic-ov')) return;
     const d = $('#dlg');
     if (d.open) {
         dlgPushed = false;
@@ -99,7 +102,7 @@ window.addEventListener('popstate', () => {
     if (S.me && S.tab === 'eleves' && S.view === 'class') { S.view = 'grid'; S.q = ''; render(); return; }
     if (S.me && S.tab === 'bilan' && fin()) { S.tab = 'finance_home'; render(); return; }
     if (S.me && !['accueil', 'menu'].includes(S.tab)) {
-        if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'finance_home', 'programme_home', 'donnees_home', 'perception'].includes(S.tab)) {
+        if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'finance_home', 'programme_home', 'donnees_home', 'perception', 'stats', 'enafep'].includes(S.tab)) {
             S.tab = 'menu';
             render();
         } else {
@@ -585,7 +588,7 @@ function render() {
 
     if (!fin() && ['depenses', 'bilan', 'finance_home', 'donnees_home'].includes(S.tab)) S.tab = 'menu';
     if (!money() && ['caisse', 'impayes', 'perception'].includes(S.tab)) S.tab = 'menu';
-    ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier, devoirs: vDevoirs, emploi_temps: vEmploiTemps, finance_home: vFinanceHome, programme_home: vProgrammeHome, donnees_home: vDonneesHome, cotation: () => vCotation(), bulletins: () => vBulletins(), perception: vPerception })[S.tab]();
+    ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier, devoirs: vDevoirs, emploi_temps: vEmploiTemps, finance_home: vFinanceHome, programme_home: vProgrammeHome, donnees_home: vDonneesHome, cotation: () => vCotation(), bulletins: () => vBulletins(), perception: vPerception, stats: () => window.vStats ? vStats() : vMenu(), enafep: () => window.vEnafep ? vEnafep() : vMenu() })[S.tab]();
     qui();
 }
 const sorts = {

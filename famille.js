@@ -52,17 +52,26 @@
     }
     function screen(html) {
         css();
-        if (!OV) { OV = document.createElement('div'); OV.className = 'fm-ov'; document.body.appendChild(OV); document.body.style.overflow = 'hidden'; }
+        if (!OV) { OV = document.createElement('div'); OV.className = 'fm-ov'; document.body.appendChild(OV); document.body.style.overflow = 'hidden'; history.pushState({ fm: 1 }, ''); }
         OV.innerHTML = html; OV.scrollTop = 0;
         return OV;
     }
-    function close() {
+    function closeNow() {
         clearInterval(TIMER); TIMER = null;
         if (OV) OV.remove(); OV = null; G = null; document.body.style.overflow = '';
     }
+    // Fermer = revenir en arrière dans l'historique (le bouton retour du téléphone fait pareil)
+    function close() { if (OV) history.back(); }
+    let quitting = false;
+    window.addEventListener('popstate', e => {
+        if (!OV) return;
+        e.stopImmediatePropagation();
+        if (G && G.level > 0 && !quitting && !OV.querySelector('#fm-again') && !confirm('Quitter la partie en cours ?')) { history.pushState({ fm: 1 }, ''); return; }
+        quitting = false; closeNow();
+    });
     const head = (t, quit) => `<div class="fm-head"><button class="fm-x" onclick="${quit ? 'oreaFamilleQuit()' : 'oreaFamilleClose()'}">✕</button><b>${E(t)}</b></div>`;
     window.oreaFamilleClose = close;
-    window.oreaFamilleQuit = () => { if (confirm('Quitter la partie en cours ?')) close(); };
+    window.oreaFamilleQuit = () => { if (confirm('Quitter la partie en cours ?')) { quitting = true; close(); } };
 
     /* ---------- Questions (cache sur le téléphone) ---------- */
     async function loadPack(niv) {
@@ -267,7 +276,7 @@
         }
         h += `<button class="fm-go" id="fm-again">🔁 Rejouer</button><button class="fm-go" style="background:transparent;border:1px solid var(--line,#444);color:inherit" onclick="oreaFamilleClose()">Fermer</button>`;
         screen(h);
-        OV.querySelector('#fm-again').onclick = () => { close(); window.oreaFamille(); };
+        OV.querySelector('#fm-again').onclick = () => { G = null; window.oreaFamille(); };
     }
 
     /* ---------- Points d'entrée : en bas de l'Accueil de TOUS les utilisateurs ---------- */

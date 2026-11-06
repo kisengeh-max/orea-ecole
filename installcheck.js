@@ -6,12 +6,12 @@
    ===================================================================== */
 (function () {
     'use strict';
-    const LIVRAISON = 'v81 · 06/11/2026';
+    const LIVRAISON = 'v82 · 06/11/2026';
     const FILES = {
-        "index.html": "83344bd40d9f19c4bf67fe7573091475626e753bac6b18f1ec71496547ddef90",
-        "parent.html": "54cf6d73cb3938026b5c9d09a30f697152058248661cf8580caaca850f3b90a0",
-        "sw.js": "3fa80c726eb1d1788b19d7b61b57913d966356325d79db29acf3de9c8d2716a6",
-        "app.js": "f8dd33096e7a81ce80d50ab0a9d43d0a4cba1350e4dd5c54426fe9d6572b47df",
+        "index.html": "986c69197c87385aa7a5836f2c25f6a51b00a6f49dc252740b4ac7f37e43a628",
+        "parent.html": "6f9e450d6b2d969c2e0832313666a011318c39ce60bcdac32719b074052630d2",
+        "sw.js": "c093f3ba586bfbc7aa787e56ce180d4c7f66a91afd2f2f55ca37beedb79d7c2b",
+        "app.js": "72f3897476b404691f66723536c334ae060cefa00d176f80b6740c261ca76c7d",
         "equipe.js": "149237f01167aad61a79af92ebe76b0758d665e3d14f9248a00918a00302bcef",
         "timetable.js": "e91b643442ddb6280e12e7d9afdb2af436bead51946cf1598f91147d7bd858a5",
         "finance.js": "fa9823a07d98229905c7ffa568999226800ae806e39f302ee363591eab2cb7b6",
@@ -26,10 +26,11 @@
         "quiz_engine.js": "590951f3a188f618743f73e9441e66fd50a9e31dba9cd1040925eb923d151fe0",
         "push.js": "a4669c1001524a568aef31cd349618849da7de2f7632e650b1dad30ed310081a",
         "notifications.js": "1b080c37ac646a8a0c9bc7532c436b70b96d830f9fca0288cd11af24c20e13ca",
-        "quotidien.js": "f8d722fa03c864618a36a1f83c4b6fc4b5ef662829a025d5d5413b8518c0704f",
-        "famille.js": "78989a335452be2af637045983dcf301640faad4b11c99222736200cffd4c289",
-        "stats.js": "1665f7db94af6c140c8a0592fa82c9504a9589d68d507c784a9ade75deeb55ae",
-        "enafep.js": "4654b15386ffda534ff435d4b7749b0ee11358b370bbd4cb22adf53678a71502"
+        "quotidien.js": "fe290fc42c48333a1b12815244e7ad9f7fe1f9f4af43936d1bd408af192361d0",
+        "famille.js": "addf6edf0428c4feaacbe20a889335cf69bcb938eed333417b94b3c8334474f4",
+        "stats.js": "d00b33b3aaf59018711db143525f590e59f113d08aecda07f259b4f1153ce198",
+        "enafep.js": "6a10ee7d964bd61315ef88c8eb8921196e524f579161e85e1551be08d1030080",
+        "ui.js": "2065291bc29b3d23e74e91840ec68b1e0e313cc9c1d65355e89e67193940444b"
 };
 
     async function sha(buf) {
@@ -40,8 +41,12 @@
         const box = document.createElement('div');
         box.style.cssText = 'position:fixed;inset:0;z-index:600;background:var(--bg,#14110d);color:var(--tx,#f0eee6);overflow-y:auto;padding:calc(14px + env(safe-area-inset-top)) 16px 30px;font-family:inherit';
         box.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><button id="ic-x" style="width:42px;min-height:42px;border-radius:12px;border:1px solid var(--line,#444);background:transparent;color:inherit">✕</button><b style="font-size:18px">🔎 Vérifier l’installation</b></div><p style="color:var(--mut,#999);font-size:13px">Livraison attendue : <b>${LIVRAISON}</b>. Si un fichier vient d’être déposé sur GitHub, attends 10 minutes avant de vérifier.</p><div id="ic-l">Vérification en cours…</div>`;
+        box.className = 'ic-ov';
         document.body.appendChild(box);
-        box.querySelector('#ic-x').onclick = () => box.remove();
+        history.pushState({ ic: 1 }, '');
+        const onPop = e => { e.stopImmediatePropagation(); box.remove(); window.removeEventListener('popstate', onPop); };
+        window.addEventListener('popstate', onPop);
+        box.querySelector('#ic-x').onclick = () => history.back();
         const out = [];
         for (const [f, h] of Object.entries(FILES)) {
             let st = 'bad';

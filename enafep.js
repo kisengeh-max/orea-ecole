@@ -144,8 +144,8 @@
                 const r = oMenu.apply(this, arguments);
                 try {
                     const main = document.getElementById('main'), t = main && main.querySelector('[onclick*="devoirs"]');
-                    if (t && visible() && !main.querySelector('[onclick*="vEnafep"]')) {
-                        const d = document.createElement('div'); d.innerHTML = menuCard('calendrier', 'ENAFEP', 'Finalistes · Épreuves blanches · Résultats', 'vEnafep()'); t.after(d.firstElementChild);
+                    if (t && visible() && !main.querySelector('[onclick*="menuGo(\'enafep\')"]')) {
+                        const d = document.createElement('div'); d.innerHTML = menuCard('calendrier', 'ENAFEP', 'Finalistes · Épreuves blanches · Résultats', "menuGo('enafep')"); t.after(d.firstElementChild);
                     }
                 } catch (_) { }
                 return r;

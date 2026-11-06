@@ -84,8 +84,8 @@
             const r = oMenu.apply(this, arguments);
             try {
                 const main = document.getElementById('main'), t = main && main.querySelector('[onclick*="team()"]');
-                if (t && typeof dir === 'function' && dir() && !main.querySelector('[onclick*="vStats"]')) {
-                    const d = document.createElement('div'); d.innerHTML = menuCard('graph', 'Statistiques', 'Effectifs · Présences · Résultats · ENAFEP', 'vStats()'); t.after(d.firstElementChild);
+                if (t && typeof dir === 'function' && dir() && !main.querySelector('[onclick*="menuGo(\'stats\')"]')) {
+                    const d = document.createElement('div'); d.innerHTML = menuCard('graph', 'Statistiques', 'Effectifs · Présences · Résultats · ENAFEP', "menuGo('stats')"); t.after(d.firstElementChild);
                 }
             } catch (_) { }
             return r;

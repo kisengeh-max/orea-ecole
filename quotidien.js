@@ -59,6 +59,7 @@
     function confetti(key) {
         try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (_) { }
         const box = document.createElement('div');
+        box.className = 'no-ico';   // les confettis restent en couleur
         box.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:500;overflow:hidden';
         const E2 = ['🎉', '🎂', '🎈', '✨', '🎊'];
         for (let i = 0; i < 36; i++) {
