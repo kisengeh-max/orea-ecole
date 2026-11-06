@@ -105,7 +105,7 @@ const OB = (function () {
         T('F2', 11, M, y, 'Appréciation', DG); y -= 15;
         wrap(b.appr || '', W - 2 * M, 10).slice(0, 5).forEach(l => { T('F1', 10, M, y, l); y -= 13; });
 
-        const sy = 96, labels = ['Le titulaire', 'Le directeur', 'Les parents'], sw = (W - 2 * M) / 3;
+        const sy = 96, labels = ['Le titulaire', (typeof window !== 'undefined' && typeof window.oreaHeadTitle === 'function') ? 'Le ' + window.oreaHeadTitle().toLowerCase() : 'Le chef d’établissement', 'Les parents'], sw = (W - 2 * M) / 3;
         labels.forEach((l, i) => { const x = M + i * sw; T('F2', 9, x + 6, sy, l, DK); D.rect(x + 6, sy - 40, sw - 24, 0.6, '0.6 g'); });
         T('F1', 7, M, 22, 'ORÉA École · édité le ' + new Date().toLocaleDateString('fr-FR') + ' · page ' + (k + 1) + '/' + n, '0.5 g');
     }

@@ -924,7 +924,7 @@ async function endGame(winnerTeam) {
                     <div><h3>🌟 Meilleurs Buteurs</h3><ul>${top3.map((p,i)=>`<li>${i+1}. ${esc(p.name)} (${p.points} pts)</li>`).join('')}</ul></div>
                     <div><h3>⚡ Les Plus Rapides</h3><ul>${fastest.map((p,i)=>`<li>${i+1}. ${esc(p.p.name)} (${(p.avg/1000).toFixed(1)}s)</li>`).join('')}</ul></div>
                 </div>
-                <div class="sig"><div>Le Directeur</div><div>L'Enseignant</div></div>
+                <div class="sig"><div>${typeof window.oreaHeadTitle === 'function' ? 'Le ' + window.oreaHeadTitle() : 'La Direction'}</div><div>L'Enseignant</div></div>
             </div>
             <script>setTimeout(()=>window.print(), 500);<\/script>
             </body></html>`);

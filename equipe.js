@@ -1,6 +1,8 @@
 /* =====================================================================
-   ORÉA École v70 — equipe.js (classes confiées au percepteur, « Mes cours » réparé)
-   Module de gestion de l'équipe (Directeur uniquement).
+   ORÉA École v74 — equipe.js (Directeur des études, titres Préfet / Directeur)
+   Module de gestion de l'équipe (direction).
+   - Le chef d'établissement (Préfet / Directeur) nomme : percepteurs, Directeur des études.
+   - Le Directeur des études gère les cours, mais pas les nominations ni l'argent.
    - Nommer / Révoquer un Percepteur
    - Attribuer des cours à un enseignant
    - Interface "Mes cours" pour les enseignants
@@ -23,7 +25,10 @@
 
     // Remplacer la fonction team() de app.js par la nouvelle
     window.team = async function () {
-        if (S.me.role !== 'directeur') return toast('Accès réservé au directeur.');
+        if (S.me.role !== 'directeur') return toast('Accès réservé à la direction.');
+        const FIN = typeof fin === 'function' ? fin() : !S.me.etudes;
+        const ttl = p => typeof roleTitle === 'function' ? roleTitle(p) : p.role;
+        const deOK = ['secondaire', 'complexe'].includes((S.school && S.school.school_type) || 'secondaire');
         
         const { data, error } = await db.from('profiles').select('*').eq('school_id', S.school.id).order('full_name');
         if (error) return toast(error.message);
@@ -40,34 +45,44 @@
                     const isMe = p.id === S.me.id;
                     const isPercepteur = p.role === 'percepteur';
                     const isEnseignant = p.role === 'enseignant';
+                    const isDE = p.role === 'directeur' && !!p.etudes;
+                    const isHead = p.role === 'directeur' && !p.etudes;
+                    const bs = 'width:auto;flex:1;padding:6px;min-height:36px;font-size:12px';
                     return `
                     <div class="card col" style="margin-bottom:10px; ${isMe ? 'border-color:var(--gold)' : ''}">
                         <div style="display:flex;justify-content:space-between;align-items:flex-start">
                             <b>${esc(p.full_name)} ${isMe ? '(Moi)' : ''}</b>
                             <span class="chip ${p.active === false ? 'due' : 'ok'}" style="padding:2px 8px;min-height:0;font-size:11px">${p.active === false ? 'Désactivé' : 'Actif'}</span>
                         </div>
-                        <small>Rôle : <b style="color:var(--gold)">${p.role}</b></small>
+                        <small>Rôle : <b style="color:var(--gold)">${esc(ttl(p))}${isDE && p.collector ? ' · Percepteur' : ''}</b></small>
                         
-                        ${!isMe ? `
+                        ${!isMe && !isHead ? `
                         <div class="row" style="margin-top:8px;flex-wrap:wrap">
-                            ${isEnseignant || isPercepteur ? `
+                            ${FIN && deOK && (isEnseignant || isPercepteur) ? `
+                                <button class="ghost" style="${bs}" onclick="setEtudes('${p.id}', true)">🎓 Nommer Directeur des études</button>
+                            ` : ''}
+                            ${FIN && isDE ? `
+                                <button class="ghost" style="${bs}" onclick="setEtudes('${p.id}', false)">❌ Retirer Directeur des études</button>
+                                <button class="ghost" style="${bs}" onclick="toggleCollector('${p.id}', ${!!p.collector})">${p.collector ? '❌ Retirer Percepteur' : '💰 Nommer aussi Percepteur'}</button>
+                            ` : ''}
+                            ${FIN && (isEnseignant || isPercepteur) ? `
                                 <button class="ghost" style="width:auto;flex:1;padding:6px;min-height:36px;font-size:12px" onclick="toggleRole('${p.id}', '${p.role}')">
                                     ${isPercepteur ? '❌ Retirer Percepteur' : '💰 Nommer Percepteur'}
                                 </button>
                             ` : ''}
-                            ${isEnseignant || isPercepteur ? `
+                            ${isEnseignant || isPercepteur || isDE ? `
                                 <button class="ghost" style="width:auto;flex:1;padding:6px;min-height:36px;font-size:12px" data-mtc="${p.id}">
                                     📚 Gérer les cours
                                 </button>
                             ` : ''}
-                            ${isPercepteur ? `
+                            ${FIN && (isPercepteur || (isDE && p.collector)) ? `
                                 <button class="ghost" style="width:auto;flex:1;padding:6px;min-height:36px;font-size:12px" data-pcl="${p.id}">
                                     🏫 Classes à percevoir
                                 </button>
                             ` : ''}
-                            <button class="ghost" style="width:auto;padding:6px 12px;min-height:36px;font-size:12px;color:${p.active === false ? 'var(--ok)' : 'var(--bad)'}" onclick="toggleActive('${p.id}', ${p.active})">
+                            ${FIN || !isDE ? `<button class="ghost" style="width:auto;padding:6px 12px;min-height:36px;font-size:12px;color:${p.active === false ? 'var(--ok)' : 'var(--bad)'}" onclick="toggleActive('${p.id}', ${p.active})">
                                 ${p.active === false ? 'Réactiver' : 'Désactiver'}
-                            </button>
+                            </button>` : ''}
                         </div>
                         ` : ''}
                     </div>
@@ -99,6 +114,29 @@
             return manageCollectorClasses(id, (p && p.full_name) || 'Percepteur', true);
         }
         team(); // Rafraîchir la modale
+    };
+
+    // Directeur des études (secondaire et complexe) : nommé / retiré par le chef d'établissement
+    window.setEtudes = async function (id, on) {
+        const p = on
+            ? { role: 'directeur', etudes: true, collector: false }
+            : { role: 'enseignant', etudes: false, collector: false };
+        if (!confirm(on ? 'Nommer cette personne Directeur des études ?\nElle pourra tout gérer (élèves, classes, cotes, horaires, annonces…) sauf l’argent et les nominations.' : 'Retirer le rôle de Directeur des études ? La personne redevient enseignant.')) return;
+        const { error } = await db.from('profiles').update(p).eq('id', id);
+        if (error) return toast(error.message);
+        if (!on) await db.from('collector_classes').delete().eq('collector_id', id);
+        toast(on ? 'Directeur des études nommé ✓' : 'Rôle retiré ✓');
+        team();
+    };
+
+    // Directeur des études qui encaisse aussi : uniquement les droits du percepteur
+    window.toggleCollector = async function (id, current) {
+        if (!confirm(current ? 'Retirer le rôle de percepteur ?' : 'Nommer aussi percepteur ?\nIl pourra encaisser dans les classes que tu lui confies.')) return;
+        const { error } = await db.from('profiles').update({ collector: !current }).eq('id', id);
+        if (error) return toast(error.message);
+        if (current) { await db.from('collector_classes').delete().eq('collector_id', id); toast('Rôle retiré ✓'); return team(); }
+        const { data: p } = await db.from('profiles').select('full_name').eq('id', id).maybeSingle();
+        return manageCollectorClasses(id, (p && p.full_name) || 'Percepteur', true);
     };
 
     // Classes confiées à un percepteur : il ne voit et n'encaisse que les élèves de ces classes
@@ -227,7 +265,7 @@
         let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Mes cours · ${esc(S.year)}</h3>`;
         
         if (Object.keys(byClass).length === 0) {
-            h += '<p class=empty data-ic="📚">Aucun cours ne vous a encore été attribué pour cette année.<br>Le directeur peut le faire dans « Équipe & Cours ».</p>';
+            h += '<p class=empty data-ic="📚">Aucun cours ne vous a encore été attribué pour cette année.<br>La direction peut le faire dans « Équipe & Cours ».</p>';
         } else {
             h += Object.entries(byClass).map(([className, subjects]) => `
                 <div class="card col">

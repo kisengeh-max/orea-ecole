@@ -90,6 +90,9 @@
     const STD = [['06:30', '07:00', 'Arrivée à l’école', 0], ['07:00', '07:50', 'Cours 1', 0], ['07:50', '08:40', 'Cours 2', 0], ['08:40', '09:30', 'Cours 3', 0], ['09:30', '10:20', 'Cours 4', 0], ['10:20', '10:35', 'RÉCRÉATION', 1], ['10:35', '11:25', 'Cours 5', 0], ['11:25', '12:15', 'Cours 6', 0], ['12:15', '12:15', 'FIN', 1]];
     const tbl = () => TT.model ? 'timetable_model' : 'timetable';
     const canEdit = () => typeof S !== 'undefined' && S.me && S.me.role === 'directeur';
+    // v74 : niveau de la classe (le modèle par défaut et l'horaire standard concernent le secondaire)
+    const clsLevel = id => ((S.classes || []).find(c => c.id === (id || S.cls)) || {}).level || 'secondaire';
+    const LVL = { primaire: 'du primaire', maternelle: 'de la maternelle' };
     const clsName = id => ((S.classes || []).find(c => c.id === (id || S.cls)) || {}).name || '';
 
     window.vEmploiTemps = function () {
@@ -103,7 +106,7 @@
         let h = back + '<h3>Horaires des cours</h3>' + yb;
         h += `<div class=bar><select id=ttc>${canEdit() ? `<option value="${MODEL}" ${TT.model ? 'selected' : ''}>★ Modèle par défaut (nouvelles classes)</option>` : ''}${yc().map(c => `<option value="${c.id}" ${!TT.model && c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
         if (canEdit()) h += `<small class=tt-ro id=tt-mi style="display:${TT.model ? 'block' : 'none'}">Ce modèle est copié automatiquement dans chaque nouvelle classe. Les classes existantes ne changent pas, sauf si tu touches « Appliquer le modèle » dans une classe.</small><div class=row id=tt-cr style="display:${TT.model ? 'none' : 'flex'}"><button class=ghost id=tt-cp>Copier vers une classe</button><button class=ghost id=tt-cf>Copier depuis une classe</button></div>`;
-        else h += `<small class=tt-ro>Seul le directeur peut modifier les horaires.</small>`;
+        else h += `<small class=tt-ro>Seule la direction peut modifier les horaires.</small>`;
         h += `<div id=ttl><div class=sk></div><div class=sk></div><div class=sk></div></div>`;
         if (canEdit()) h += `<div class=tt-bar><button id=tt-ed disabled>✏️ Modifier</button><button class=ghost id=tt-rm disabled>🗑 Supprimer</button><button id=tt-ad>＋ Ajouter</button></div><small class=tt-ro>Touche un créneau pour le choisir, puis « Modifier » ou « Supprimer ».</small>`;
         $('#main').innerHTML = h;
@@ -126,7 +129,7 @@
     async function loadTT() {
         const cid = S.cls, mod = TT.model;
         await loadStaff();
-        const q = mod ? db.from('timetable_model').select('*').eq('school_id', S.school.id) : db.from('timetable').select('*').eq('class_id', cid);
+        const q = mod ? db.from('timetable_model').select('*').eq('school_id', S.school.id).eq('level', 'secondaire') : db.from('timetable').select('*').eq('class_id', cid);
         const { data, error } = await q.order('day').order('start_time');
         if (S.tab !== 'emploi_temps' || cid !== S.cls || mod !== TT.model) return;
         const el = document.getElementById('ttl'); if (!el) return;
@@ -149,7 +152,7 @@
         const el = document.getElementById('ttl'); if (!el) return;
         el.innerHTML = TT.rows.length ? grid(TT.rows, canEdit(), TT.sel)
             : TT.model ? `<p class=empty data-ic="📅">Le modèle est vide : les nouvelles classes reçoivent l’horaire standard (6h30 → 12h15).</p><div class=col><button id=tt-ms>Partir de l’horaire standard</button>${yc().length ? `<button class=ghost id=tt-mc>Partir de l’horaire d’une classe</button>` : ''}</div>`
-            : `<p class=empty data-ic="📅">${canEdit() ? 'Aucun horaire pour cette classe.<br>Touche « Ajouter » ou « Copier depuis une classe ».' : 'L’horaire de cette classe n’a pas encore été préparé par la direction.'}</p>`;
+            : `${LVL[clsLevel()] ? `<div class="card col" style="border-color:var(--gold)"><b>🕒 Horaires ${LVL[clsLevel()]}</b><small>Le modèle d’horaire ${LVL[clsLevel()]} sera bientôt disponible. En attendant, la direction peut ajouter les créneaux à la main.</small></div>` : ''}<p class=empty data-ic="📅">${canEdit() ? 'Aucun horaire pour cette classe.<br>Touche « Ajouter » ou « Copier depuis une classe ».' : 'L’horaire de cette classe n’a pas encore été préparé par la direction.'}</p>`;
         if (!TT.model && canEdit()) el.insertAdjacentHTML('beforeend', `<p style="text-align:center;margin:10px 0 0"><a href="#" id=tt-df style="font-size:12px;color:var(--mut)">Réappliquer le modèle par défaut</a></p>`);
         const df = document.getElementById('tt-df'); if (df) df.onclick = e => { e.preventDefault(); applyDefault(); };
         const ms = document.getElementById('tt-ms'), mc = document.getElementById('tt-mc');
@@ -216,7 +219,7 @@
             const p = payload(v);
             const { data, error } = await db.from(tbl()).update(Object.assign({ day: +v.day }, modelRow(p))).eq('id', t.id).select('id');
             if (error) throw error;
-            if (!data || !data.length) throw Error('Modification refusée (seul le directeur peut modifier).');
+            if (!data || !data.length) throw Error('Modification refusée (seule la direction peut modifier).');
             say('Créneau modifié'); loadTT();
         });
     }

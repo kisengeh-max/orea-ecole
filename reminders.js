@@ -26,7 +26,7 @@
     function expiredBanner() {
         const b = document.getElementById('exb');
         if (!b) return;
-        if (typeof S === 'undefined' || !S.me || S.me.role !== 'directeur' || !S.school || subLeft() > 0) { b.hidden = true; return; }
+        if (typeof S === 'undefined' || !S.me || S.me.role !== 'directeur' || S.me.etudes || !S.school || subLeft() > 0) { b.hidden = true; return; }
         b.innerHTML = '<span>⛔ <b>Abonnement expiré</b> — Contacte l’administrateur</span><a href="javascript:void(0)" onclick="subRenew()">Renouveler</a>';
         b.hidden = false;
     }

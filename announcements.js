@@ -91,7 +91,7 @@
 
     // L'ancien bouton « Publier une annonce » du Menu ouvre maintenant l'écran complet
     window.pAdminAnnonce = function () {
-        if (!isDir()) return say('Réservé au directeur.');
+        if (!isDir()) return say('Réservé à la direction.');
         if (!OV()) return say('Recharge l’application (notifications.js manquant).');
         openList();
     };

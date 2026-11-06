@@ -25,7 +25,7 @@
     const tdy = () => new Date().toLocaleDateString('sv-SE');
     const thisMonth = () => tdy().slice(0, 7); // YYYY-MM
     const dateFr = d => d ? new Date(d + 'T00:00').toLocaleDateString('fr-FR') : '—';
-    const isDir = () => S.me && S.me.role === 'directeur';
+    const isDir = () => S.me && S.me.role === 'directeur' && !S.me.etudes; // chef d'établissement seul (v74)
     const ratePct = (a, b) => b > 0 ? Math.round(a / b * 100) : (a > 0 ? 100 : 0);
 
     /* ---------- Styles propres au module ---------- */

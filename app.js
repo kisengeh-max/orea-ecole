@@ -20,12 +20,34 @@ S.curTermFilter = null;
 
 document.documentElement.dataset.theme = localStorage.theme || 'dark';
 
+// v74 — Rôles :
+//   dir()   = la direction (Préfet / Directeur ET Directeur des études) : pédagogie, élèves, classes…
+//   fin()   = le chef d'établissement seul (Préfet ou Directeur) : argent, nominations, réglages
+//   isCol() = percepteur, ou Directeur des études nommé percepteur (encaisse dans ses classes)
+//   money() = peut voir des montants (soldes, frais)
 const dir = () => S.me.role === 'directeur';
-const canCollect = () => S.me && (S.me.role === 'directeur' || S.me.role === 'percepteur');
+const fin = () => !!(S.me && S.me.role === 'directeur' && !S.me.etudes);
 // Le percepteur est un enseignant qui encaisse en plus, uniquement dans les classes qui lui sont confiées
-const isCol = () => !!(S.me && S.me.role === 'percepteur');
+const isCol = () => !!(S.me && (S.me.role === 'percepteur' || (S.me.role === 'directeur' && S.me.etudes && S.me.collector)));
+const canCollect = () => !!S.me && (fin() || isCol());
+const money = () => !!S.me && (fin() || isCol());
 const isTeach = () => !!(S.me && ['enseignant', 'percepteur'].includes(S.me.role));
-const colOK = cid => dir() || (isCol() && !!(S.myCls && S.myCls.has(cid)));
+const colOK = cid => fin() || (isCol() && !!(S.myCls && S.myCls.has(cid)));
+// Rôle « financier » : le Directeur des études est vu comme un enseignant (ou un percepteur s'il encaisse)
+const fRole = () => (S.me && S.me.role === 'directeur' && S.me.etudes) ? (S.me.collector ? 'percepteur' : 'enseignant') : S.me.role;
+// Titres affichés : Préfet (secondaire, complexe) · Directeur (primaire, maternelle) · Directeur des études
+const schoolKind = () => (S.school && S.school.school_type) || 'secondaire';
+const roleTitle = p => {
+    if (!p) return '';
+    if (p.role === 'directeur') return p.etudes ? 'Directeur des études' : (['primaire', 'maternelle'].includes(schoolKind()) ? 'Directeur' : 'Préfet');
+    return { percepteur: 'Percepteur', enseignant: 'Enseignant', parent: 'Parent' }[p.role] || p.role || '';
+};
+const headTitle = () => roleTitle({ role: 'directeur' });
+window.oreaRoleTitle = roleTitle; window.oreaHeadTitle = headTitle;
+const SCHOOL_TYPES = [['secondaire', 'Secondaire'], ['primaire', 'Primaire'], ['maternelle', 'Maternelle'], ['complexe', 'Complexe scolaire']];
+const CLASS_LEVELS = [['maternelle', 'Maternelle'], ['primaire', 'Primaire'], ['secondaire', 'Secondaire']];
+// Contact ORÉA Assistance (Réglages de tous les comptes)
+const supportCard = () => `<div class="card col"><b>Vous avez besoin d’aide ?</b><span>ORÉA Assistance</span><small>+243 825 556 492 · kisengeh@gmail.com</small><div class=row><a class="btn ghost" style="text-align:center;text-decoration:none" href="tel:+243825556492">📞 Appeler</a><a class="btn ghost" style="text-align:center;text-decoration:none" href="https://wa.me/243825556492" target=_blank rel=noopener>💬 WhatsApp</a><a class="btn ghost" style="text-align:center;text-decoration:none" href="mailto:kisengeh@gmail.com">✉️ E-mail</a></div></div>`;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const nf = (n, d = 2) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: d }).format(n);
 const fmt = n => nf(n / (S.school.rates[S.cur] || 1), S.cur === 'CDF' ? 0 : 2) + ' ' + SYM[S.cur];
@@ -74,7 +96,7 @@ window.addEventListener('popstate', () => {
     if (S.me && S.tab === 'presences' && S.attFromCls) { attLeave(); return; }
     if (S.me && (S.tab === 'cotation' || S.tab === 'bulletins')) { if (S.tab === 'cotation' && S.cotScreen === 'eval') S.cotScreen = 'home'; else S.tab = 'eleves'; render(); return; }
     if (S.me && S.tab === 'eleves' && S.view === 'class') { S.view = 'grid'; S.q = ''; render(); return; }
-    if (S.me && S.tab === 'bilan' && dir()) { S.tab = 'finance_home'; render(); return; }
+    if (S.me && S.tab === 'bilan' && fin()) { S.tab = 'finance_home'; render(); return; }
     if (S.me && !['accueil', 'menu'].includes(S.tab)) {
         if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'finance_home', 'programme_home', 'donnees_home', 'perception'].includes(S.tab)) {
             S.tab = 'menu';
@@ -163,7 +185,7 @@ function newYear() {
         if (!y) throw Error('Année obligatoire');
         if (yrs().includes(y)) throw Error('Cette année existe déjà');
         if (v.cp === '0') { setTimeout(() => addClass(y), 60); return; }
-        const rows = yc().map(c => ({ school_id: S.school.id, name: c.name, year: y, fee_t1: c.fee_t1, fee_t2: c.fee_t2, fee_t3: c.fee_t3, fee_currency: c.fee_currency }));
+        const rows = yc().map(c => ({ school_id: S.school.id, name: c.name, year: y, level: c.level || null, fee_t1: c.fee_t1, fee_t2: c.fee_t2, fee_t3: c.fee_t3, fee_currency: c.fee_currency }));
         if (!rows.length) throw Error('Aucune classe à copier');
         const { data: nc, error } = await db.from('classes').insert(rows).select();
         if (error) throw error;
@@ -329,7 +351,7 @@ async function boot() {
     const { data: p, error: ep } = await db.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
     if (isNet(ep)) return snap && snap.uid === session.user.id ? goOffline(snap) : netView();
     if (!p) return setupView();
-    if (p.active === false) { $('#nav').hidden = true; $('#main').innerHTML = '<div class=auth><h2>Compte désactivé</h2><p>Contacte le directeur de ton école.</p><button class=ghost onclick=out()>Déconnexion</button></div>'; return; }
+    if (p.active === false) { $('#nav').hidden = true; $('#main').innerHTML = '<div class=auth><h2>Compte désactivé</h2><p>Contacte la direction de ton école.</p><button class=ghost onclick=out()>Déconnexion</button></div>'; return; }
     S.me = p;
     db.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', p.id).then(() => { }, () => { });
     const { data: s, error: es } = await db.from('schools').select('*').eq('id', p.school_id).single();
@@ -521,7 +543,7 @@ async function load() {
 }
 async function autoRate() {
     const s = S.school;
-    if (!dir() || !s.auto_rates || Date.now() - new Date(s.rates_at) < 432e5) return;
+    if (!fin() || !s.auto_rates || Date.now() - new Date(s.rates_at) < 432e5) return;
     try {
         const r = (await (await fetch('https://open.er-api.com/v6/latest/USD')).json()).rates;
         const rates = { CDF: 1, USD: Math.round(r.CDF * 100) / 100, EUR: Math.round(r.CDF / r.EUR * 100) / 100 };
@@ -539,9 +561,9 @@ function authView() {
 }
 function setupView() {
     $('#nav').hidden = true;
-    $('#main').innerHTML = `<div class=auth><h2>Bienvenue</h2><button id=c1>Je crée mon école (directeur)</button><button class=ghost id=c2>Je rejoins une école avec un code</button><button class=ghost id=lo>Déconnexion</button></div>`;
+    $('#main').innerHTML = `<div class=auth><h2>Bienvenue</h2><button id=c1>Je crée mon école (chef d’établissement)</button><button class=ghost id=c2>Je rejoins une école avec un code</button><button class=ghost id=lo>Déconnexion</button></div>`;
     $('#lo').onclick = out;
-    $('#c1').onclick = () => ask('Nouvelle école', [{ n: 'school', l: 'Nom de l’école' }, { n: 'me', l: 'Ton nom' }], async v => { const { error } = await db.rpc('create_school', { school_name: v.school, my_name: v.me }); if (error) throw error; boot(); });
+    $('#c1').onclick = () => ask('Nouvelle école', [{ n: 'school', l: 'Nom de l’école' }, { n: 'type', l: 'Type d’école', o: SCHOOL_TYPES, v: 'secondaire' }, { n: 'me', l: 'Ton nom' }], async v => { const { error } = await db.rpc('create_school', { school_name: v.school, my_name: v.me, p_type: v.type }); if (error) throw error; boot(); });
     $('#c2').onclick = () => ask('Rejoindre', [{ n: 'code', l: 'Code d’invitation' }, { n: 'me', l: 'Ton nom' }], async v => { const { error } = await db.rpc('join_school', { invite: v.code.trim(), my_name: v.me }); if (error) throw error; boot(); });
 }
 
@@ -560,8 +582,8 @@ function render() {
         hs.insertAdjacentHTML('afterend', `<button id="searchBtn" class="ghost" style="width:auto;min-height:40px;padding:8px;margin-left:auto;border:none" onclick="openSearch()">🔍</button>`);
     }
 
-    if (R !== 'directeur' && ['depenses', 'bilan', 'finance_home'].includes(S.tab)) S.tab = 'menu';
-    if (R === 'enseignant' && ['caisse', 'impayes', 'perception'].includes(S.tab)) S.tab = 'menu';
+    if (!fin() && ['depenses', 'bilan', 'finance_home', 'donnees_home'].includes(S.tab)) S.tab = 'menu';
+    if (!money() && ['caisse', 'impayes', 'perception'].includes(S.tab)) S.tab = 'menu';
     ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier, devoirs: vDevoirs, emploi_temps: vEmploiTemps, finance_home: vFinanceHome, programme_home: vProgrammeHome, donnees_home: vDonneesHome, cotation: () => vCotation(), bulletins: () => vBulletins(), perception: vPerception })[S.tab]();
     qui();
 }
@@ -605,12 +627,14 @@ function vEleves() {
     else if (S.view === 'class') {
         const c = cl.find(x => x.id === S.cls);
         if (S.ft === 'late' && !hasTerms()) S.ft = 'all';
-        const FT = [['all', 'Tous'], ...(hasTerms() ? [['late', 'En retard']] : []), ['due', 'À payer'], ['paid', 'Soldés'], ['nophone', 'Sans n°']];
-        h += `<div class=bar><button class=ghost style="width:auto" onclick=backGrid()>← Classes</button><b class=ctitle>${esc(c.name)}</b><button class=ghost style="width:auto;margin-left:auto" onclick=printClass()>🖨 Imprimer</button></div>`
+        if (!money() && !['all', 'nophone'].includes(S.ft)) S.ft = 'all';
+        if (!money() && ['solde', 'retard'].includes(S.sort)) S.sort = 'alpha';
+        const FT = money() ? [['all', 'Tous'], ...(hasTerms() ? [['late', 'En retard']] : []), ['due', 'À payer'], ['paid', 'Soldés'], ['nophone', 'Sans n°']] : [['all', 'Tous'], ['nophone', 'Sans n°']];
+        h += `<div class=bar><button class=ghost style="width:auto" onclick=backGrid()>← Classes</button><b class=ctitle>${esc(c.name)}</b>${money() ? '<button class=ghost style="width:auto;margin-left:auto" onclick=printClass()>🖨 Imprimer</button>' : ''}</div>`
             + `<input id=q type=search placeholder="🔍 Rechercher dans ${esc(c.name)}" value="${esc(S.q)}">`
             + termBar()
             + classBtns()
-            + `<div class=bar><select id=so><option value=alpha>Alphabétique A → Z</option><option value=solde>Plus grand solde dû</option><option value=retard>Retard de paiement</option><option value=moyenne>Tri par moyenne</option></select></div>`
+            + `<div class=bar><select id=so><option value=alpha>Alphabétique A → Z</option>${money() ? '<option value=solde>Plus grand solde dû</option><option value=retard>Retard de paiement</option>' : ''}<option value=moyenne>Tri par moyenne</option></select></div>`
             + `<div class=chips>${FT.map(f => `<button class="chip ${S.ft === f[0] ? 'on' : ''}" data-f=${f[0]}>${f[1]}</button>`).join('')}</div><div id=lst></div>`;
     } else {
         if (!cl.some(c => c.id === S.cls)) S.cls = cl[0].id;
@@ -632,11 +656,11 @@ function vEleves() {
 function drawGrid() {
     const cl = yc(), st = ys(), by = {};
     st.forEach(s => { const o = by[s.class_id] || (by[s.class_id] = { n: 0, d: 0 }); o.n++; o.d += Math.max(0, Number(s.balance_cdf || 0)); });
-    const td = st.reduce((t, s) => t + Math.max(0, Number(s.balance_cdf || 0)), 0), u = SYM[S.cur] || '';
-    $('#lst').innerHTML = `<div class="card csum"><span><b>${cl.length}</b> classe${cl.length > 1 ? 's' : ''} · <b>${st.length}</b> élève${st.length > 1 ? 's' : ''}</span><span class="${td ? 'due' : 'ok'}">${td ? short(td) + ' ' + u + ' à recevoir' : '✓ Tout est soldé'}</span></div>`
+    const td = st.reduce((t, s) => t + Math.max(0, Number(s.balance_cdf || 0)), 0), u = SYM[S.cur] || '', M = money();
+    $('#lst').innerHTML = `<div class="card csum"><span><b>${cl.length}</b> classe${cl.length > 1 ? 's' : ''} · <b>${st.length}</b> élève${st.length > 1 ? 's' : ''}</span>${M ? `<span class="${td ? 'due' : 'ok'}">${td ? short(td) + ' ' + u + ' à recevoir' : '✓ Tout est soldé'}</span>` : ''}</div>`
         + '<div class=cgrid>' + cl.map(c => {
             const o = by[c.id] || { n: 0, d: 0 };
-            return `<div class=ccard onclick="openClass('${c.id}')"><b>${esc(c.name)}</b><small>${o.n} élève${o.n > 1 ? 's' : ''}</small><span class="cd ${o.d ? 'due' : 'ok'}">${!o.n ? '—' : o.d ? short(o.d) + ' ' + u : '✓ Soldé'}</span></div>`;
+            return `<div class=ccard onclick="openClass('${c.id}')"><b>${esc(c.name)}</b><small>${o.n} élève${o.n > 1 ? 's' : ''}</small>${M ? `<span class="cd ${o.d ? 'due' : 'ok'}">${!o.n ? '—' : o.d ? short(o.d) + ' ' + u : '✓ Soldé'}</span>` : ''}</div>`;
         }).join('') + '</div>';
 }
 function listNow() {
@@ -656,7 +680,7 @@ function drawList() {
     if (grid && !q) return drawGrid();
     const cn = Object.fromEntries(S.classes.map(c => [c.id, c.name])), l = listNow();
     const sc = !grid && termOn(), tot = l.reduce((t, s) => t + (sc ? tRem(s) : Number(s.balance_cdf || 0)), 0);
-    $('#lst').innerHTML = l.length ? `<small>${l.length} élève(s) · reste dû ${sc ? 'T' + getTermToShow() + ' ' : ''}${fmt(tot)}</small>` + l.map(s => `<div class=card onclick="menu('${s.id}')"><span><b>${esc(s.name)}</b>${grid ? '' : avgPill(s)}${grid ? '<br><small>' + esc(cn[s.class_id] || '') + '</small>' : ''}</span>${stTag(s, !grid)}</div>`).join('') : `<p class=empty>${q || S.ft !== 'all' ? 'Aucun élève trouvé.' : 'Aucun élève dans cette classe.'}</p>`;
+    $('#lst').innerHTML = l.length ? `<small>${l.length} élève(s)${money() ? ' · reste dû ' + (sc ? 'T' + getTermToShow() + ' ' : '') + fmt(tot) : ''}</small>` + l.map(s => `<div class=card onclick="menu('${s.id}')"><span><b>${esc(s.name)}</b>${grid ? '' : avgPill(s)}${grid ? '<br><small>' + esc(cn[s.class_id] || '') + '</small>' : ''}</span>${money() ? stTag(s, !grid) : ''}</div>`).join('') : `<p class=empty>${q || S.ft !== 'all' ? 'Aucun élève trouvé.' : 'Aucun élève dans cette classe.'}</p>`;
 }
 
 /* ---------- Impression d’une classe (PDF / PNG) ---------- */
@@ -712,8 +736,16 @@ async function classPng(c, l) {
     d.querySelector('#ps').onclick = async () => { if (can) { try { await navigator.share({ files: fl, text: c.name + ' — ' + S.school.name }); } catch (e) { if (e.name !== 'AbortError') toast('Partage impossible.'); } } else { files.forEach(f => dl(f.blob, f.fn)); toast('Image enregistrée.'); } };
 }
 function addClass(yr) {
-    ask('Nouvelle classe', [{ n: 'name', l: 'Nom (ex : 3e A)' }, { n: 'year', l: 'Année scolaire', v: yr || S.year || '' }, { n: 't1', l: 'Frais 1er trimestre', t: 'number' }, { n: 't2', l: 'Frais 2e trimestre', t: 'number' }, { n: 't3', l: 'Frais 3e trimestre', t: 'number' }, { n: 'cur', l: 'Devise des frais', o: CUR.map(c => [c, c]), v: S.cur }], async v => {
-        const { data: nc, error } = await db.from('classes').insert({ school_id: S.school.id, name: v.name.trim(), year: v.year.trim(), fee_t1: +v.t1, fee_t2: +v.t2, fee_t3: +v.t3, fee_currency: v.cur }).select('id');
+    // Complexe scolaire : on choisit le niveau. Sinon, la base le déduit du type d'école.
+    // Les frais ne sont demandés qu'au chef d'établissement (le Directeur des études n'a pas accès à l'argent).
+    const F = [{ n: 'name', l: 'Nom (ex : 3e A)' }, { n: 'year', l: 'Année scolaire', v: yr || S.year || '' }];
+    if (schoolKind() === 'complexe') F.push({ n: 'level', l: 'Niveau', o: CLASS_LEVELS, v: 'secondaire' });
+    if (fin()) F.push({ n: 't1', l: 'Frais 1er trimestre', t: 'number' }, { n: 't2', l: 'Frais 2e trimestre', t: 'number' }, { n: 't3', l: 'Frais 3e trimestre', t: 'number' }, { n: 'cur', l: 'Devise des frais', o: CUR.map(c => [c, c]), v: S.cur });
+    ask('Nouvelle classe', F, async v => {
+        const row = { school_id: S.school.id, name: v.name.trim(), year: v.year.trim() };
+        if (v.level) row.level = v.level;
+        if (fin()) Object.assign(row, { fee_t1: +v.t1, fee_t2: +v.t2, fee_t3: +v.t3, fee_currency: v.cur });
+        const { data: nc, error } = await db.from('classes').insert(row).select('id');
         if (error) throw error;
  S.year = cy({ year: v.year.trim() }); S.cls = null; localStorage['orea_year_' + S.school.id] = S.year; await load(); render();
     });
@@ -733,15 +765,15 @@ function termSolde(s) {
 function menu(id) {
     const s = S.stu.find(x => x.id === id), R = S.me.role, D = dir();
     if (!s) return;
-    // Dette et code parent : visibles uniquement par le directeur
+    // Dette : chef d'établissement uniquement. Code parent : toute la direction.
     let head = '';
     if (D) {
-        const fs = fees4(s).filter(f => feeRem(s, f) > 0);
-        head = debtLines(s)
+        const fs = fin() ? fees4(s).filter(f => feeRem(s, f) > 0) : [];
+        head = (fin() ? debtLines(s) : '')
             + (fs.length ? '<p><small>Autres frais : ' + fs.map(f => esc(f.name) + ' reste ' + fmt(feeRemCdf(s, f))).join(' · ') + '</small></p>' : '')
             + '<div class=card id=pcode style="display:block"><small>Code parent</small><br><b id=pcv style="font-size:22px;letter-spacing:.14em">…</b><div class=row id=pcb style="display:none;margin-top:8px"><button class=ghost id=pc1>Copier</button><button class=ghost id=pc2>SMS</button><button class=ghost id=pc3>WhatsApp</button></div></div>';
     }
-    const d = show(`<h3>${esc(s.name)}</h3>${head}<div class=col>${dir() || (isCol() && colOK(s.class_id)) ? '<button id=m2>Paiement</button>' : ''}<button class=ghost id=m7>Avertissements et sanctions</button><button class=ghost id=m9>Cotes</button>${D ? '<button class=ghost id=m6>Message au parent</button><button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>' : ''}<button class=ghost id=m3>Fermer</button></div>`);
+    const d = show(`<h3>${esc(s.name)}</h3>${head}<div class=col>${colOK(s.class_id) ? '<button id=m2>Paiement</button>' : ''}<button class=ghost id=m7>Avertissements et sanctions</button><button class=ghost id=m9>Cotes</button>${D ? '<button class=ghost id=m6>Message au parent</button><button class=ghost id=m4>Modifier l’élève</button><button class=ghost id=m5>Supprimer l’élève</button>' : ''}<button class=ghost id=m3>Fermer</button></div>`);
     const b = (k, f) => { const e = d.querySelector('#' + k); if (e) e.onclick = f; };
     b('m2', () => hist(id)); b('m3', () => d.close()); b('m4', () => editStudent(id)); b('m5', () => { d.close(); delStudent(id); }); b('m6', () => wa(id)); b('m7', () => sanc(id)); b('m9', () => { if (typeof openStuCotes === 'function') openStuCotes(id); });
     if (D) {
@@ -980,7 +1012,7 @@ async function hist(id) {
     const st = S.stu.find(x => x.id === id), cc = canCollect() && (!st || colOK(st.class_id));
     const d = show(`<h3>Paiement${st ? ' · ' + esc(st.name) : ''}</h3>${st ? debtLines(st) : ''}${cc ? '<div class=col><button id=hp>Encaisser un paiement</button><button class=ghost id=hpl>Plan de paiement</button></div>' : ''}<p style="margin:14px 0 4px"><small>HISTORIQUE ET REÇUS</small></p>${data.length ? data.map((p, i) => {
         const isP = pe.has(p.id) || fpe.has(p.id);
-        return `<div class="card col"><span>${rno(p)} · ${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f ? esc(p.fee_name || 'Frais') : 'T' + p.term} · ${nf(p.amount)} ${p.currency}</span><div class=row><button class=ghost data-i=${i}>Reçu</button>${p._f ? (dir() ? `<button class=ghost data-x=${i}>Supprimer</button>` : '') : pe.has(p.id) ? '<small>⏳ demande en attente</small>' : `<button class=ghost data-c=${i}>${dir() ? 'Corriger' : 'Demander correction'}</button>`}</div></div>`;
+        return `<div class="card col"><span>${rno(p)} · ${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f ? esc(p.fee_name || 'Frais') : 'T' + p.term} · ${nf(p.amount)} ${p.currency}</span><div class=row><button class=ghost data-i=${i}>Reçu</button>${p._f ? (fin() ? `<button class=ghost data-x=${i}>Supprimer</button>` : '') : pe.has(p.id) ? '<small>⏳ demande en attente</small>' : `<button class=ghost data-c=${i}>${fin() ? 'Corriger' : 'Demander correction'}</button>`}</div></div>`;
     }).join('') : '<p class=empty data-ic="🧾">Aucun paiement.</p>'}<button class=ghost id=hc>Fermer</button>`);
     d.querySelectorAll('[data-i]').forEach(b => b.onclick = () => receipt(data[b.dataset.i], id));
     d.querySelectorAll('[data-c]').forEach(b => b.onclick = () => fixPay(data[b.dataset.c], id));
@@ -994,7 +1026,7 @@ async function hist(id) {
     if (cc) { d.querySelector('#hp').onclick = () => pay(id); d.querySelector('#hpl').onclick = () => ppOpen(id); }
 }
 function fixPay(p, sid) {
-    const T = [['1', '1er trimestre'], ['2', '2e trimestre'], ['3', '3e trimestre']], D = dir();
+    const T = [['1', '1er trimestre'], ['2', '2e trimestre'], ['3', '3e trimestre']], D = fin();
     const d = show(`<h3>Paiement de ${nf(p.amount)} ${p.currency} (${p._f ? (p.fee_name || 'Frais') : 'T' + p.term})</h3><div class=col><button id=f1>${D ? 'Modifier' : 'Demander modification'}</button><button class=ghost id=f2>${D ? 'Supprimer' : 'Demander suppression'}</button><button class=ghost id=f3>Retour</button></div>`);
     d.querySelector('#f3').onclick = () => hist(sid);
     d.querySelector('#f1').onclick = () => ask(D ? 'Modifier' : 'Demande de modification', [{ n: 'amount', l: 'Montant', t: 'number', v: p.amount }, ...(p._f ? [] : [{ n: 'term', l: 'Trimestre', o: T, v: String(p.term) }]), ...(D ? [] : [{ n: 'reason', l: 'Motif', r: false }])], async v => {
@@ -1102,7 +1134,7 @@ function previsionCard() {
 }
 async function vAccueil() {
     $('#main').innerHTML = SK;
-    const t0 = new Date(); t0.setHours(0, 0, 0, 0); const R = S.me.role;
+    const t0 = new Date(); t0.setHours(0, 0, 0, 0); const R = fRole();
     const [pp, aa, rq, ml] = await Promise.all([
         R === 'enseignant' ? { data: [] } : todayPay(t0),
         db.from('attendance').select('status').eq('day', tdy()),
@@ -1285,31 +1317,31 @@ async function team() {
 // --- FIN DE LA TRANCHE 7. La tranche suivante commencera par : /* ---------- Caisse ---------- */ ---
 /* ---------- Caisse ---------- */
 async function vCaisse() {
-    if (!canCollect()) { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><p class=empty data-ic="🔒">Accès réservé au percepteur ou au directeur</p>'; return; }
+    if (!canCollect()) { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><p class=empty data-ic="🔒">Accès réservé au percepteur ou au chef d’établissement</p>'; return; }
     $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div>' + SK;
     const t0 = new Date(); t0.setHours(0, 0, 0, 0);
     const { data: ps0, error: pe0 } = await todayFull(t0);
     if (pe0 || !ps0) { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><p class=empty>La caisse demande une connexion.</p>'; return; }
     const mine = ps0.filter(p => p.collector_id === S.me.id);
-    const ps = dir() ? ps0 : mine;
+    const ps = fin() ? ps0 : mine;
     const tot = a => [sum(a.filter(p => p.method === 'especes')), sum(a.filter(p => p.method === 'mobile_money'))];
-    const [c, m] = tot(dir() ? ps : mine);
-    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Aujourd’hui ${dir() ? '(toute l’école)' : '(ma caisse)'}</h3><div class=card><span>Espèces</span><b>${fmt(c)}</b></div><div class=card><span>Mobile Money</span><b>${fmt(m)}</b></div><div class=card><span>Paiements</span><b>${(dir() ? ps : mine).length}</b></div>`;
-    if (S.me.role === 'percepteur') h += '<button onclick=closeDay()>Clôturer ma journée</button>';
+    const [c, m] = tot(fin() ? ps : mine);
+    let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Aujourd’hui ${fin() ? '(toute l’école)' : '(ma caisse)'}</h3><div class=card><span>Espèces</span><b>${fmt(c)}</b></div><div class=card><span>Mobile Money</span><b>${fmt(m)}</b></div><div class=card><span>Paiements</span><b>${(fin() ? ps : mine).length}</b></div>`;
+    if (isCol()) h += '<button onclick=closeDay()>Clôturer ma journée</button>';
     let { data: cl } = await db.from('closures').select('*').order('created_at', { ascending: false }).limit(30);
     cl = cl || [];
-    if (!dir()) cl = cl.filter(k => k.collector_id === S.me.id);
+    if (!fin()) cl = cl.filter(k => k.collector_id === S.me.id);
     const { data: pr0 } = await db.from('profiles').select('id,full_name');
     const nm = Object.fromEntries((pr0 || []).map(p => [p.id, p.full_name]));
     let { data: rq } = await db.from('change_requests').select('*').order('created_at', { ascending: false }).limit(20);
     rq = rq || [];
-    if (!dir()) rq = rq.filter(r => r.requested_by === S.me.id);
+    if (!fin()) rq = rq.filter(r => r.requested_by === S.me.id);
     const st = { en_attente: '⏳ En attente', approuvee: '✓ Approuvée', refusee: '✗ Refusée' };
     const isSig = r => /^Signalement parent/.test(r.reason || ''), reqLabel = r => isSig(r) ? 'Signalement d’un parent (aucune modification demandée)' : /^delete/.test(r.kind || '') ? 'Suppression' : 'Correction → ' + nf(r.new_amount || 0) + (r.new_term ? ' · T' + r.new_term : '');
-    const reqHtml = rq.length ? '<h3>Demandes de correction</h3>' + rq.map(r => `<div class="card col"><b>${esc(r.info || 'Paiement')}</b><span>${reqLabel(r)}${nm[r.requested_by] ? ' · ' + esc(nm[r.requested_by]) : ''}</span><small>${st[r.status] || ''}${r.reason ? ' · ' + esc(r.reason) : ''}</small>${dir() && r.status === 'en_attente' ? `<div class=row>${isSig(r) ? '' : `<button onclick="decide('${r.id}',true)">Approuver</button>`}<button class=ghost onclick="decide('${r.id}',false)">${isSig(r) ? 'Classer' : 'Refuser'}</button></div>` : ''}</div>`).join('') : '';
+    const reqHtml = rq.length ? '<h3>Demandes de correction</h3>' + rq.map(r => `<div class="card col"><b>${esc(r.info || 'Paiement')}</b><span>${reqLabel(r)}${nm[r.requested_by] ? ' · ' + esc(nm[r.requested_by]) : ''}</span><small>${st[r.status] || ''}${r.reason ? ' · ' + esc(r.reason) : ''}</small>${fin() && r.status === 'en_attente' ? `<div class=row>${isSig(r) ? '' : `<button onclick="decide('${r.id}',true)">Approuver</button>`}<button class=ghost onclick="decide('${r.id}',false)">${isSig(r) ? 'Classer' : 'Refuser'}</button></div>` : ''}</div>`).join('') : '';
     h += reqHtml + '<h3>Clôtures</h3>' + (cl.length ? cl.map(k => {
         const e = k.declared_cash - k.expected_cash, bad = Math.abs(e) > 0.5;
-        return `<div class="card col"><b>${k.day} · ${esc(nm[k.collector_id] || '')}</b><span>Attendu ${fmt(k.expected_cash)} · Compté ${fmt(k.declared_cash)}</span><span class="${bad ? 'due' : 'ok'}">${bad ? '⚠ Écart : ' + fmt(e) : '✓ Aucun écart'}</span><small>${k.status === 'controlee' ? 'Contrôlée' : 'À contrôler'}${k.note ? ' · ' + esc(k.note) : ''}</small>${dir() && k.status === 'enregistree' ? `<button class=ghost onclick="ctl('${k.id}')">Marquer comme contrôlée</button>` : ''}</div>`;
+        return `<div class="card col"><b>${k.day} · ${esc(nm[k.collector_id] || '')}</b><span>Attendu ${fmt(k.expected_cash)} · Compté ${fmt(k.declared_cash)}</span><span class="${bad ? 'due' : 'ok'}">${bad ? '⚠ Écart : ' + fmt(e) : '✓ Aucun écart'}</span><small>${k.status === 'controlee' ? 'Contrôlée' : 'À contrôler'}${k.note ? ' · ' + esc(k.note) : ''}</small>${fin() && k.status === 'enregistree' ? `<button class=ghost onclick="ctl('${k.id}')">Marquer comme contrôlée</button>` : ''}</div>`;
     }).join('') : '<p class=empty data-ic="💰">Aucune clôture.</p>');
     if (S.tab !== 'caisse') return;
     $('#main').innerHTML = h;
@@ -1333,14 +1365,15 @@ async function ctl(id) {
 function vReglages() {
     const sc = S.school;
     let h = `<div class=card><span>Devise d’affichage</span><select id=cu style=width:auto;margin:0>${CUR.map(c => `<option ${c === S.cur ? 'selected' : ''}>${c}</option>`).join('')}</select></div><div class=card><span>Thème</span><button class=ghost style=width:auto id=th>Clair / Sombre</button></div>` + installCard();
-    if (dir()) h += `<div class="card col"><b>Taux de change (1 unité en FC)</b><label>USD<input id=r1 type=number step=any value="${sc.rates.USD}"></label><label>EUR<input id=r2 type=number step=any value="${sc.rates.EUR}"></label><label><input id=au type=checkbox style=width:auto ${sc.auto_rates ? 'checked' : ''}> Mise à jour automatique</label><button id=sr>Enregistrer les taux</button><small>Code d’invitation : <b>${esc(sc.code)}</b></small></div>`;
-    if (dir()) h += `<div class="card col"><b>Frais par trimestre</b>${yc().length ? yc().map(c => `<button class=ghost onclick="editFees('${c.id}')">${esc(c.name)} · T1: ${nf(c.fee_t1 || 0)} / T2: ${nf(c.fee_t2 || 0)} / T3: ${nf(c.fee_t3 || 0)} ${c.fee_currency}</button>`).join('') : '<small>Aucune classe.</small>'}<small>Touche une classe pour modifier T1, T2 et T3.</small></div>`;
+    if (fin()) h += `<div class="card col"><b>Taux de change (1 unité en FC)</b><label>USD<input id=r1 type=number step=any value="${sc.rates.USD}"></label><label>EUR<input id=r2 type=number step=any value="${sc.rates.EUR}"></label><label><input id=au type=checkbox style=width:auto ${sc.auto_rates ? 'checked' : ''}> Mise à jour automatique</label><button id=sr>Enregistrer les taux</button><small>Code d’invitation : <b>${esc(sc.code)}</b></small></div>`;
+    if (fin()) h += `<div class="card col"><b>Frais par trimestre</b>${yc().length ? yc().map(c => `<button class=ghost onclick="editFees('${c.id}')">${esc(c.name)} · T1: ${nf(c.fee_t1 || 0)} / T2: ${nf(c.fee_t2 || 0)} / T3: ${nf(c.fee_t3 || 0)} ${c.fee_currency}</button>`).join('') : '<small>Aucune classe.</small>'}<small>Touche une classe pour modifier T1, T2 et T3.</small></div>`;
     if (dir()) {
         const yf = S.fees.filter(f => cy(f) === S.year && !f.student_id), tm = S.terms[S.year] || {};
-        h += `<div class="card col"><b>Autres frais · ${esc(S.year || '—')}</b>${yf.length ? yf.map(f => `<button class=ghost onclick="editFee('${f.id}')">${esc(f.name)} · ${nf(f.amount)} ${f.currency} · ${f.class_id ? esc((S.classes.find(c => c.id === f.class_id) || {}).name || '') : 'Toutes'}</button>`).join('') : '<small>Aucun frais supplémentaire.</small>'}<button class=ghost onclick=addFee()>+ Frais (inscription, uniforme…)</button></div>`;
+        if (fin()) h += `<div class="card col"><b>Autres frais · ${esc(S.year || '—')}</b>${yf.length ? yf.map(f => `<button class=ghost onclick="editFee('${f.id}')">${esc(f.name)} · ${nf(f.amount)} ${f.currency} · ${f.class_id ? esc((S.classes.find(c => c.id === f.class_id) || {}).name || '') : 'Toutes'}</button>`).join('') : '<small>Aucun frais supplémentaire.</small>'}<button class=ghost onclick=addFee()>+ Frais (inscription, uniforme…)</button></div>`;
         h += `<div class="card col"><b>Dates des trimestres</b><small>${hasTerms() ? 'T1 dès le ' + fdate(tm.t1) + ' · T2 dès le ' + fdate(tm.t2) + ' · T3 dès le ' + fdate(tm.t3) : 'Non réglées : le statut « en retard » est désactivé.'}</small><button class=ghost onclick=setTerms()>Régler les dates · ${esc(S.year || '—')}</button></div>`;
-        h += `<div class="card col"><b>Modèles de messages</b><small>Personnalise les messages WhatsApp (frais).</small><button class=ghost onclick=editTemplates()>✏️ Modifier les modèles</button></div>`;
+        if (fin()) h += `<div class="card col"><b>Modèles de messages</b><small>Personnalise les messages WhatsApp (frais).</small><button class=ghost onclick=editTemplates()>✏️ Modifier les modèles</button></div>`;
     }
+    h += supportCard();
     h += `<details><summary>Guide rapide</summary><p><b>Encaisser</b> : École → ouvre la classe → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu.<br><b>Clôture</b> : Menu → Caisse → Clôturer.<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel.<br><b>Correction</b> : Élève → Historique et reçus → Corriger.</p></details><button class=ghost id=lo>Déconnexion</button><div class=card><span>Code PIN de l’app</span><button class=ghost style=width:auto id=pinb>${pinGet() ? 'Modifier / retirer' : 'Activer'}</button></div><p style="text-align:center;margin:18px 0 6px"><a href="#" id=delacc style="font-size:11px;color:var(--mut)">Supprimer mon compte</a></p>`;
     $('#main').innerHTML = h;
     $('#lo').onclick = out;
@@ -1348,7 +1381,7 @@ function vReglages() {
     $('#pinb').onclick = pinSetup;
     $('#cu').onchange = e => { S.cur = e.target.value; localStorage.cur = S.cur; toast('Devise : ' + S.cur); };
     $('#th').onclick = () => { const t = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; document.documentElement.dataset.theme = localStorage.theme = t; };
-    if (dir()) $('#sr').onclick = async () => {
+    if (fin()) $('#sr').onclick = async () => {
         const usd = +$('#r1').value, eur = +$('#r2').value;
         if (!(usd > 0) || !(eur > 0)) return toast('Les taux doivent être supérieurs à 0.');
         const rates = { CDF: 1, USD: usd, EUR: eur };
@@ -1402,7 +1435,7 @@ async function doGlobalSearch(q) {
     if (stu.length) {
         h += '<h3>👤 Élèves</h3>' + stu.slice(0, 10).map(s => {
             const cname = (S.classes.find(c => c.id === s.class_id) || {}).name || '';
-            return `<div class="card" onclick="closeSearch();menu('${s.id}')"><span>${esc(s.name)}<br><small>${esc(cname)}</small></span><b class="${s.balance_cdf > 0 ? 'due' : 'ok'}">${fmt(s.balance_cdf)}</b></div>`;
+            return `<div class="card" onclick="closeSearch();menu('${s.id}')"><span>${esc(s.name)}<br><small>${esc(cname)}</small></span>${money() ? `<b class="${s.balance_cdf > 0 ? 'due' : 'ok'}">${fmt(s.balance_cdf)}</b>` : ''}</div>`;
         }).join('');
     }
     const cls = S.classes.filter(c => nrm(c.name).includes(q));
@@ -1443,7 +1476,7 @@ const subWa = n => ADMIN_WA ? `https://wa.me/${ADMIN_WA}?text=${encodeURICompone
 function subBanner() {
     const b = $('#exb'), n = subLeft();
     if (!b) return;
-    if (!S.me || !dir() || n > 7 || n <= 0) { b.hidden = true; return; }
+    if (!S.me || !fin() || n > 7 || n <= 0) { b.hidden = true; return; }
     b.innerHTML = `<span>⏳ Abonnement : il reste <b>${n} jour${n > 1 ? 's' : ''}</b></span>${subWa(n) ? `<a href="${subWa(n)}" target=_blank rel=noopener>Renouveler</a>` : ''}`; b.hidden = false;
 }
 const bkAge = () => { const t = +localStorage['orea_bk_' + S.school.id] || 0; return t ? Math.floor((Date.now() - t) / 864e5) : null; };
@@ -1593,7 +1626,7 @@ function vMenu() {
     h += `<div class=menu-title>Gestion quotidienne</div>`;
     h += menuCard('presences', 'Présences', null, "menuGo('presences')");
     if (canCollect()) h += menuCard('caisse', 'Caisse', null, "menuGo('caisse')");
-    if (dir()) h += menuCard('impayes', 'Finance', 'Impayés · Dépenses · Bilan', "menuGo('finance_home')");
+    if (fin()) h += menuCard('impayes', 'Finance', 'Impayés · Dépenses · Bilan', "menuGo('finance_home')");
     if (isCol()) { h += menuCard('graph', 'Ma perception', 'Ce que j’ai encaissé', "menuGo('perception')"); h += menuCard('impayes', 'Impayés', 'Mes classes', "menuGo('impayes')"); }
     h += `<div class=menu-title>Pédagogie</div>`;
     if (dir()) h += menuCard('absences', 'Suivi des absences', null, "menuGo('absences')");
@@ -1604,7 +1637,7 @@ function vMenu() {
         h += `<div class=menu-title>Administration</div>`;
         h += menuCard('annees', 'Années scolaires', null, "yearMenu()");
         h += menuCard('equipe', 'Équipe & Cours', null, "team()");
-        h += menuCard('exports', 'Données', 'Exports · Sauvegarde', "menuGo('donnees_home')");
+        if (fin()) h += menuCard('exports', 'Données', 'Exports · Sauvegarde', "menuGo('donnees_home')");
         h += menuCard('messages', 'Messages des parents', null, "pAdminInbox()");
         h += menuCard('justificatifs', 'Justificatifs d’absence', null, "pAdminJustifs()");
         h += menuCard('annonces', 'Annonces', null, "pAdminAnnonce()");
@@ -1619,8 +1652,8 @@ function vMenu() {
 
 /* ---------- Impayés ---------- */
 // Élèves visibles dans les impayés : tous pour le directeur, ceux des classes confiées pour le percepteur
-const impStu = () => ys().filter(s => dir() || colOK(s.class_id));
-const impCls = () => yc().filter(c => dir() || colOK(c.id));
+const impStu = () => ys().filter(s => colOK(s.class_id));
+const impCls = () => yc().filter(c => colOK(c.id));
 function vImpayes() {
     S.impcls = S.impcls || ''; S.impf = S.impf || 'all'; S.imps = S.imps || 'anciennete';
     if (S.impcls && !impCls().some(c => c.id === S.impcls)) S.impcls = '';
@@ -1631,12 +1664,12 @@ function vImpayes() {
     l.sort((a, b) => { if (S.imps === 'montant') return b.balance_cdf - a.balance_cdf; const la = a.last_pay ? new Date(a.last_pay).getTime() : 0, lb = b.last_pay ? new Date(b.last_pay).getTime() : 0; return la - lb; });
     const tot = l.reduce((a, s) => a + Number(s.balance_cdf || 0), 0);
     let h = subBack() + `<h3>Impayés${isCol() ? ' · mes classes' : ''}</h3>`;
-    if (isCol() && !impCls().length) { subHost().innerHTML = h + '<p class=empty data-ic="🏫">Aucune classe ne vous a encore été confiée. Demandez au directeur de vous attribuer vos classes.</p>'; return; }
+    if (isCol() && !impCls().length) { subHost().innerHTML = h + '<p class=empty data-ic="🏫">Aucune classe ne vous a encore été confiée. Demandez au chef d’établissement de vous attribuer vos classes.</p>'; return; }
     if (isCol()) h += `<div class="card col"><b>Reste à payer par classe</b>${impCls().map(c => { const v = impStu().filter(s => s.class_id === c.id).reduce((a, s) => a + Math.max(0, Number(s.balance_cdf || 0)), 0); return `<div style="display:flex;justify-content:space-between;margin:3px 0"><span>${esc(c.name)}</span><b class="${v > 0 ? 'due' : 'ok'}">${fmt(v)}</b></div>`; }).join('')}</div>`;
     h += `<div class=bar><select id=icl><option value="">Toutes ${isCol() ? 'mes ' : ''}classes</option>${impCls().map(c => `<option value="${c.id}" ${S.impcls === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
     h += `<div class=chips><button class="chip ${S.impf === 'all' ? 'on' : ''}" onclick="S.impf='all';render()">Tous</button><button class="chip ${S.impf === '30j' ? 'on' : ''}" onclick="S.impf='30j';render()">> 30j</button><button class="chip ${S.impf === '60j' ? 'on' : ''}" onclick="S.impf='60j';render()">> 60j</button></div>`;
     h += `<div class=card><span>${l.length} élève(s)</span><b class=due>${fmt(tot)}</b></div>`;
-    h += `<div class=row><button class=ghost onclick=impayesPDF()>📄 PDF</button><button class=ghost onclick=impayesPNG()>🖼 PNG</button>${dir() ? `<button onclick=reminders()>💬 Relancer</button>` : ''}</div>`;
+    h += `<div class=row><button class=ghost onclick=impayesPDF()>📄 PDF</button><button class=ghost onclick=impayesPNG()>🖼 PNG</button>${fin() ? `<button onclick=reminders()>💬 Relancer</button>` : ''}</div>`;
     h += l.length ? l.map(s => `<div class=card onclick="menu('${s.id}')"><span>${esc(s.name)}<br><small>${esc(cnm(s.class_id))} · ${s.last_pay ? 'Dernier paiement il y a ' + Math.floor((Date.now() - new Date(s.last_pay)) / 864e5) + 'j' : 'Jamais payé'}</small></span><b class=due>${fmt(s.balance_cdf)}</b></div>`).join('') : '<p class=empty>Aucun impayé pour ces critères.</p>';
     subHost().innerHTML = h;
     $('#icl').onchange = e => { S.impcls = e.target.value; render(); };
@@ -1709,7 +1742,7 @@ function editExpense(id) {
 /* ---------- Bilan mensuel ---------- */
 // Retour depuis le Bilan. NB : ne jamais écrire dir() dans un onclick="..." HTML :
 // là, « dir » désigne la propriété dir du bouton (sens du texte) et non notre fonction.
-function finBack() { S.tab = dir() ? 'finance_home' : 'menu'; render(); }
+function finBack() { S.tab = fin() ? 'finance_home' : 'menu'; render(); }
 async function vBilan() {
     const d = new Date(); if (!S.bilDate) S.bilDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
     $('#main').innerHTML = '<div class=bar><button class=ghost onclick="finBack()">← Finance</button></div>' + SK;
@@ -1924,7 +1957,7 @@ async function addAssignment() {
     if (!dir()) {
         const mc = await myCourses(); if (mc.error) return toast(mc.error.message);
         const L = mc.data.filter(x => x.class_id === S.cls && x.subjects).map(x => x.subjects.name);
-        if (!L.length) return toast('Aucun cours ne vous est attribué dans ' + cn + '. Demandez au directeur.');
+        if (!L.length) return toast('Aucun cours ne vous est attribué dans ' + cn + '. Demandez à la direction.');
         subj = { n: 'subject', l: 'Cours', o: L.map(x => [x, esc(x)]) };
     }
     ask('Nouveau devoir — ' + esc(cn), [
@@ -2109,13 +2142,13 @@ window.openSanctionsClasse = window.openSanctionsClasse || (() => menuGo('sancti
 function subMenuPage(title, cards) { $('#main').innerHTML = '<div class=bar><button class=ghost onclick="S.tab=\'menu\';render()">← Menu</button></div><h3>' + title + '</h3>' + cards; }
 // Repli pour les rôles autres que directeur (finance.js remplace cette page pour le directeur)
 function vFinanceHome() {
-    subMenuPage('Finance', menuCard('impayes', 'Impayés', 'Élèves à relancer', "menuGo('impayes')") + (dir() ? menuCard('depenses', 'Dépenses', null, "menuGo('depenses')") + menuCard('bilan', 'Bilan mensuel', null, "menuGo('bilan')") : ''));
+    subMenuPage('Finance', menuCard('impayes', 'Impayés', 'Élèves à relancer', "menuGo('impayes')") + (fin() ? menuCard('depenses', 'Dépenses', null, "menuGo('depenses')") + menuCard('bilan', 'Bilan mensuel', null, "menuGo('bilan')") : ''));
 }
 function vProgrammeHome() {
     subMenuPage('Programme', menuCard('calendrier', 'Calendrier scolaire', 'Événements à venir', "menuGo('calendrier')") + menuCard('emploi_temps', 'Emploi du temps', 'Par classe', "menuGo('emploi_temps')"));
 }
 function vDonneesHome() {
-    if (!dir()) { S.tab = 'menu'; return render(); }
+    if (!fin()) { S.tab = 'menu'; return render(); }
     subMenuPage('Données', menuCard('exports', 'Exporter', 'Élèves · Paiements · Caisse (CSV / PDF / PNG)', 'exportMenu()') + menuCard('rapport', 'Rapport mensuel', 'PDF ou image', 'monthReport()') + menuCard('sauvegarde', 'Sauvegarde complète', 'Fichier JSON à garder', 'runBackup()') + menuCard('journal', 'Journal d’activité', 'Qui a modifié quoi', 'journal()'));
 }
 async function runBackup() { try { toast('Sauvegarde en cours…'); await backupAll(); } catch (e) { toast(e.message || 'Sauvegarde impossible'); } }
@@ -2234,7 +2267,7 @@ async function ppHome() {
     const nT = L.filter(p => p.status === 'prevu').length, nN = L.length - nT;
     $('#main').insertAdjacentHTML('afterbegin', `<div class=card id=pph style="cursor:pointer;border-color:var(--gold)"><span><b>Promesses de paiement</b><br><small>${nT ? nT + ' à verser demain' : ''}${nT && nN ? ' · ' : ''}${nN ? nN + ' non tenue' + (nN > 1 ? 's' : '') : ''}</small></span><b>›</b></div>`);
     $('#pph').onclick = () => {
-        const D = dir(), nm = id => (S.stu.find(x => x.id === id) || {}).name || 'Élève';
+        const D = fin(), nm = id => (S.stu.find(x => x.id === id) || {}).name || 'Élève';
         const msg = p => p.status === 'non_tenu'
             ? `Bonjour, ici ${S.school.name}. Le versement de ${fmt(p.amount_cdf)} prévu le ${fdate(p.due_date)} pour ${nm(p.student_id)} n’a pas encore été reçu. Merci de régulariser ou de contacter l’école.`
             : `Bonjour, ici ${S.school.name}. Petit rappel : le versement de ${fmt(p.amount_cdf)} pour ${nm(p.student_id)} est prévu demain (${fdate(p.due_date)}). Merci !`;
@@ -2350,7 +2383,7 @@ async function drawMyDay(day) {
     const r = await myDay(day), l = document.getElementById('tdl'); if (!l || S.tdDay !== day) return;
     const hh = t => String(t || '').slice(0, 5), cn = id => (S.classes.find(c => c.id === id) || {}).name || '';
     if (r.error) { l.innerHTML = `<small>Horaire indisponible pour le moment.</small>`; return; }
-    if (!r.courses && !r.data.length) { l.innerHTML = `<small>Aucun cours ne vous a encore été attribué. Le directeur peut le faire dans « Équipe & Cours ».</small>`; return; }
+    if (!r.courses && !r.data.length) { l.innerHTML = `<small>Aucun cours ne vous a encore été attribué. La direction peut le faire dans « Équipe & Cours ».</small>`; return; }
     l.innerHTML = r.data.length ? r.data.map(t => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)"><span><b>${hh(t.start_time)} – ${hh(t.end_time)}</b> · ${esc(t.subject)}</span><small>${esc(cn(t.class_id))}${t.room ? ' · ' + esc(t.room) : ''}</small></div>`).join('') : `<small>Pas de cours ce ${DAYS[day].toLowerCase()}.</small>`;
 }
 const _vAccueil1 = vAccueil;
@@ -2438,13 +2471,13 @@ async function pointage() {
     }
     S.ptDay = S.ptDay || d0;
     const [{ data: pr, error: e1 }, { data: ck, error: e2 }] = await Promise.all([
-        db.from('profiles').select('id,full_name,role,active').eq('school_id', S.school.id).in('role', ['enseignant', 'percepteur', 'directeur']).order('full_name'),
+        db.from('profiles').select('id,full_name,role,active,etudes').eq('school_id', S.school.id).in('role', ['enseignant', 'percepteur', 'directeur']).order('full_name'),
         db.from('staff_checkins').select('*').eq('day', S.ptDay)
     ]);
     if (e1 || e2) return toast((e1 || e2).message);
     const by = Object.fromEntries((ck || []).map(x => [x.user_id, x])), L = (pr || []).filter(p => p.active !== false && p.id !== S.me.id);
     const nIn = L.filter(p => by[p.id] && by[p.id].in_at).length;
-    const d = show(`<h3>Pointage de l’équipe</h3><input type=date id=ptd value="${S.ptDay}"><small>${nIn} / ${L.length} présent(s)</small>${L.map(p => { const x = by[p.id]; return `<div class=card><span>${esc(p.full_name)}<br><small>${esc({ enseignant: 'Enseignant', percepteur: 'Percepteur', directeur: 'Directeur' }[p.role] || p.role)}</small></span>${x && x.in_at ? `<small class=ok>${hm(x.in_at)} → ${hm(x.out_at)}</small>` : '<small class=due>Non pointé</small>'}</div>`; }).join('')}<button class=ghost id=pcx>Fermer</button>`);
+    const d = show(`<h3>Pointage de l’équipe</h3><input type=date id=ptd value="${S.ptDay}"><small>${nIn} / ${L.length} présent(s)</small>${L.map(p => { const x = by[p.id]; return `<div class=card><span>${esc(p.full_name)}<br><small>${esc(roleTitle(p))}</small></span>${x && x.in_at ? `<small class=ok>${hm(x.in_at)} → ${hm(x.out_at)}</small>` : '<small class=due>Non pointé</small>'}</div>`; }).join('')}<button class=ghost id=pcx>Fermer</button>`);
     d.querySelector('#pcx').onclick = () => d.close();
     d.querySelector('#ptd').onchange = e => { S.ptDay = e.target.value; pointage(); };
 }

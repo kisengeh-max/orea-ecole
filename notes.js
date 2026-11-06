@@ -76,7 +76,7 @@ async function canEditSubject(subjectId) {
 // ---------- Gérer les cours d'une classe (création des cours + rattachement à la classe) ----------
 // NB : manageClassCourses() était appelée par les boutons « Gérer les cours de cette classe » mais n'était définie nulle part.
 async function manageClassCourses() {
-    if (S.me.role !== 'directeur') return toast('Seul le directeur gère les cours de la classe.');
+    if (S.me.role !== 'directeur') return toast('Seule la direction gère les cours de la classe.');
     const c = cotCls(); if (!c) return;
     let d = show(`<h3>Cours · ${esc(c.name)}</h3>${SK}`);
     const [sj, cs] = await Promise.all([
@@ -231,7 +231,7 @@ async function vCotEval() {
         if (!hasPermission) h += `<div class="card" style="padding:10px 14px;border-color:var(--bad)">🔒 <small>Vous n'êtes pas l'enseignant de ce cours. Lecture seule.</small></div>`;
         else h += `<div class="card" style="padding:10px 14px;border-color:var(--gold)">⏳ <small>Modification en attente de l'approbation de l'enseignant titulaire.</small></div>`;
     } else if (rows.some(r => r.status === 'pending')) {
-        h += `<div class="card" style="padding:10px 14px;border-color:var(--gold)">⏳ <small>Le directeur a modifié des cotes de cette évaluation. Vérifie-les puis touche « Enregistrer » pour les valider.</small></div>`;
+        h += `<div class="card" style="padding:10px 14px;border-color:var(--gold)">⏳ <small>La direction a modifié des cotes de cette évaluation. Vérifie-les puis touche « Enregistrer » pour les valider.</small></div>`;
     }
     
     if (!st.length) { $('#main').innerHTML = h + '<p class=empty>Aucun élève dans cette classe.</p>'; return; }
@@ -344,6 +344,12 @@ const bulOf = id => S.bulRows.filter(g => g.student_id === id);
 
 async function vBulletins() {
     const c = cotCls(); if (!c) { S.tab = 'eleves'; return render(); }
+    // v74 : bulletins du primaire et de la maternelle — emplacement prévu, format en préparation
+    const lv = c.level || 'secondaire';
+    if (lv !== 'secondaire') {
+        $('#main').innerHTML = `<div class=bar><button class=ghost style="width:auto" onclick="cotBack()">← ${esc(c.name)}</button><b class=ctitle>Bulletins</b></div><div class="card col" style="border-color:var(--gold)"><b>📄 Bulletin ${lv === 'primaire' ? 'du primaire' : 'de la maternelle'}</b><small>Le bulletin ${lv === 'primaire' ? 'du primaire' : 'de la maternelle'} au format congolais sera bientôt disponible.</small></div>`;
+        return;
+    }
     const st = cotStudents();
     if (!S.bulPeriod) S.bulPeriod = String(cotCurTerm());
     if (!S.bulStu || !st.some(s => s.id === S.bulStu)) S.bulStu = st[0] ? st[0].id : '';

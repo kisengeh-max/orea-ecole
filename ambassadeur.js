@@ -45,7 +45,7 @@ function ambChoice() {
     $('#nav').hidden = true;
     $('#hs').textContent = 'ORÉA École';
     $('#main').innerHTML = '<div class=auth><h2>Vous êtes :</h2>'
-        + '<button id=k1>🏫 Directeur</button>'
+        + '<button id=k1>🏫 Chef d’établissement</button>'
         + '<button class=ghost id=k2>👩‍🏫 Enseignant / Percepteur</button>'
         + '<button class=ghost id=k3>👪 Parent d’élèves</button>'
         + '<button class=ghost id=k4>🤝 ORÉA Ambassadeur</button>'
@@ -53,10 +53,11 @@ function ambChoice() {
     $('#lo').onclick = out;
     $('#k1').onclick = () => ask('Nouvelle école', [
         { n: 'school', l: 'Nom de l’école' },
+        { n: 'type', l: 'Type d’école', o: [['secondaire', 'Secondaire'], ['primaire', 'Primaire'], ['maternelle', 'Maternelle'], ['complexe', 'Complexe scolaire']], v: 'secondaire' },
         { n: 'me', l: 'Ton nom' },
         { n: 'code', l: 'Code ambassadeur (facultatif)', r: false }
     ], async v => {
-        const { error } = await db.rpc('create_school', { school_name: v.school.trim(), my_name: v.me.trim(), amb_code: (v.code || '').trim() || null });
+        const { error } = await db.rpc('create_school', { school_name: v.school.trim(), my_name: v.me.trim(), amb_code: (v.code || '').trim() || null, p_type: v.type || 'secondaire' });
         if (error) throw error;
         boot();
     });
@@ -143,7 +144,7 @@ function ambSchoolCard(s) {
     const msg = left > 0 ? 'Bonjour, l’abonnement de ' + s.name + ' arrive à échéance dans ' + left + ' jour(s).' : 'Bonjour, l’abonnement de ' + s.name + ' est arrivé à échéance.';
     const wa = s.phone ? waLink(s.phone, msg) : null;
     return '<div class="card col"><span class=amb-name>' + dot + ' ' + esc(s.name) + '</span>'
-        + '<span>Directeur : ' + esc(s.director_name || '—') + '</span>'
+        + '<span>Chef d’établissement : ' + esc(s.director_name || '—') + '</span>'
         + '<small>' + s.students + ' élève(s) · ' + s.members + ' compte(s)</small>'
         + '<span class="' + (left > 7 ? 'ok' : 'due') + '">' + st + '</span>' + price
         + '<div class=row>' + (wa ? '<a class="btn ghost amb-btn" target=_blank href="' + wa + '">💬 Relancer</a><a class="btn ghost amb-btn" href="' + esc(smsLink(s.phone, msg)) + '">SMS</a><button class=ghost style=width:auto onclick="ambPhone(\'' + s.id + '\')">✏ N°</button>' : '<button class=ghost style=width:auto onclick="ambPhone(\'' + s.id + '\')">📞 Ajouter WhatsApp</button>')

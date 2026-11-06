@@ -293,7 +293,7 @@
             + (canWrite
                 ? `<div class="om-subj"><input id="om-su" placeholder="Objet (facultatif)" maxlength="80"></div>`
                   + `<div class="om-bar"><textarea id="om-in" rows="1" placeholder="Votre message…" maxlength="4000"></textarea><button id="om-sd" aria-label="Envoyer">➤</button></div>`
-                : `<div class="om-ro">Lecture seule : seul le directeur écrit à toute l’équipe.</div>`);
+                : `<div class="om-ro">Lecture seule : seule la direction écrit à toute l’équipe.</div>`);
 
         $q('#om-bk', ov).onclick = goBack;
         $q('#om-sr', ov).onclick = () => {
