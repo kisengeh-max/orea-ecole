@@ -45,6 +45,7 @@ const roleTitle = p => {
 const headTitle = () => roleTitle({ role: 'directeur' });
 window.oreaRoleTitle = roleTitle; window.oreaHeadTitle = headTitle;
 const SCHOOL_TYPES = [['secondaire', 'Secondaire'], ['primaire', 'Primaire'], ['maternelle', 'Maternelle'], ['complexe', 'Complexe scolaire']];
+const SEXES = [['', '— à préciser —'], ['M', 'M · Masculin'], ['F', 'F · Féminin']];
 const CLASS_LEVELS = [['maternelle', 'Maternelle'], ['primaire', 'Primaire'], ['secondaire', 'Secondaire']];
 // Contact ORÉA Assistance (Réglages de tous les comptes)
 const supportCard = () => `<div class="card col"><b>Vous avez besoin d’aide ?</b><span>ORÉA Assistance</span><small>+243 825 556 492 · kisengeh@gmail.com</small><div class=row><a class="btn ghost" style="text-align:center;text-decoration:none" href="tel:+243825556492">📞 Appeler</a><a class="btn ghost" style="text-align:center;text-decoration:none" href="https://wa.me/243825556492" target=_blank rel=noopener>💬 WhatsApp</a><a class="btn ghost" style="text-align:center;text-decoration:none" href="mailto:kisengeh@gmail.com">✉️ E-mail</a></div></div>`;
@@ -751,8 +752,9 @@ function addClass(yr) {
     });
 }
 function addStudent() {
-    ask('Nouvel élève', [{ n: 'name', l: 'Nom complet' }, { n: 'phone', l: 'WhatsApp du parent', t: 'tel', r: false }, { n: 'cls', l: 'Classe', o: yc().map(c => [c.id, esc(c.name)]), v: S.cls }], async v => {
-        const { error } = await db.from('students').insert({ school_id: S.school.id, class_id: v.cls, name: v.name.trim(), parent_phone: v.phone.trim() || null });
+    ask('Nouvel élève', [{ n: 'name', l: 'Nom complet' }, { n: 'sexe', l: 'Sexe', o: SEXES, v: '' }, { n: 'dn', l: 'Date de naissance', t: 'date', r: false }, { n: 'phone', l: 'WhatsApp du parent', t: 'tel', r: false }, { n: 'cls', l: 'Classe', o: yc().map(c => [c.id, esc(c.name)]), v: S.cls }], async v => {
+        if (v.dn && v.dn > tdy()) throw Error('La date de naissance est dans le futur.');
+        const { error } = await db.from('students').insert({ school_id: S.school.id, class_id: v.cls, name: v.name.trim(), parent_phone: v.phone.trim() || null, sexe: v.sexe || null, date_naissance: v.dn || null });
         if (error) throw error; S.cls = v.cls; await load(); render();
     });
 }
@@ -872,8 +874,9 @@ function editFees(id) {
 }
 function editStudent(id) {
     const s = S.stu.find(x => x.id === id);
-    ask('Modifier l’élève', [{ n: 'name', l: 'Nom complet', v: s.name }, { n: 'phone', l: 'WhatsApp du parent', t: 'tel', r: false, v: s.parent_phone }, { n: 'cls', l: 'Classe', o: yc().map(c => [c.id, esc(c.name)]), v: s.class_id }], async v => {
-        const { data, error } = await db.from('students').update({ name: v.name.trim(), parent_phone: v.phone.trim() || null, class_id: v.cls }).eq('id', id).select();
+    ask('Modifier l’élève', [{ n: 'name', l: 'Nom complet', v: s.name }, { n: 'sexe', l: 'Sexe', o: SEXES, v: s.sexe || '' }, { n: 'dn', l: 'Date de naissance', t: 'date', r: false, v: s.date_naissance || '' }, { n: 'phone', l: 'WhatsApp du parent', t: 'tel', r: false, v: s.parent_phone }, { n: 'cls', l: 'Classe', o: yc().map(c => [c.id, esc(c.name)]), v: s.class_id }], async v => {
+        if (v.dn && v.dn > tdy()) throw Error('La date de naissance est dans le futur.');
+        const { data, error } = await db.from('students').update({ name: v.name.trim(), parent_phone: v.phone.trim() || null, class_id: v.cls, sexe: v.sexe || null, date_naissance: v.dn || null }).eq('id', id).select();
         if (error) throw error; if (!data.length) throw Error('Modification refusée'); S.cls = v.cls; await load(); render(); toast('Élève modifié');
     });
 }

@@ -1,5 +1,7 @@
 /* =====================================================================
-   ORÉA École v75 — quotidien.js (étape C : la vie de tous les jours)
+   ORÉA École v80 — quotidien.js (étape C : la vie de tous les jours)
+   v80 : sexe (M/F) et date de naissance · saisie rapide par classe ·
+         🎂 anniversaires (2 jours avant → fin du jour J), école et parent.
    Chargé par index.html (école) ET parent.html (parent).
    ÉCOLE
      - Fiche élève : 🩺 Santé (tous) · 🚸 Personnes autorisées (maternelle, primaire)
@@ -40,6 +42,35 @@
         hygiene: ['Propreté', [['ok', '🚽 RAS'], ['incident', '🚽 Petit accident']]]
     };
     const liaTxt = n => Object.keys(LIA).map(k => { const o = LIA[k][1].find(x => x[0] === n[k]); return o ? o[1] : ''; }).filter(Boolean).join(' · ');
+    // ----- Anniversaires (heure de Kinshasa) : visibles 2 jours avant, jusqu'à la fin du jour J -----
+    function bday(dn) {
+        if (!dn) return null;
+        const [by, bm, bd] = String(dn).slice(0, 10).split('-').map(Number), t = today(), [ty] = t.split('-').map(Number);
+        const t0 = Date.UTC(...t.split('-').map((x, i) => i === 1 ? Number(x) - 1 : Number(x)));
+        for (const y of [ty, ty + 1]) {
+            const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0, d = (bm === 2 && bd === 29 && !leap) ? 28 : bd;
+            const diff = Math.round((Date.UTC(y, bm - 1, d) - t0) / 864e5);
+            if (diff >= 0) return diff <= 2 ? { days: diff, age: y - by } : null;
+        }
+        return null;
+    }
+    const bdayTxt = b => b.days === 0 ? 'aujourd’hui 🎉' : b.days === 1 ? 'demain' : 'dans 2 jours';
+    const ageOf = dn => { if (!dn) return null; const [y, m, d] = String(dn).slice(0, 10).split('-').map(Number), [ty, tm, td] = today().split('-').map(Number); return ty - y - ((tm < m || (tm === m && td < d)) ? 1 : 0); };
+    function confetti(key) {
+        try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (_) { }
+        const box = document.createElement('div');
+        box.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:500;overflow:hidden';
+        const E2 = ['🎉', '🎂', '🎈', '✨', '🎊'];
+        for (let i = 0; i < 36; i++) {
+            const s = document.createElement('span');
+            s.textContent = E2[i % E2.length];
+            s.style.cssText = `position:absolute;top:-40px;left:${Math.random() * 100}%;font-size:${18 + Math.random() * 18}px;transition:transform ${2.2 + Math.random() * 1.6}s ease-in, opacity 3.5s`;
+            box.appendChild(s);
+            requestAnimationFrame(() => requestAnimationFrame(() => { s.style.transform = `translateY(${window.innerHeight + 80}px) rotate(${Math.random() * 360}deg)`; s.style.opacity = '0.2'; }));
+        }
+        document.body.appendChild(box);
+        setTimeout(() => box.remove(), 4200);
+    }
     const healthLines = h => HF.filter(f => h && String(h[f[0]] || '').trim()).map(f => `<b>${E(f[1])}</b> : ${E(h[f[0]])}`);
 
     /* =================================================================
@@ -65,6 +96,8 @@
                         if (L === 'maternelle' || L === 'primaire') add('🚸 Personnes autorisées', () => peopleDlg(id));
                         if (L === 'maternelle') add('📒 Cahier de liaison', () => liaisonForm(id, () => menu(id)));
                     }
+                    const ag = ageOf(s.date_naissance), b = bday(s.date_naissance);
+                    d.querySelector('h3').insertAdjacentHTML('afterend', `<small style="display:block;margin:-4px 0 8px;color:var(--mut)">${s.sexe ? (s.sexe === 'F' ? 'Féminin' : 'Masculin') : 'Sexe non précisé'} · ${s.date_naissance ? 'né(e) le ' + dfr(s.date_naissance) + ' · ' + ag + ' ans' : 'date de naissance non précisée'}${b ? ' · 🎂 anniversaire ' + bdayTxt(b) : ''}</small>`);
                     db.from('student_health').select('allergies,conditions').eq('student_id', id).maybeSingle().then(({ data }) => {
                         if (!data || !d.open) return;
                         const a = [data.allergies, data.conditions].filter(x => String(x || '').trim());
@@ -85,11 +118,54 @@
                     const L = lvl(S.cls), B = [];
                     if (L === 'maternelle' || L === 'primaire') B.push(['qSorties()', '🚸 Sorties']);
                     if (L === 'maternelle') B.push(['qLiaison()', '📒 Liaison']);
+                    if (isDir()) B.push(['qIdent()', '👦👧 Sexe & naissances']);
                     if (B.length) h += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 8px">${B.map(b => `<button class=ghost style="width:auto" onclick="${b[0]}">${b[1]}</button>`).join('')}</div>`;
                 } catch (_) { }
                 return h;
             };
             window.classBtns.__q = true;
+        }
+
+        // ----- Saisie rapide : sexe et date de naissance de toute la classe -----
+        window.qIdent = function () {
+            const cls = (S.classes || []).find(c => c.id === S.cls); if (!cls) return;
+            const L = (S.stu || []).filter(s => s.class_id === cls.id).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+            if (!L.length) return say('Aucun élève dans cette classe.');
+            const miss = () => L.filter(s => !s.sexe || !s.date_naissance).length;
+            const d = show(`<h3>👦👧 ${E(cls.name)}</h3><small id=qim>${miss()} élève(s) à compléter · chaque changement est enregistré tout de suite</small><div style="max-height:62vh;overflow-y:auto">${L.map(s => `<div class="card col" data-st="${s.id}" style="gap:6px"><b>${E(s.name)}</b><div class=row style="align-items:center"><button type=button class="chip ${s.sexe === 'M' ? 'on' : ''}" data-sx="M" style="width:auto">M</button><button type=button class="chip ${s.sexe === 'F' ? 'on' : ''}" data-sx="F" style="width:auto">F</button><input type=date data-dn value="${E(s.date_naissance || '')}" max="${today()}" style="flex:1;margin:0"></div></div>`).join('')}</div><button class=ghost id=qix>Fermer</button>`);
+            const save = async (row, patch) => {
+                const id = row.dataset.st, s = stu(id);
+                const { error } = await db.from('students').update(patch).eq('id', id);
+                if (error) return say(error.message);
+                Object.assign(s, patch); row.style.borderColor = 'var(--ok)';
+                d.querySelector('#qim').textContent = miss() + ' élève(s) à compléter · chaque changement est enregistré tout de suite';
+            };
+            d.querySelectorAll('[data-st]').forEach(row => {
+                row.querySelectorAll('[data-sx]').forEach(b => b.onclick = () => { row.querySelectorAll('[data-sx]').forEach(x => x.classList.toggle('on', x === b)); save(row, { sexe: b.dataset.sx }); });
+                const inp = row.querySelector('[data-dn]');
+                inp.onchange = () => { if (inp.value && inp.value > today()) return say('Date dans le futur.'); save(row, { date_naissance: inp.value || null }); };
+            });
+            d.querySelector('#qix').onclick = () => { d.close(); if (typeof render === 'function') render(); };
+        };
+
+        // ----- Accueil : anniversaires des élèves -----
+        const oAcc = window.vAccueil;
+        if (typeof oAcc === 'function' && !oAcc.__q) {
+            window.vAccueil = async function () {
+                const r = await oAcc.apply(this, arguments);
+                try {
+                    const main = document.getElementById('main');
+                    if (!main || S.tab !== 'accueil' || main.querySelector('#q-bday')) return r;
+                    const ids = new Set((typeof ys === 'function' ? ys() : S.stu || []).map(s => s.id));
+                    const L = (S.stu || []).filter(s => ids.has(s.id)).map(s => ({ s, b: bday(s.date_naissance) })).filter(x => x.b).sort((a, b) => a.b.days - b.b.days || a.s.name.localeCompare(b.s.name, 'fr'));
+                    if (!L.length) return r;
+                    const cn = id => ((S.classes || []).find(c => c.id === id) || {}).name || '';
+                    main.insertAdjacentHTML('afterbegin', `<div class="card col" id="q-bday" style="border-color:var(--gold)"><b>🎂 Anniversaires</b>${L.map(x => `<div style="display:flex;justify-content:space-between;gap:8px;margin:2px 0"><span>${x.b.days === 0 ? '🎉 ' : ''}<b>${E(x.s.name)}</b> <small>${E(cn(x.s.class_id))}</small></span><small class="${x.b.days === 0 ? 'ok' : ''}">${x.b.age} ans ${bdayTxt(x.b)}</small></div>`).join('')}</div>`);
+                    if (L.some(x => x.b.days === 0)) confetti('orea_bday_' + today());
+                } catch (e) { console.warn('anniversaires :', e); }
+                return r;
+            };
+            window.vAccueil.__q = true;
         }
 
         // ----- Santé -----
@@ -243,6 +319,33 @@
         if (LN.length) s += `<div class=p-sec><h4>📒 Cahier de liaison</h4>${LN.map(n => `<div class=p-row style="flex-direction:column;align-items:flex-start"><b>${dfr(n.day)}</b><small>${E(liaTxt(n))}</small>${n.note ? `<small>« ${E(n.note)} »</small>` : ''}</div>`).join('')}</div>`;
         if (PK.length) s += `<div class=p-sec><h4>🚪 Sorties</h4>${PK.map(p => `<div class=p-row><span>${dfr(p.day)} · ${hm(p.at)}</span><b class="${p.authorized ? 'p-ok' : 'p-due'}">${p.authorized ? '' : '⚠️ '}${E(p.picked_by)}</b></div>`).join('')}</div>`;
         return s;
+    }
+
+    // Anniversaire de l'enfant sur l'accueil parent (2 jours avant -> fin du jour J)
+    const BD = { at: 0, map: {} };
+    const oHomeP = window.homeView;
+    if (typeof oHomeP === 'function' && !oHomeP.__q) {
+        window.homeView = function () {
+            const r = oHomeP.apply(this, arguments);
+            (async () => {
+                try {
+                    const kids = (typeof P !== 'undefined' && P.children) || [];
+                    if (!kids.length) return;
+                    if (Date.now() - BD.at > 6 * 3600e3) {
+                        const { data } = await db.from('students').select('id,date_naissance').in('id', kids.map(k => k.id));
+                        BD.map = {}; (data || []).forEach(x => BD.map[x.id] = x.date_naissance); BD.at = Date.now();
+                    }
+                    const main = document.getElementById('pmain');
+                    if (!main || main.querySelector('#q-bday') || P.tab !== 'accueil') return;
+                    const L = kids.map(k => ({ k, b: bday(BD.map[k.id]) })).filter(x => x.b);
+                    if (!L.length) return;
+                    main.insertAdjacentHTML('afterbegin', L.map(x => `<div class=p-card id="q-bday" style="cursor:default;border-color:var(--gold);text-align:center"><div style="font-size:40px">🎂</div><h3 style="margin:6px 0">${x.b.days === 0 ? 'Joyeux anniversaire ' + E(x.k.name) + ' !' : 'L’anniversaire de ' + E(x.k.name) + ' arrive'}</h3><div class=p-line>${x.b.age} ans ${bdayTxt(x.b)}</div></div>`).join(''));
+                    if (L.some(x => x.b.days === 0)) confetti('orea_bday_p_' + today());
+                } catch (e) { console.warn('anniversaire parent :', e); }
+            })();
+            return r;
+        };
+        window.homeView.__q = true;
     }
 
     const origDetail = window.childDetail;
