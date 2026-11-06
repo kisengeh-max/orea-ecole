@@ -118,7 +118,7 @@
                     const L = lvl(S.cls), B = [];
                     if (L === 'maternelle' || L === 'primaire') B.push(['qSorties()', '🚸 Sorties']);
                     if (L === 'maternelle') B.push(['qLiaison()', '📒 Liaison']);
-                    if (isDir()) B.push(['qIdent()', '👦👧 Sexe & naissances']);
+                    if (isDir()) B.push(['qIdent()', '👦👧 Fiches élèves']);
                     if (B.length) h += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 8px">${B.map(b => `<button class=ghost style="width:auto" onclick="${b[0]}">${b[1]}</button>`).join('')}</div>`;
                 } catch (_) { }
                 return h;
@@ -127,12 +127,12 @@
         }
 
         // ----- Saisie rapide : sexe et date de naissance de toute la classe -----
-        window.qIdent = function () {
+        window.qIdent = function () {   // sexe, naissance, nouveau / ancien, redoublant
             const cls = (S.classes || []).find(c => c.id === S.cls); if (!cls) return;
             const L = (S.stu || []).filter(s => s.class_id === cls.id).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
             if (!L.length) return say('Aucun élève dans cette classe.');
             const miss = () => L.filter(s => !s.sexe || !s.date_naissance).length;
-            const d = show(`<h3>👦👧 ${E(cls.name)}</h3><small id=qim>${miss()} élève(s) à compléter · chaque changement est enregistré tout de suite</small><div style="max-height:62vh;overflow-y:auto">${L.map(s => `<div class="card col" data-st="${s.id}" style="gap:6px"><b>${E(s.name)}</b><div class=row style="align-items:center"><button type=button class="chip ${s.sexe === 'M' ? 'on' : ''}" data-sx="M" style="width:auto">M</button><button type=button class="chip ${s.sexe === 'F' ? 'on' : ''}" data-sx="F" style="width:auto">F</button><input type=date data-dn value="${E(s.date_naissance || '')}" max="${today()}" style="flex:1;margin:0"></div></div>`).join('')}</div><button class=ghost id=qix>Fermer</button>`);
+            const d = show(`<h3>👦👧 ${E(cls.name)}</h3><small id=qim>${miss()} élève(s) à compléter · chaque changement est enregistré tout de suite</small><div style="max-height:62vh;overflow-y:auto">${L.map(s => `<div class="card col" data-st="${s.id}" style="gap:6px"><b>${E(s.name)}</b><div class=row style="align-items:center"><button type=button class="chip ${s.sexe === 'M' ? 'on' : ''}" data-sx="M" style="width:auto">M</button><button type=button class="chip ${s.sexe === 'F' ? 'on' : ''}" data-sx="F" style="width:auto">F</button><input type=date data-dn value="${E(s.date_naissance || '')}" max="${today()}" style="flex:1;margin:0"></div><div class=row style="align-items:center"><button type=button class="chip ${s.inscription === 'nouveau' ? 'on' : ''}" data-in="nouveau" style="width:auto">Nouveau</button><button type=button class="chip ${s.inscription === 'ancien' ? 'on' : ''}" data-in="ancien" style="width:auto">Ancien</button><button type=button class="chip ${s.redoublant ? 'on' : ''}" data-rd style="width:auto">Redoublant</button></div></div>`).join('')}</div><button class=ghost id=qix>Fermer</button>`);
             const save = async (row, patch) => {
                 const id = row.dataset.st, s = stu(id);
                 const { error } = await db.from('students').update(patch).eq('id', id);
@@ -142,6 +142,8 @@
             };
             d.querySelectorAll('[data-st]').forEach(row => {
                 row.querySelectorAll('[data-sx]').forEach(b => b.onclick = () => { row.querySelectorAll('[data-sx]').forEach(x => x.classList.toggle('on', x === b)); save(row, { sexe: b.dataset.sx }); });
+                row.querySelectorAll('[data-in]').forEach(b => b.onclick = () => { const on = !b.classList.contains('on'); row.querySelectorAll('[data-in]').forEach(x => x.classList.toggle('on', on && x === b)); save(row, { inscription: on ? b.dataset.in : null }); });
+                const rd = row.querySelector('[data-rd]'); rd.onclick = () => { const on = !rd.classList.contains('on'); rd.classList.toggle('on', on); save(row, { redoublant: on }); };
                 const inp = row.querySelector('[data-dn]');
                 inp.onchange = () => { if (inp.value && inp.value > today()) return say('Date dans le futur.'); save(row, { date_naissance: inp.value || null }); };
             });

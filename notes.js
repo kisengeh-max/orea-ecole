@@ -288,6 +288,13 @@ async function cotSave() {
         if (up.length) { const { error } = await db.from('grades').upsert(up, { onConflict: 'student_id,class_id,subject_id,term,kind,num' }); if (error) throw error; }
         if (del.length) { const { error } = await db.from('grades').delete().in('id', del); if (error) throw error; }
     } catch (x) {
+        // v81 : pas de réseau pendant la saisie -> les cotes restent sur le téléphone et partent toutes seules
+        if (!navigator.onLine || (typeof isNet === 'function' && isNet(x))) {
+            gqAdd({ up, del });
+            S.avgKey = null; S.bulKey = null;
+            toast(`📶 Pas de réseau : ${up.length} cote(s) gardée(s) sur le téléphone. Envoi automatique dès le retour du réseau.`);
+            S.cotEval = null; return cotBack();
+        }
         if (btn) { btn.disabled = false; btn.textContent = '💾 Enregistrer'; }
         return toast(x.message || 'Erreur d’enregistrement');
     }
@@ -464,3 +471,32 @@ function stuCotesSubject(sid) {
     }).join('');
     show(`<h3>${esc(name)}</h3><div style="max-height:55vh;overflow-y:auto">${body}</div><div class=row><button class=ghost onclick="stuCotesGrid()">← Cours</button><button class=ghost onclick="this.closest('dialog').close()">Fermer</button></div>`);
 }
+
+
+// ---------- v81 : file d'attente des cotes saisies sans réseau ----------
+const gqKey = () => 'orea_gq_' + ((typeof S !== 'undefined' && S.me && S.me.id) || '');
+function gqGet() { try { return JSON.parse(localStorage.getItem(gqKey()) || '[]'); } catch (_) { return []; } }
+function gqSet(q) { try { localStorage.setItem(gqKey(), JSON.stringify(q)); } catch (_) { } }
+function gqAdd(x) { const q = gqGet(); q.push(Object.assign({ at: Date.now() }, x)); gqSet(q); }
+let gqBusy = false;
+async function gqSync() {
+    if (gqBusy || !navigator.onLine || typeof S === 'undefined' || !S.me) return;
+    const q = gqGet(); if (!q.length) return;
+    gqBusy = true;
+    let sent = 0; const rest = [];
+    for (const it of q) {
+        try {
+            if (it.up && it.up.length) { const { error } = await db.from('grades').upsert(it.up, { onConflict: 'student_id,class_id,subject_id,term,kind,num' }); if (error) throw error; }
+            if (it.del && it.del.length) { const { error } = await db.from('grades').delete().in('id', it.del); if (error) throw error; }
+            sent += (it.up || []).length;
+        } catch (e) {
+            if (typeof isNet === 'function' && isNet(e)) rest.push(it);          // toujours pas de réseau : on réessaiera
+            else toast('Cotes non envoyées : ' + (e.message || 'refusées par le serveur'));
+        }
+    }
+    gqSet(rest); gqBusy = false;
+    if (sent) { S.avgKey = null; S.bulKey = null; toast(`✓ ${sent} cote(s) envoyée(s) après le retour du réseau`); }
+}
+window.addEventListener('online', () => setTimeout(gqSync, 1500));
+setInterval(gqSync, 60000);
+setTimeout(gqSync, 8000);
