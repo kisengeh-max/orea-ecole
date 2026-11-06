@@ -578,7 +578,7 @@ function setupView() {
 function render() {
     $('#nav').hidden = false; subBanner();
     const R = S.me.role, tabs = [['accueil', 'Accueil'], ['eleves', 'École'], ['menu', 'Menu'], ['reglages', 'Réglages']];
-    const SUB = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'cotation', 'bulletins', 'finance_home', 'programme_home', 'donnees_home', 'perception'];
+    const SUB = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'cotation', 'bulletins', 'finance_home', 'programme_home', 'donnees_home', 'perception', 'stats', 'enafep'];
     if (!tabs.some(x => x[0] === S.tab) && !SUB.includes(S.tab)) S.tab = 'accueil';
     let activeTab = ['cotation', 'bulletins'].includes(S.tab) ? 'eleves' : SUB.includes(S.tab) ? 'menu' : S.tab;
     $('#nav').innerHTML = tabs.map(x => `<button data-t=${x[0]}>${svgI(x[0])}<span>${x[1]}</span></button>`).join('');
