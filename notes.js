@@ -59,7 +59,7 @@ async function cotSubjects() {
 // ---------- VÉRIFICATION DES DROITS (NOUVEAU) ----------
 // Vérifie si l'utilisateur actuel peut modifier une note pour ce cours
 async function canEditSubject(subjectId) {
-    if (S.me.role === 'directeur') return true; // Le directeur peut tout modifier (mais ça passe en 'pending')
+    if (S.me.role === 'directeur') return !S.me.secretariat; // La direction peut tout modifier (en 'pending') ; le secrétariat consulte seulement
     
     // Pour un enseignant, on vérifie s'il a ce cours attribué
     const { data } = await db.from('teacher_subjects')
@@ -76,7 +76,7 @@ async function canEditSubject(subjectId) {
 // ---------- Gérer les cours d'une classe (création des cours + rattachement à la classe) ----------
 // NB : manageClassCourses() était appelée par les boutons « Gérer les cours de cette classe » mais n'était définie nulle part.
 async function manageClassCourses() {
-    if (S.me.role !== 'directeur') return toast('Seule la direction gère les cours de la classe.');
+    if (S.me.role !== 'directeur' || S.me.secretariat) return toast('Seule la direction pédagogique gère les cours de la classe.');
     const c = cotCls(); if (!c) return;
     let d = show(`<h3>Cours · ${esc(c.name)}</h3>${SK}`);
     const [sj, cs] = await Promise.all([

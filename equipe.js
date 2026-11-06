@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v74 — equipe.js (Directeur des études, titres Préfet / Directeur)
+   ORÉA École v83 — equipe.js (onglets Personnel / Parents, recherche, Secrétariat)
    Module de gestion de l'équipe (direction).
    - Le chef d'établissement (Préfet / Directeur) nomme : percepteurs, Directeur des études.
    - Le Directeur des études gère les cours, mais pas les nominations ni l'argent.
@@ -23,82 +23,108 @@
         const w = fn(o); w.__eq = true; window[name] = w;
     };
 
-    // Remplacer la fonction team() de app.js par la nouvelle
-    window.team = async function () {
+    // Équipe & Cours (v83) : deux onglets — Personnel / Parents — avec recherche
+    const TEAM = { tab: 'staff', q: '', pq: '', poff: 0, prows: [], ptotal: null, timer: null };
+    window.team = async function (tab) {
         if (S.me.role !== 'directeur') return toast('Accès réservé à la direction.');
-        const FIN = typeof fin === 'function' ? fin() : !S.me.etudes;
+        if (tab) TEAM.tab = tab;
+        const FIN = typeof fin === 'function' ? fin() : (!S.me.etudes && !S.me.secretariat);
+        const SEC = !!S.me.secretariat;
         const ttl = p => typeof roleTitle === 'function' ? roleTitle(p) : p.role;
         const deOK = ['secondaire', 'complexe'].includes((S.school && S.school.school_type) || 'secondaire');
-        
+
         const { data, error } = await db.from('profiles').select('*').eq('school_id', S.school.id).order('full_name');
         if (error) return toast(error.message);
-        
-        const l = data || [];
-        
+        const staff = (data || []).filter(p => p.role !== 'parent');
+
         const d = show(`<h3>Équipe & Cours</h3>
-            <div class="card col" style="margin-bottom:15px">
+            <div class="card col" style="margin-bottom:10px">
                 <small>Code d'invitation de l'école : <b>${esc(S.school.code)}</b></small>
-                <small>Partagez ce code pour que les enseignants rejoignent l'école.</small>
+                <small>Partagez ce code pour que le personnel rejoigne l'école.</small>
             </div>
-            <div style="max-height:60vh;overflow-y:auto">
-                ${l.map(p => {
-                    const isMe = p.id === S.me.id;
-                    const isPercepteur = p.role === 'percepteur';
-                    const isEnseignant = p.role === 'enseignant';
-                    const isDE = p.role === 'directeur' && !!p.etudes;
-                    const isHead = p.role === 'directeur' && !p.etudes;
-                    const bs = 'width:auto;flex:1;padding:6px;min-height:36px;font-size:12px';
-                    return `
-                    <div class="card col" style="margin-bottom:10px; ${isMe ? 'border-color:var(--gold)' : ''}">
-                        <div style="display:flex;justify-content:space-between;align-items:flex-start">
-                            <b>${esc(p.full_name)} ${isMe ? '(Moi)' : ''}</b>
-                            <span class="chip ${p.active === false ? 'due' : 'ok'}" style="padding:2px 8px;min-height:0;font-size:11px">${p.active === false ? 'Désactivé' : 'Actif'}</span>
-                        </div>
-                        <small>Rôle : <b style="color:var(--gold)">${esc(ttl(p))}${isDE && p.collector ? ' · Percepteur' : ''}</b></small>
-                        
-                        ${!isMe && !isHead ? `
-                        <div class="row" style="margin-top:8px;flex-wrap:wrap">
-                            ${FIN && deOK && (isEnseignant || isPercepteur) ? `
-                                <button class="ghost" style="${bs}" onclick="setEtudes('${p.id}', true)">🎓 Nommer Directeur des études</button>
-                            ` : ''}
-                            ${FIN && isDE ? `
-                                <button class="ghost" style="${bs}" onclick="setEtudes('${p.id}', false)">❌ Retirer Directeur des études</button>
-                                <button class="ghost" style="${bs}" onclick="toggleCollector('${p.id}', ${!!p.collector})">${p.collector ? '❌ Retirer Percepteur' : '💰 Nommer aussi Percepteur'}</button>
-                            ` : ''}
-                            ${FIN && (isEnseignant || isPercepteur) ? `
-                                <button class="ghost" style="width:auto;flex:1;padding:6px;min-height:36px;font-size:12px" onclick="toggleRole('${p.id}', '${p.role}')">
-                                    ${isPercepteur ? '❌ Retirer Percepteur' : '💰 Nommer Percepteur'}
-                                </button>
-                            ` : ''}
-                            ${isEnseignant || isPercepteur || isDE ? `
-                                <button class="ghost" style="width:auto;flex:1;padding:6px;min-height:36px;font-size:12px" data-mtc="${p.id}">
-                                    📚 Gérer les cours
-                                </button>
-                            ` : ''}
-                            ${FIN && (isPercepteur || (isDE && p.collector)) ? `
-                                <button class="ghost" style="width:auto;flex:1;padding:6px;min-height:36px;font-size:12px" data-pcl="${p.id}">
-                                    🏫 Classes à percevoir
-                                </button>
-                            ` : ''}
-                            ${FIN || !isDE ? `<button class="ghost" style="width:auto;padding:6px 12px;min-height:36px;font-size:12px;color:${p.active === false ? 'var(--ok)' : 'var(--bad)'}" onclick="toggleActive('${p.id}', ${p.active})">
-                                ${p.active === false ? 'Réactiver' : 'Désactiver'}
-                            </button>` : ''}
-                        </div>
-                        ` : ''}
-                    </div>
-                    `;
-                }).join('')}
+            <div class="row" style="margin-bottom:8px">
+                <button type="button" class="chip ${TEAM.tab === 'staff' ? 'on' : ''}" data-tb="staff" style="flex:1">Personnel · ${staff.length}</button>
+                <button type="button" class="chip ${TEAM.tab === 'parents' ? 'on' : ''}" data-tb="parents" style="flex:1">Parents · <span id="tm-pn">${TEAM.ptotal == null ? '…' : TEAM.ptotal}</span></button>
             </div>
-            <button class="ghost" style="margin-top:15px" onclick="this.closest('dialog').close()">Fermer</button>
-        `);
-        d.querySelectorAll('[data-mtc]').forEach(b => b.onclick = () => {
-            const p = l.find(x => x.id === b.dataset.mtc);
-            if (p) manageTeacherCourses(p.id, p.full_name);
-        });
-        d.querySelectorAll('[data-pcl]').forEach(b => b.onclick = () => {
-            const p = l.find(x => x.id === b.dataset.pcl);
-            if (p) manageCollectorClasses(p.id, p.full_name);
-        });
+            <input id="tm-q" type="search" autocomplete="off" style="margin-bottom:8px">
+            <div id="tm-list" style="max-height:56vh;overflow-y:auto"></div>
+            <button class="ghost" style="margin-top:12px" onclick="this.closest('dialog').close()">Fermer</button>`);
+        const q = d.querySelector('#tm-q'), box = d.querySelector('#tm-list');
+        const bs = 'width:auto;flex:1;padding:6px;min-height:36px;font-size:12px';
+
+        function drawStaff() {
+            q.placeholder = '🔍 Rechercher : nom ou fonction';
+            const f = TEAM.q.toLowerCase();
+            const L = staff.filter(p => !f || (p.full_name || '').toLowerCase().includes(f) || ttl(p).toLowerCase().includes(f));
+            box.innerHTML = L.length ? L.map(p => {
+                const isMe = p.id === S.me.id, isPercepteur = p.role === 'percepteur', isEnseignant = p.role === 'enseignant';
+                const isDE = p.role === 'directeur' && !!p.etudes, isSec = p.role === 'directeur' && !!p.secretariat;
+                const isHead = p.role === 'directeur' && !p.etudes && !p.secretariat;
+                return `<div class="card col" style="margin-bottom:10px;${isMe ? 'border-color:var(--gold)' : ''}">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start"><b>${esc(p.full_name)} ${isMe ? '(Moi)' : ''}</b>
+                    <span class="chip ${p.active === false ? 'due' : 'ok'}" style="padding:2px 8px;min-height:0;font-size:11px">${p.active === false ? 'Désactivé' : 'Actif'}</span></div>
+                    <small>Fonction : <b style="color:var(--gold)">${esc(ttl(p))}${(isDE || isSec) && p.collector ? ' · Percepteur' : ''}</b></small>
+                    ${!isMe && !isHead ? `<div class="row" style="margin-top:8px;flex-wrap:wrap">
+                        ${FIN && deOK && (isEnseignant || isPercepteur) ? `<button class="ghost" style="${bs}" onclick="setEtudes('${p.id}', true)">🎓 Nommer Directeur des études</button>` : ''}
+                        ${FIN && (isEnseignant || isPercepteur) ? `<button class="ghost" style="${bs}" onclick="setSecr('${p.id}', true)">📋 Nommer Secrétariat</button>` : ''}
+                        ${FIN && isDE ? `<button class="ghost" style="${bs}" onclick="setEtudes('${p.id}', false)">❌ Retirer Directeur des études</button>` : ''}
+                        ${FIN && isSec ? `<button class="ghost" style="${bs}" onclick="setSecr('${p.id}', false)">❌ Retirer Secrétariat</button>` : ''}
+                        ${FIN && (isDE || isSec) ? `<button class="ghost" style="${bs}" onclick="toggleCollector('${p.id}', ${!!p.collector})">${p.collector ? '❌ Retirer Percepteur' : '💰 Nommer aussi Percepteur'}</button>` : ''}
+                        ${FIN && (isEnseignant || isPercepteur) ? `<button class="ghost" style="${bs}" onclick="toggleRole('${p.id}', '${p.role}')">${isPercepteur ? '❌ Retirer Percepteur' : '💰 Nommer Percepteur'}</button>` : ''}
+                        ${!SEC && (isEnseignant || isPercepteur || isDE) ? `<button class="ghost" style="${bs}" data-mtc="${p.id}">📚 Gérer les cours</button>` : ''}
+                        ${FIN && (isPercepteur || ((isDE || isSec) && p.collector)) ? `<button class="ghost" style="${bs}" data-pcl="${p.id}">🏫 Classes à percevoir</button>` : ''}
+                        ${FIN || (!SEC && !isDE && !isSec) ? `<button class="ghost" style="width:auto;padding:6px 12px;min-height:36px;font-size:12px;color:${p.active === false ? 'var(--ok)' : 'var(--bad)'}" onclick="toggleActive('${p.id}', ${p.active})">${p.active === false ? 'Réactiver' : 'Désactiver'}</button>` : ''}
+                    </div>` : ''}
+                </div>`;
+            }).join('') : '<p class="empty">Aucun résultat.</p>';
+            box.querySelectorAll('[data-mtc]').forEach(b => b.onclick = () => { const p = staff.find(x => x.id === b.dataset.mtc); if (p) manageTeacherCourses(p.id, p.full_name); });
+            box.querySelectorAll('[data-pcl]').forEach(b => b.onclick = () => { const p = staff.find(x => x.id === b.dataset.pcl); if (p) manageCollectorClasses(p.id, p.full_name); });
+        }
+
+        async function loadParents(more) {
+            if (!more) { TEAM.poff = 0; TEAM.prows = []; box.innerHTML = '<p class="empty">Chargement…</p>'; }
+            const { data: r, error: e } = await db.rpc('v130_parents', { p_q: TEAM.pq || null, p_offset: TEAM.poff, p_limit: 30 });
+            if (e) { box.innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
+            TEAM.prows = TEAM.prows.concat(r.rows || []); TEAM.poff = TEAM.prows.length;
+            if (!TEAM.pq) { TEAM.ptotal = r.total; const n = d.querySelector('#tm-pn'); if (n) n.textContent = r.total; }
+            if (TEAM.tab !== 'parents') return;
+            const ago = t => { if (!t) return 'jamais connecté'; const j = Math.floor((Date.now() - new Date(t)) / 864e5); return j <= 0 ? 'vu aujourd’hui' : j === 1 ? 'vu hier' : 'vu il y a ' + j + ' j'; };
+            box.innerHTML = (TEAM.prows.length ? `<small style="display:block;margin-bottom:6px">${r.total} parent(s)${TEAM.pq ? ' trouvé(s)' : ''}</small>` + TEAM.prows.map(p => `<div class="card col" style="margin-bottom:10px">
+                    <div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(p.name)}</b><small>${ago(p.last_seen)}</small></div>
+                    ${p.contact ? `<small>${esc(p.contact)}</small>` : ''}
+                    <small>👧 ${(p.kids || []).map(k => esc(k.name) + (k.class ? ' · ' + esc(k.class) : '')).join(' — ')}</small>
+                    <div class="row" style="margin-top:6px"><button class="ghost" style="${bs};color:var(--bad)" data-rv="${p.id}">Retirer l’accès</button></div>
+                </div>`).join('') : `<p class="empty">${TEAM.pq ? 'Aucun parent trouvé.' : 'Aucun parent n’a encore de compte.'}</p>`)
+                + (TEAM.prows.length < r.total ? '<button class="ghost" id="tm-more" style="width:100%">Voir plus</button>' : '');
+            const m = box.querySelector('#tm-more'); if (m) m.onclick = () => { m.disabled = true; loadParents(true); };
+            box.querySelectorAll('[data-rv]').forEach(b => b.onclick = async () => {
+                const p = TEAM.prows.find(x => x.id === b.dataset.rv);
+                if (!confirm(`Retirer l’accès de ${p ? p.name : 'ce parent'} ?\nIl ne verra plus ses enfants dans l’application (il pourra être relié à nouveau avec un code parent).`)) return;
+                const { error: e2 } = await db.rpc('v130_revoke_parent', { p_parent: b.dataset.rv });
+                if (e2) return toast(e2.message);
+                toast('Accès retiré ✓'); TEAM.ptotal = null; loadParents();
+            });
+        }
+        function drawParents() { q.placeholder = '🔍 Rechercher : parent, téléphone ou élève'; loadParents(); }
+        const draw = () => { q.value = TEAM.tab === 'staff' ? TEAM.q : TEAM.pq; TEAM.tab === 'staff' ? drawStaff() : drawParents(); };
+        d.querySelectorAll('[data-tb]').forEach(b => b.onclick = () => { TEAM.tab = b.dataset.tb; d.querySelectorAll('[data-tb]').forEach(x => x.classList.toggle('on', x === b)); draw(); });
+        q.oninput = () => {
+            if (TEAM.tab === 'staff') { TEAM.q = q.value.trim(); return drawStaff(); }
+            clearTimeout(TEAM.timer); TEAM.timer = setTimeout(() => { TEAM.pq = q.value.trim(); loadParents(); }, 350);
+        };
+        draw();
+        if (TEAM.tab === 'staff' && TEAM.ptotal == null) db.rpc('v130_parents', { p_q: null, p_offset: 0, p_limit: 1 }).then(({ data: r }) => { if (r) { TEAM.ptotal = r.total; const n = d.querySelector('#tm-pn'); if (n) n.textContent = r.total; } });
+    };
+
+    // Secrétariat (tous les niveaux) : nommé / retiré par le chef d'établissement
+    window.setSecr = async function (id, on) {
+        if (!confirm(on ? 'Nommer cette personne au Secrétariat ?\nElle pourra gérer les élèves, les classes, les fiches, les présences, les annonces et les messages aux parents. Elle consultera les cotes sans les modifier, et n’aura accès ni à l’argent ni aux nominations.' : 'Retirer le rôle de Secrétariat ? La personne redevient enseignant.')) return;
+        const p = on ? { role: 'directeur', secretariat: true, etudes: false, collector: false } : { role: 'enseignant', secretariat: false, collector: false };
+        const { error } = await db.from('profiles').update(p).eq('id', id);
+        if (error) return toast(error.message);
+        if (!on) await db.from('collector_classes').delete().eq('collector_id', id);
+        toast(on ? 'Secrétariat nommé ✓' : 'Rôle retiré ✓');
+        team('staff');
     };
 
     // Changer le rôle (enseignant <-> percepteur)
@@ -119,7 +145,7 @@
     // Directeur des études (secondaire et complexe) : nommé / retiré par le chef d'établissement
     window.setEtudes = async function (id, on) {
         const p = on
-            ? { role: 'directeur', etudes: true, collector: false }
+            ? { role: 'directeur', etudes: true, secretariat: false, collector: false }
             : { role: 'enseignant', etudes: false, collector: false };
         if (!confirm(on ? 'Nommer cette personne Directeur des études ?\nElle pourra tout gérer (élèves, classes, cotes, horaires, annonces…) sauf l’argent et les nominations.' : 'Retirer le rôle de Directeur des études ? La personne redevient enseignant.')) return;
         const { error } = await db.from('profiles').update(p).eq('id', id);

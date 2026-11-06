@@ -26,19 +26,22 @@ document.documentElement.dataset.theme = localStorage.theme || 'dark';
 //   isCol() = percepteur, ou Directeur des études nommé percepteur (encaisse dans ses classes)
 //   money() = peut voir des montants (soldes, frais)
 const dir = () => S.me.role === 'directeur';
-const fin = () => !!(S.me && S.me.role === 'directeur' && !S.me.etudes);
+const fin = () => !!(S.me && S.me.role === 'directeur' && !S.me.etudes && !S.me.secretariat);
+// v83 : Secrétariat = rôle directeur + marque secretariat (élèves, documents, présences ; pas l'argent ni la pédagogie)
+const secr = () => !!(S.me && S.me.role === 'directeur' && S.me.secretariat);
 // Le percepteur est un enseignant qui encaisse en plus, uniquement dans les classes qui lui sont confiées
-const isCol = () => !!(S.me && (S.me.role === 'percepteur' || (S.me.role === 'directeur' && S.me.etudes && S.me.collector)));
+const isCol = () => !!(S.me && (S.me.role === 'percepteur' || (S.me.role === 'directeur' && (S.me.etudes || S.me.secretariat) && S.me.collector)));
 const canCollect = () => !!S.me && (fin() || isCol());
 const money = () => !!S.me && (fin() || isCol());
 const isTeach = () => !!(S.me && ['enseignant', 'percepteur'].includes(S.me.role));
 const colOK = cid => fin() || (isCol() && !!(S.myCls && S.myCls.has(cid)));
 // Rôle « financier » : le Directeur des études est vu comme un enseignant (ou un percepteur s'il encaisse)
-const fRole = () => (S.me && S.me.role === 'directeur' && S.me.etudes) ? (S.me.collector ? 'percepteur' : 'enseignant') : S.me.role;
+const fRole = () => (S.me && S.me.role === 'directeur' && (S.me.etudes || S.me.secretariat)) ? (S.me.collector ? 'percepteur' : 'enseignant') : S.me.role;
 // Titres affichés : Préfet (secondaire, complexe) · Directeur (primaire, maternelle) · Directeur des études
 const schoolKind = () => (S.school && S.school.school_type) || 'secondaire';
 const roleTitle = p => {
     if (!p) return '';
+    if (p.role === 'directeur' && p.secretariat) return 'Secrétariat';
     if (p.role === 'directeur') return p.etudes ? 'Directeur des études' : (['primaire', 'maternelle'].includes(schoolKind()) ? 'Directeur' : 'Préfet');
     return { percepteur: 'Percepteur', enseignant: 'Enseignant', parent: 'Parent' }[p.role] || p.role || '';
 };
@@ -1279,6 +1282,7 @@ async function sanc(id) {
 // Décision du directeur sur une proposition (avertissement / sanction -> enregistrée et parents prévenus ; signalement -> interne)
 async function decideReq(r, ok) {
     if (!r) return;
+    if (secr()) return toast('Les décisions de sanction sont réservées à la direction pédagogique.');
     let note = null;
     if (!ok) { note = prompt('Motif du refus (facultatif) :') || null; }
     if (ok && !isSig(r.kind)) {
@@ -2396,7 +2400,7 @@ const _vAccueil1 = vAccueil;
 vAccueil = async function () {
     const r = await _vAccueil1.apply(this, arguments);
     try { if (isTeach() && S.tab === 'accueil') drawMyDay(); } catch (_) { }
-    try { if (dir() && S.tab === 'accueil') sancHome(); } catch (_) { }
+    try { if (dir() && !secr() && S.tab === 'accueil') sancHome(); } catch (_) { }
     return r;
 };
 

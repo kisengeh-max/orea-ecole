@@ -6,19 +6,19 @@
    ===================================================================== */
 (function () {
     'use strict';
-    const LIVRAISON = 'v82 · 06/11/2026';
+    const LIVRAISON = 'v83 · 06/11/2026';
     const FILES = {
-        "index.html": "986c69197c87385aa7a5836f2c25f6a51b00a6f49dc252740b4ac7f37e43a628",
+        "index.html": "d0766ebe53d48eb6818ddd46ff96f80094547764cfd99868d1bef8d07d051b50",
         "parent.html": "6f9e450d6b2d969c2e0832313666a011318c39ce60bcdac32719b074052630d2",
-        "sw.js": "c093f3ba586bfbc7aa787e56ce180d4c7f66a91afd2f2f55ca37beedb79d7c2b",
-        "app.js": "72f3897476b404691f66723536c334ae060cefa00d176f80b6740c261ca76c7d",
-        "equipe.js": "149237f01167aad61a79af92ebe76b0758d665e3d14f9248a00918a00302bcef",
-        "timetable.js": "e91b643442ddb6280e12e7d9afdb2af436bead51946cf1598f91147d7bd858a5",
+        "sw.js": "7fd56667f1cce9eceb2f15ae18288f51ef5fb9a9ac162a09fd15ed7fbd7d7677",
+        "app.js": "e06fedc5a38c331b70e3d9b7d57a1c8f3fd37fecbb528b20912a08c2980269d9",
+        "equipe.js": "67a2d76dca407a6f673122ede923b22f6bdf6faa43ce66f4e35f95ee143352fe",
+        "timetable.js": "9377fa445308a300b67ebed9be8576c04596908537c1c8ac075907880412775d",
         "finance.js": "fa9823a07d98229905c7ffa568999226800ae806e39f302ee363591eab2cb7b6",
         "announcements.js": "a4e26ad07be6866df9eb5a57638b0eca7c54a6eff6b9989c401bcdeb0184c062",
         "messages.js": "a726359da88a224f8b59e7f6373cde0462b23dc5108220bee2be1c9a3491bf94",
         "reminders.js": "5f016523e930d2b8cb7e98608d07baa3abd1b23d833840aa1def77231fa041bf",
-        "notes.js": "e867c68a935b7e74c08c61713635f85828ab8ca41a97757b0325e052095c8ac5",
+        "notes.js": "86c0909904e88af921acc18871b084685d9f8087c32b336ff397e523244cd427",
         "bulletins.js": "f766566048aecfb1717e16b3406ab3ced64dbe5c18c1d56561378f62e09e017b",
         "ambassadeur.js": "713a86f600a64e98f5c1c397d29ca5aeedb521609db67cab22b4ca34b34a7845",
         "parent.js": "1285401df525a458cf3e86d7cb8da5bc7175159f3a66f1e9211484aedbd85b51",

@@ -89,7 +89,7 @@
     const MODEL = '__model';
     const STD = [['06:30', '07:00', 'Arrivée à l’école', 0], ['07:00', '07:50', 'Cours 1', 0], ['07:50', '08:40', 'Cours 2', 0], ['08:40', '09:30', 'Cours 3', 0], ['09:30', '10:20', 'Cours 4', 0], ['10:20', '10:35', 'RÉCRÉATION', 1], ['10:35', '11:25', 'Cours 5', 0], ['11:25', '12:15', 'Cours 6', 0], ['12:15', '12:15', 'FIN', 1]];
     const tbl = () => TT.model ? 'timetable_model' : 'timetable';
-    const canEdit = () => typeof S !== 'undefined' && S.me && S.me.role === 'directeur';
+    const canEdit = () => typeof S !== 'undefined' && S.me && S.me.role === 'directeur' && !S.me.secretariat;
     // v74 : niveau de la classe (le modèle par défaut et l'horaire standard concernent le secondaire)
     const clsLevel = id => ((S.classes || []).find(c => c.id === (id || S.cls)) || {}).level || 'secondaire';
     const LVL = { primaire: 'du primaire', maternelle: 'de la maternelle' };
