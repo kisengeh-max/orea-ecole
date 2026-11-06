@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v84 — bureau.css : version ORDINATEUR (écrans ≥ 1024 px)
+   ORÉA École v85 — bureau.css : version ORDINATEUR (écrans ≥ 1024 px)
    Chargé avec media="(min-width:1024px)" : sans aucun effet sur téléphone.
    Même identité « Prestige Royal » : noir chaud + or champagne.
    Structure : menu latéral fixe · barre du haut · contenu large en colonnes.
@@ -84,3 +84,25 @@ body.desk #exb{margin-left:0}
   body.desk.tab-grid main{grid-template-columns:repeat(4,minmax(0,1fr))}
   body.desk.tab-eleves #lst{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
+
+/* =====================================================================
+   v85 — Panneaux côte à côte
+   ===================================================================== */
+/* École : la fiche de l'élève s'ouvre à droite, la liste reste visible */
+body.desk dialog#dlg.side{position:fixed;inset:78px 0 0 auto;margin:0;width:440px;max-width:none;height:auto;max-height:none;
+  border-radius:0;border-width:0 0 0 1px;padding:26px 26px 40px;animation:deskSide .24s cubic-bezier(.2,.7,.2,1)}
+body.desk dialog#dlg.side::backdrop{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
+body.desk.side-open main{padding-right:480px;max-width:none}
+@keyframes deskSide{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:none}}
+body.desk.side-open #lst .card.sel{border-color:var(--gold);background:rgba(199,163,75,.08)}
+
+/* Messages : liste des conversations à gauche, discussion à droite */
+body.desk .om-ov.om-inbox{left:var(--side)!important;right:auto!important;width:380px!important;border-right:1px solid var(--line)}
+body.desk .om-ov.om-chat{left:calc(var(--side) + 380px)!important;right:0!important;width:auto!important}
+body.desk.om-inbox-open main{opacity:.35;pointer-events:none}
+
+/* Tableaux triables */
+body.desk #main table th{cursor:pointer;user-select:none;white-space:nowrap}
+body.desk #main table th:hover{color:var(--gold)}
+body.desk #main table th[data-sort]::after{content:attr(data-sort);margin-left:6px;color:var(--gold);font-size:11px}
+body.desk #main table tr:hover td{background:rgba(199,163,75,.05)}

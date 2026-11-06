@@ -6,11 +6,11 @@
    ===================================================================== */
 (function () {
     'use strict';
-    const LIVRAISON = 'v84 · 06/11/2026';
+    const LIVRAISON = 'v85 · 06/11/2026';
     const FILES = {
-        "index.html": "02674e6ba9690e7949688bca0c2c163619f5d4e1a84d0cdb84347cd89fedde43",
+        "index.html": "aacbb770a67d1a969a971646eb859a76eb879dd5578258abe1de75b77479183a",
         "parent.html": "6f9e450d6b2d969c2e0832313666a011318c39ce60bcdac32719b074052630d2",
-        "sw.js": "0f7943d37a055ac50e697869f6e3cddff631b7a317b2550baf71544d4e98daae",
+        "sw.js": "03ca7bed66cb1b8346b3f07484b49e175dd783d67a6744153df67b62fe9b5f43",
         "app.js": "b9c583118dc768a2a3faabf8b48fbaae2aa4705d760414974129765d16690217",
         "equipe.js": "67a2d76dca407a6f673122ede923b22f6bdf6faa43ce66f4e35f95ee143352fe",
         "timetable.js": "9377fa445308a300b67ebed9be8576c04596908537c1c8ac075907880412775d",
@@ -31,8 +31,8 @@
         "stats.js": "d00b33b3aaf59018711db143525f590e59f113d08aecda07f259b4f1153ce198",
         "enafep.js": "6a10ee7d964bd61315ef88c8eb8921196e524f579161e85e1551be08d1030080",
         "ui.js": "2065291bc29b3d23e74e91840ec68b1e0e313cc9c1d65355e89e67193940444b",
-        "bureau.js": "bd04dd6661fb4bf6abed0173909cae6f43272324e4e7fb221a4c61f03da245d2",
-        "bureau.css": "6a8fd8a0ec1b2008b804cee2a7d730961ed37225291edd0efab4e5f47943cd13"
+        "bureau.js": "28272dfdbd6a9f2415bc6b0dda9d8f7eda3255575d609c08e0a379c926f70e46",
+        "bureau.css": "7577f7ccd1d385dbd9f50bf5ba8f265a9a15ee67e2596b42d80e5ad4002d35fc"
 };
 
     async function sha(buf) {
