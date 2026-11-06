@@ -219,37 +219,263 @@
   }
 
   /* =========================================================
-     BANQUE DE QUESTIONS (admin)
+     BANQUE DE QUESTIONS (v76) — banque ORÉA + banque de l'école
+     Ajout : formulaire · saisie rapide · Excel / Sheets · JSON (administrateur)
+     Explication OBLIGATOIRE, doublons refusés (contrôle dans la base : quiz_add)
      ========================================================= */
-  
-  function openBank() {
+  const BK = { admin: null, mats: [] };
+  const DIFF = [['1', '1 · Facile'], ['2', '2 · Moyen'], ['3', '3 · Difficile']];
+  const isStaffQ = () => typeof S !== 'undefined' && S.me && ['directeur', 'enseignant', 'percepteur'].includes(S.me.role);
+  const isDirQ = () => typeof S !== 'undefined' && S.me && S.me.role === 'directeur';
+  const back = () => `<button class="qz-btn-icon" onclick="OreaQuizUI.openBank()">←</button>`;
+  async function bankAdmin() {
+      if (BK.admin === null) { try { const { data } = await db.rpc('is_platform_admin'); BK.admin = !!data; } catch (_) { BK.admin = false; } }
+      return BK.admin;
+  }
+  // Réglages communs (niveau, matière, thème, difficulté)
+  function commonFields(p) {
+      p = p || {};
+      return `<label>Niveau</label><select id="qb-niv"><option value="secondaire" ${p.niveau_scolaire !== 'primaire' ? 'selected' : ''}>Secondaire</option><option value="primaire" ${p.niveau_scolaire === 'primaire' ? 'selected' : ''}>Primaire</option></select>
+          <label>Matière</label><input id="qb-mat" list="qb-mats" value="${esc(p.matiere || '')}" placeholder="Ex : Géographie"><datalist id="qb-mats">${BK.mats.map(m => `<option value="${esc(m)}">`).join('')}</datalist>
+          <label>Thème (facultatif)</label><input id="qb-th" value="${esc(p.theme || '')}" placeholder="Ex : Les fleuves de la RDC">
+          <label>Difficulté</label><select id="qb-dif">${DIFF.map(d => `<option value="${d[0]}" ${String(p.niveau_difficulte || '1') === d[0] ? 'selected' : ''}>${d[1]}</option>`).join('')}</select>`;
+  }
+  const readCommon = () => ({ niveau_scolaire: $('#qb-niv').value, matiere: $('#qb-mat').value.trim(), theme: $('#qb-th').value.trim(), niveau_difficulte: +$('#qb-dif').value });
+  const bankTarget = () => ($('#qb-bank') && $('#qb-bank').value) || 'ecole';
+  async function bankSelect() {
+      return (await bankAdmin()) ? `<label>Ajouter dans</label><select id="qb-bank"><option value="ecole">Banque de mon école</option><option value="commune">Banque ORÉA (toutes les écoles)</option></select>` : '';
+  }
+  async function sendRows(rows, dry, bank) {
+      const { data, error } = await db.rpc('quiz_add', { p_rows: rows, p_bank: bank || 'ecole', p_dry: !!dry });
+      if (error) throw error;
+      return data;
+  }
+  function resultHtml(res, rows) {
+      const ST = { ok: ['✓', 'var(--ok)'], doublon: ['⛔ Doublon', 'var(--bad)'], erreur: ['✗', 'var(--bad)'] };
+      return `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0">
+          <b>${res.dry ? 'Vérification' : 'Résultat'} : ${res.inserted} ${res.dry ? 'prête(s) à ajouter' : 'ajoutée(s)'} · ${res.duplicates} doublon(s) · ${res.errors} erreur(s)</b>
+          ${(res.rows || []).filter(r => r.status !== 'ok').map(r => `<div style="font-size:13px;margin-top:6px;color:${ST[r.status][1]}">N° ${r.i} · ${ST[r.status][0]} ${esc(r.msg || '')}<br><small style="color:var(--mut)">${esc(((rows[r.i - 1] || {}).question || '').slice(0, 90))}</small></div>`).join('')}
+      </div>`;
+  }
+
+  async function openBank() {
       showOverlay(`
-          <div class="qz-head">
-              <button class="qz-btn-icon" onclick="history.back()">←</button>
-              <b>Banque de questions</b>
-          </div>
+          <div class="qz-head"><button class="qz-btn-icon" onclick="history.back()">←</button><b>Banque de questions</b></div>
           <div class="qz-body" style="padding-bottom:0">
-              <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-                  <button class="ghost" style="flex:1" onclick="OreaQuizUI.openImport()">📥 Importer du JSON</button>
-                  <button class="ghost" style="flex:1" onclick="OreaQuizUI.openReports()">🚩 Signalements</button>
+              <p style="font-size:13px;color:var(--mut);margin-top:0">Les questions de votre école s’ajoutent à la banque ORÉA. Chaque question doit avoir une <b>explication</b> (affichée après la réponse). Une question qui existe déjà est <b>refusée</b>.</p>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+                  <button class="ghost" onclick="OreaQuizUI.openAddForm()">➕ Ajouter une question</button>
+                  <button class="ghost" onclick="OreaQuizUI.openQuick()">⚡ Saisie rapide</button>
+                  <button class="ghost" onclick="OreaQuizUI.openExcel()">📊 Coller depuis Excel</button>
+                  <button class="ghost" onclick="OreaQuizUI.openSchoolList()">📋 Questions de l’école</button>
+                  ${isDirQ() ? '<button class="ghost" onclick="OreaQuizUI.openReports()">🚩 Signalements</button>' : ''}
+                  <span id="qb-admin"></span>
               </div>
               <div id="qz-stock-area" style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;overflow-x:auto">
                   <p style="text-align:center;color:var(--mut);margin:0">Chargement du stock...</p>
               </div>
-              <div style="font-size:12px;color:var(--mut);line-height:1.4">
-                  <p><b>Gabarit JSON attendu :</b></p>
-                  <pre style="background:var(--bg);padding:10px;border-radius:8px;font-size:11px;white-space:pre-wrap;word-break:break-all">{ "niveau_scolaire": "secondaire",
-"questions": [
-  { "matiere": "Géographie", "theme": "Hydrographie", "niveau_difficulte": 1,
-    "question": "Quel est le plus long fleuve de la RDC ?",
-    "choix": ["Le Congo", "Le Kasaï", "L'Ubangi", "Le Lualaba"],
-    "bonne_reponse": 0,
-    "explication": "Le fleuve Congo traverse le pays." } ] }</pre>
-                  <p>Limite : 4 choix distincts, difficulté 1-3, niveau "primaire" ou "secondaire".</p>
-              </div>
           </div>
       `);
       loadStockAdmin();
+      if (await bankAdmin()) { const a = $('#qb-admin'); if (a) a.outerHTML = '<button class="ghost" onclick="OreaQuizUI.openImport()">📥 Import JSON (ORÉA)</button>'; }
+  }
+
+  // ----- 1) Formulaire (ajout ou modification) -----
+  async function openAddForm(edit) {
+      const p = edit || {};
+      const ch = Array.isArray(p.choix) ? p.choix : ['', '', '', ''];
+      const good = Number.isInteger(p.bonne_reponse) ? p.bonne_reponse : -1;
+      showOverlay(`
+          <div class="qz-head">${back()}<b>${edit ? 'Modifier la question' : 'Ajouter une question'}</b></div>
+          <div class="qz-body qz-form">
+              ${edit ? '' : await bankSelect() + commonFields(BK.last)}
+              <label>Question</label><textarea id="qb-q" rows="2" maxlength="250">${esc(p.question || '')}</textarea>
+              <label>Les 4 réponses — touche ✓ devant la bonne</label>
+              ${[0, 1, 2, 3].map(i => `<div style="display:flex;gap:8px;align-items:center"><button type="button" class="qz-ch ${good === i ? 'on' : ''}" data-good="${i}" style="width:52px;flex:none;margin-bottom:10px">✓</button><input data-ch="${i}" value="${esc(ch[i] || '')}" placeholder="Réponse ${'ABCD'[i]}"></div>`).join('')}
+              <label>Explication (obligatoire)</label><textarea id="qb-ex" rows="2" placeholder="Ex : Le fleuve Congo est le plus long du pays.">${esc(p.explication || '')}</textarea>
+              <div id="qb-msg"></div>
+              <button id="qb-save" style="width:100%">${edit ? 'Enregistrer' : 'Enregistrer et ajouter une autre'}</button>
+          </div>`);
+      let g = good;
+      document.querySelectorAll('[data-good]').forEach(b => b.onclick = () => { g = +b.dataset.good; document.querySelectorAll('[data-good]').forEach(x => x.classList.toggle('on', x === b)); });
+      $('#qb-save').onclick = async e => {
+          const btn = e.currentTarget, msg = $('#qb-msg');
+          const q = $('#qb-q').value.trim(), choix = [0, 1, 2, 3].map(i => document.querySelector(`[data-ch="${i}"]`).value.trim()), ex = $('#qb-ex').value.trim();
+          const bad = !q ? 'Écris la question.' : choix.some(x => !x) ? 'Remplis les 4 réponses.' : g < 0 ? 'Touche ✓ devant la bonne réponse.' : !ex ? 'L’explication est obligatoire.' : '';
+          if (bad) { msg.innerHTML = `<p style="color:var(--bad)">${bad}</p>`; return; }
+          btn.disabled = true;
+          try {
+              if (edit) {
+                  const { error } = await db.rpc('quiz_update', { p_id: edit.id, p_question: q, p_choix: choix, p_bonne_reponse: g, p_explication: ex });
+                  if (error) throw error;
+                  msg.innerHTML = '<p style="color:var(--ok)">✓ Question modifiée.</p>';
+                  setTimeout(openSchoolList, 600);
+                  return;
+              }
+              const c = readCommon(); BK.last = c;
+              if (!c.matiere) throw new Error('Indique la matière.');
+              const row = Object.assign({}, c, { question: q, choix, bonne_reponse: g, explication: ex });
+              const res = await sendRows([row], false, bankTarget());
+              const r0 = (res.rows || [])[0] || {};
+              if (r0.status === 'ok') {
+                  msg.innerHTML = '<p style="color:var(--ok)">✓ Question ajoutée. Tu peux écrire la suivante.</p>';
+                  $('#qb-q').value = ''; $('#qb-ex').value = ''; document.querySelectorAll('[data-ch]').forEach(x => x.value = '');
+                  g = -1; document.querySelectorAll('[data-good]').forEach(x => x.classList.remove('on'));
+                  $('#qb-q').focus();
+              } else msg.innerHTML = `<p style="color:var(--bad)">${r0.status === 'doublon' ? '⛔ Doublon : ' : '✗ '}${esc(r0.msg || 'Refusée')}</p>`;
+          } catch (err) { msg.innerHTML = `<p style="color:var(--bad)">${esc(err.message)}</p>`; }
+          finally { btn.disabled = false; }
+      };
+  }
+
+  // ----- 2) Saisie rapide en texte -----
+  // Une question, puis 4 réponses (* devant la bonne), puis « Explication : … », ligne vide entre deux questions.
+  function parseQuick(txt, c) {
+      const rows = [], errs = [];
+      String(txt || '').replace(/\r/g, '').split(/\n\s*\n/).map(b => b.split('\n').map(l => l.trim()).filter(Boolean)).filter(b => b.length).forEach((L, k) => {
+          const n = k + 1, q = L[0], ans = [], exL = [];
+          let good = -1;
+          L.slice(1).forEach(l => {
+              if (/^(explication|expl\.?)\s*:/i.test(l) || l.startsWith('=')) exL.push(l.replace(/^(explication|expl\.?)\s*:\s*/i, '').replace(/^=\s*/, ''));
+              else if (exL.length) exL.push(l);
+              else { if (l.startsWith('*')) { good = ans.length; l = l.replace(/^\*\s*/, ''); } ans.push(l.replace(/^[A-Da-d][).:-]\s+/, '')); }
+          });
+          const ex = exL.join(' ').trim();
+          const e = ans.length !== 4 ? `il faut 4 réponses (trouvé ${ans.length})` : good < 0 ? 'mets * devant la bonne réponse' : (L.slice(1).filter(l => l.startsWith('*')).length > 1) ? 'une seule bonne réponse (*)' : !ex ? 'ajoute la ligne « Explication : … »' : '';
+          if (e) errs.push({ n, q, e }); else rows.push(Object.assign({}, c, { question: q, choix: ans, bonne_reponse: good, explication: ex, _n: n }));
+      });
+      return { rows, errs };
+  }
+  async function openQuick() {
+      showOverlay(`
+          <div class="qz-head">${back()}<b>Saisie rapide</b></div>
+          <div class="qz-body qz-form">
+              ${await bankSelect()}${commonFields(BK.last)}
+              <label>Questions</label>
+              <textarea id="qb-txt" rows="12" placeholder="Quel est le plus long fleuve de la RDC ?\n*Le Congo\nLe Kasaï\nL’Ubangi\nLa Lukuga\nExplication : Le fleuve Congo traverse tout le pays.\n\nQuestion suivante ?\n…"></textarea>
+              <small style="color:var(--mut);display:block;margin-bottom:10px">Une question, 4 réponses (une étoile * devant la bonne), puis « Explication : … ». Laisse une ligne vide entre deux questions.</small>
+              <div id="qb-prev"></div>
+              <div style="display:flex;gap:10px"><button class="ghost" id="qb-chk" style="flex:1">Vérifier</button><button id="qb-go" style="flex:1" disabled>Ajouter</button></div>
+          </div>`);
+      let ready = [];
+      $('#qb-txt').oninput = () => { $('#qb-go').disabled = true; };
+      $('#qb-chk').onclick = async () => {
+          const c = readCommon(); BK.last = c;
+          if (!c.matiere) { $('#qb-prev').innerHTML = '<p style="color:var(--bad)">Indique la matière.</p>'; return; }
+          const { rows, errs } = parseQuick($('#qb-txt').value, c);
+          let h = errs.map(x => `<div style="color:var(--bad);font-size:13px;margin:4px 0">Question ${x.n} « ${esc((x.q || '').slice(0, 60))} » : ${esc(x.e)}</div>`).join('');
+          ready = [];
+          if (rows.length) {
+              try {
+                  const res = await sendRows(rows.map(({ _n, ...r }) => r), true, bankTarget());
+                  ready = rows.filter((r, i) => ((res.rows || [])[i] || {}).status === 'ok').map(({ _n, ...r }) => r);
+                  h += resultHtml(res, rows);
+              } catch (e) { h += `<p style="color:var(--bad)">${esc(e.message)}</p>`; }
+          }
+          if (!rows.length && !errs.length) h = '<p style="color:var(--mut)">Aucune question trouvée.</p>';
+          $('#qb-prev').innerHTML = h;
+          $('#qb-go').disabled = !ready.length;
+          $('#qb-go').textContent = ready.length ? `Ajouter ${ready.length} question(s)` : 'Ajouter';
+      };
+      $('#qb-go').onclick = async e => {
+          if (!ready.length) return;
+          e.currentTarget.disabled = true;
+          try { const res = await sendRows(ready, false, bankTarget()); $('#qb-prev').innerHTML = resultHtml(res, ready); if (res.inserted) $('#qb-txt').value = ''; }
+          catch (err) { $('#qb-prev').innerHTML = `<p style="color:var(--bad)">${esc(err.message)}</p>`; }
+          ready = [];
+      };
+  }
+
+  // ----- 3) Coller depuis Excel / Google Sheets -----
+  const XL_HEAD = ['Question', 'Réponse A', 'Réponse B', 'Réponse C', 'Réponse D', 'Bonne réponse (A, B, C ou D)', 'Explication', 'Matière', 'Thème', 'Difficulté (1, 2 ou 3)', 'Niveau (primaire ou secondaire)'];
+  function xlTemplate() {
+      const ex = [['Quel est le plus long fleuve de la RDC ?', 'Le Congo', 'Le Kasaï', 'L’Ubangi', 'La Lukuga', 'A', 'Le fleuve Congo traverse tout le pays.', 'Géographie', 'Hydrographie', '1', 'secondaire'],
+                  ['Combien font 7 x 8 ?', '54', '56', '64', '48', 'B', '7 x 8 = 56.', 'Mathématiques', 'Tables de multiplication', '1', 'primaire']];
+      const csv = '\ufeff' + [XL_HEAD].concat(ex).map(r => r.map(x => '"' + String(x).replace(/"/g, '""') + '"').join(';')).join('\r\n');
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = 'modele-questions-orea.csv';
+      document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  function parseExcel(txt, c) {
+      const rows = [], errs = [];
+      String(txt || '').replace(/\r/g, '').split('\n').filter(l => l.trim()).forEach((l, k) => {
+          const f = (l.includes('\t') ? l.split('\t') : l.split(';')).map(x => x.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+          if (k === 0 && /^question/i.test(f[0])) return;
+          const n = k + 1, L = 'ABCD'.indexOf(String(f[5] || '').trim().toUpperCase().charAt(0));
+          const row = { question: f[0] || '', choix: [f[1], f[2], f[3], f[4]].map(x => x || ''), bonne_reponse: L, explication: f[6] || '',
+                        matiere: f[7] || c.matiere, theme: f[8] || c.theme, niveau_difficulte: +(f[9] || c.niveau_difficulte),
+                        niveau_scolaire: (f[10] || c.niveau_scolaire).toLowerCase() };
+          const e = !row.question ? 'question vide' : row.choix.some(x => !x) ? 'il manque une réponse (colonnes B à E)' : L < 0 ? 'bonne réponse : A, B, C ou D (colonne F)' : !row.explication ? 'explication manquante (colonne G)' : !row.matiere ? 'matière manquante (colonne H)' : '';
+          if (e) errs.push({ n, q: row.question, e }); else rows.push(row);
+      });
+      return { rows, errs };
+  }
+  async function openExcel() {
+      showOverlay(`
+          <div class="qz-head">${back()}<b>Coller depuis Excel / Sheets</b></div>
+          <div class="qz-body qz-form">
+              <p style="font-size:13px;color:var(--mut);margin-top:0">1. Télécharge le modèle et remplis-le (une question par ligne).<br>2. Sélectionne les lignes dans Excel ou Google Sheets, copie, puis colle ici.</p>
+              <button class="ghost" id="qb-tpl" style="width:100%;margin-bottom:12px">⬇️ Télécharger le modèle</button>
+              <small style="color:var(--mut);display:block;margin-bottom:10px">Colonnes : ${XL_HEAD.map(esc).join(' · ')}. Si Matière, Thème, Difficulté ou Niveau sont vides, les valeurs ci-dessous sont utilisées.</small>
+              ${await bankSelect()}${commonFields(BK.last)}
+              <label>Lignes copiées</label><textarea id="qb-xl" rows="8" placeholder="Colle ici les lignes copiées depuis Excel"></textarea>
+              <div id="qb-prev"></div>
+              <div style="display:flex;gap:10px"><button class="ghost" id="qb-chk" style="flex:1">Vérifier</button><button id="qb-go" style="flex:1" disabled>Ajouter</button></div>
+          </div>`);
+      $('#qb-tpl').onclick = xlTemplate;
+      let ready = [];
+      $('#qb-xl').oninput = () => { $('#qb-go').disabled = true; };
+      $('#qb-chk').onclick = async () => {
+          const c = readCommon(); BK.last = c;
+          const { rows, errs } = parseExcel($('#qb-xl').value, c);
+          let h = errs.map(x => `<div style="color:var(--bad);font-size:13px;margin:4px 0">Ligne ${x.n} « ${esc((x.q || '').slice(0, 60))} » : ${esc(x.e)}</div>`).join('');
+          ready = [];
+          if (rows.length) {
+              try {
+                  const res = await sendRows(rows, true, bankTarget());
+                  ready = rows.filter((r, i) => ((res.rows || [])[i] || {}).status === 'ok');
+                  h += resultHtml(res, rows);
+              } catch (e) { h += `<p style="color:var(--bad)">${esc(e.message)}</p>`; }
+          }
+          if (!rows.length && !errs.length) h = '<p style="color:var(--mut)">Aucune ligne trouvée.</p>';
+          $('#qb-prev').innerHTML = h;
+          $('#qb-go').disabled = !ready.length;
+          $('#qb-go').textContent = ready.length ? `Ajouter ${ready.length} question(s)` : 'Ajouter';
+      };
+      $('#qb-go').onclick = async e => {
+          if (!ready.length) return;
+          e.currentTarget.disabled = true;
+          try { const res = await sendRows(ready, false, bankTarget()); $('#qb-prev').innerHTML = resultHtml(res, ready); if (res.inserted) $('#qb-xl').value = ''; }
+          catch (err) { $('#qb-prev').innerHTML = `<p style="color:var(--bad)">${esc(err.message)}</p>`; }
+          ready = [];
+      };
+  }
+
+  // ----- 4) Questions de l'école (modifier / supprimer) -----
+  async function openSchoolList() {
+      showOverlay(`
+          <div class="qz-head">${back()}<b>Questions de l’école</b></div>
+          <div class="qz-body qz-form"><input id="qb-find" type="search" placeholder="🔍 Rechercher une question"><div id="qb-list"><p style="text-align:center;color:var(--mut)">Chargement...</p></div></div>`);
+      const { data, error } = await db.from('quiz_questions').select('id,question,choix,bonne_reponse,explication,matiere,niveau_scolaire,niveau_difficulte,est_active,created_by')
+          .eq('school_id', S.school.id).order('created_at', { ascending: false }).limit(500);
+      const box = $('#qb-list'); if (!box) return;
+      if (error) { box.innerHTML = `<p style="color:var(--bad)">${esc(error.message)}</p>`; return; }
+      BK.list = data || [];
+      const draw = () => {
+          const f = ($('#qb-find').value || '').toLowerCase();
+          const L = BK.list.filter(q => !f || q.question.toLowerCase().includes(f));
+          box.innerHTML = `<small style="color:var(--mut)">${BK.list.length} question(s) ajoutée(s) par l’école</small>` + (L.length ? L.slice(0, 100).map(q => {
+              const mine = isDirQ() || q.created_by === S.me.id;
+              return `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0;${q.est_active ? '' : 'opacity:.6'}">
+                  <div style="font-size:11px;color:var(--mut)">${esc(q.matiere)} · ${esc(q.niveau_scolaire)} · difficulté ${q.niveau_difficulte}${q.est_active ? '' : ' · retirée'}</div>
+                  <div style="font-weight:bold;margin:4px 0">${esc(q.question)}</div>
+                  <div style="font-size:13px;color:var(--ok)">✓ ${esc(Array.isArray(q.choix) ? q.choix[q.bonne_reponse] : '')}</div>
+                  <div style="font-size:12px;color:var(--mut);margin-top:4px">💡 ${esc(q.explication || '')}</div>
+                  ${mine ? `<div style="display:flex;gap:8px;margin-top:8px"><button class="ghost" style="flex:1" onclick="OreaQuizUI.editQ('${q.id}')">Modifier</button><button class="ghost" style="flex:1;border-color:var(--bad);color:var(--bad)" onclick="OreaQuizUI.deleteQ('${q.id}')">Supprimer</button>${q.est_active ? '' : `<button class="ghost" style="flex:1" onclick="OreaQuizUI.restoreQ('${q.id}')">Remettre</button>`}</div>` : ''}
+              </div>`;
+          }).join('') : '<p class="empty">Aucune question.</p>');
+      };
+      $('#qb-find').oninput = draw;
+      draw();
   }
 
   async function loadStockAdmin() {
@@ -259,9 +485,11 @@
           const data = await db.rpc('quiz_stock');
           if (data.error) throw data.error;
           const stock = data.data;
+          BK.mats = Object.keys(stock.by_matiere || {}).filter(m => m !== '(sans matière)').sort((a, b) => a.localeCompare(b, 'fr'));
           const levels = ['primaire', 'secondaire'];
           const diffs = [1, 2, 3];
           let html = `<h3 style="margin-top:0;color:var(--gold);text-align:center;font-size:16px">Stock actuel (Objectif: 2000/case)</h3>`;
+          if (stock.by_bank) html += `<p style="text-align:center;font-size:13px;margin:0 0 10px">Banque ORÉA : <b>${stock.by_bank.commune || 0}</b> · Banque de l’école : <b>${stock.by_bank.ecole || 0}</b></p>`;
           html += `<table class="qz-admin-tbl"><tr><th>Niveau</th><th>Diff 1</th><th>Diff 2</th><th>Diff 3</th></tr>`;
           levels.forEach(lvl => {
               html += `<tr><td style="text-transform:capitalize">${lvl}</td>`;
@@ -407,7 +635,7 @@
           const lots = [];
           for (let i = 0; i < parsedData.valid.length; i += 200) lots.push(parsedData.valid.slice(i, i + 200));
           
-          let totalIns = 0, totalDup = 0, errStr = '';
+          let totalIns = 0, totalDup = 0, totalErr = 0, errStr = '';
           
           for (let i = 0; i < lots.length; i++) {
               btn.textContent = `Envoi lot ${i+1}/${lots.length}...`;
@@ -417,6 +645,7 @@
                   if (error) throw error;
                   totalIns += data.inserted || 0;
                   totalDup += data.duplicates || 0;
+                  totalErr += data.errors || 0;
               } catch (err) { errStr += `Erreur lot ${i+1}: ${err.message}\n`; }
           }
           
@@ -425,7 +654,8 @@
           
           $('#qz-preview-content').innerHTML = `<h4 style="color:var(--ok)">Terminé !</h4>
               <p>Nouvelles questions ajoutées : <b>${totalIns}</b></p>
-              <p>Doublons ignorés : <b>${totalDup}</b></p>`;
+              <p>Doublons ignorés : <b>${totalDup}</b></p>
+              <p>Refusées (explication manquante ou données incomplètes) : <b>${totalErr}</b></p>`;
           $('#qz-import-actions').hidden = true;
           loadStockAdmin(); // Refresh stock in background
       };
@@ -479,27 +709,29 @@
       }
   }
 
+  // Retour à l'écran d'où l'on vient (liste de l'école ou signalements)
+  const reopen = () => (QUIZ.ov && QUIZ.ov.querySelector('#qb-list')) ? openSchoolList() : openReports();
   async function restoreQ(id) {
       if (!confirm('Remettre cette question dans la banque active ?')) return;
-      try {
-          await db.rpc('quiz_restore', { p_id: id });
-          alert('Question restaurée.');
-          openReports();
-      } catch (e) { alert('Erreur : ' + e.message); }
+      const { error } = await db.rpc('quiz_restore', { p_id: id });
+      if (error) return alert('Erreur : ' + error.message);
+      alert('Question remise dans la banque.');
+      reopen();
   }
 
   async function deleteQ(id) {
-      if (!confirm('Supprimer DÉFINITIVEMENT cette question de la base de données ?')) return;
-      try {
-          await db.rpc('quiz_delete', { p_id: id });
-          alert('Question supprimée.');
-          openReports();
-      } catch (e) { alert('Erreur : ' + e.message); }
+      if (!confirm('Supprimer cette question ?\n(Une question de la banque ORÉA est seulement retirée pour votre école.)')) return;
+      const { error } = await db.rpc('quiz_delete', { p_id: id });
+      if (error) return alert('Erreur : ' + error.message);
+      alert('Question supprimée.');
+      reopen();
   }
 
   async function editQ(id) {
-      alert('Fonctionnalité de modification en cours de développement.');
-                            }
+      const { data, error } = await db.from('quiz_questions').select('*').eq('id', id).maybeSingle();
+      if (error || !data) return alert('Erreur : ' + (error ? error.message : 'question introuvable'));
+      openAddForm(data);
+  }
        /* =========================================================
        FIN BANQUE / REPRISE DU JEU
        ========================================================= */
@@ -514,8 +746,8 @@
             return;
         }
 
-        // Bouton Banque visible uniquement si directeur
-        const isDir = typeof dir === 'function' && dir();
+        // Bouton Banque : toute l'équipe (direction, enseignants, percepteurs) peut ajouter des questions
+        const isDir = isStaffQ();
         const bankBtnHtml = isDir ? `<div style="margin-bottom:15px;padding-bottom:15px;border-bottom:1px solid var(--line)"><button class="ghost" onclick="OreaQuizUI.openBank()" style="width:100%;border-color:var(--gold);color:var(--gold)">🗂 Banque de questions</button></div>` : '';
 
         $('#qz-cfg-body').innerHTML = `
@@ -931,5 +1163,5 @@ async function endGame(winnerTeam) {
         win.document.close();
     }
 
-    window.OreaQuizUI = { injectCss, initAudio, sound, startConfetti, QUIZ, $, esc, sleep, openNewGame, printCert, openBank, openImport, openReports, restoreQ, deleteQ, editQ };
+    window.OreaQuizUI = { injectCss, initAudio, sound, startConfetti, QUIZ, $, esc, sleep, openNewGame, printCert, openBank, openImport, openReports, restoreQ, deleteQ, editQ, openAddForm, openQuick, openExcel, openSchoolList };
 })();

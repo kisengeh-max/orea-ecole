@@ -86,11 +86,20 @@
         return { id: row.id, matiere: row.matiere, theme: row.theme, niveau_difficulte: row.niveau_difficulte, question: row.question, choix: items.map(x => x.t), bonne_reponse: items.findIndex(x => x.ok), explication: row.explication };
     }
 
+    // 3e verrou (v76) : contrôle final sur le téléphone — jamais deux fois le même texte dans une partie
+    const SEEN = new Map();
+    const normQ = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
     async function draw(game, asked, diffs, value, n) {
         n = n || 1;
+        const seen = SEEN.get(game.id) || new Set(); SEEN.set(game.id, seen);
         const rows = (await QuizStorage.draw(game.niveau_scolaire, diffs, BY, value, asked, n + 5)) || [];
         const out = [];
-        for (const r of rows) { try { out.push(prep(r)); } catch (_) { /* question ignorée */ } if (out.length === n) break; }
+        for (const r of rows) {
+            const k = normQ(r.question);
+            if ((asked || []).includes(r.id) || seen.has(k)) continue;
+            try { out.push(prep(r)); seen.add(k); } catch (_) { /* question ignorée */ }
+            if (out.length === n) break;
+        }
         if (out.length < n) throw new Error(value
             ? `Pas assez de questions pour « ${value} » (${game.niveau_scolaire}). Ajoutez des questions à la banque.`
             : `Plus de questions disponibles (${game.niveau_scolaire}, difficulté ${diffs.join('-')}). Ajoutez des questions à la banque.`);
