@@ -1,13 +1,16 @@
 /* =====================================================================
-   ORÉA École v78 — famille.js : Génie en Herbe « Famille / Solo »
+   ORÉA École v79 — famille.js : Génie en Herbe « Famille / Solo »
    Pour TOUS les utilisateurs : personnel, parents, ambassadeurs, administrateur.
    - Solo, ou 2 équipes de taille libre (noms gardés sur le téléphone).
    - Niveau 3 : élimination directe SEULEMENT si les 2 équipes ont 5 joueurs
      ou plus ; sinon, série de questions bonus. Finale + Tir au but gardés.
    - Questions gardées sur le téléphone : on peut jouer sans réseau.
    - Les questions de l'école (ou des écoles des enfants) sont mises en avant.
-   - Jamais deux fois la même question dans une partie ; priorité aux
-     questions jamais vues sur ce téléphone.
+   - Jamais deux fois la même question dans une partie.
+   - Règle des 90 jours : une question vue sur ce téléphone ne revient qu'après
+     90 jours, sauf si toutes les autres sont épuisées.
+   - Questions de l'école : environ 30 % des questions.
+   - Accès : en bas de l'Accueil de tous les utilisateurs.
    Données : RPC quiz_family_pack (étape 13). Aucune écriture en base.
    ===================================================================== */
 (function () {
@@ -72,14 +75,21 @@
         } catch (e) { if (c && c.list.length) return c.list; throw e; }
         return c ? c.list : [];
     }
-    const SEEN_KEY = 'orea_fam_seen';
-    function markSeen(k) { const s = LS.get(SEEN_KEY, []); s.push(k); LS.set(SEEN_KEY, s.slice(-3000)); }
+    // Règle des 90 jours (sur ce téléphone) : { empreinte: date de passage }
+    const SEEN_KEY = 'orea_fam_seen90', D90 = 90 * 864e5;
+    function seenMap() {
+        const m = LS.get(SEEN_KEY, {}), now = Date.now();
+        Object.keys(m).forEach(k => { if (now - m[k] > D90) delete m[k]; });
+        return m;
+    }
+    function markSeen(k) { const m = seenMap(); m[k] = Date.now(); LS.set(SEEN_KEY, m); }
     function pick(diffs, mat) {
         const pool = G.list.filter(q => diffs.includes(Number(q.niveau_difficulte)) && (!mat || q.matiere === mat) && !G.seen.has(keyOf(q)));
         if (!pool.length) return null;
-        const glob = new Set(LS.get(SEEN_KEY, []));
-        const fresh = pool.filter(q => !glob.has(keyOf(q))), P = fresh.length ? fresh : pool;
-        const local = P.filter(q => q.school_id), R = local.length && Math.random() < 0.7 ? local : P;   // questions de l'école en avant
+        const glob = seenMap();
+        const fresh = pool.filter(q => !glob[keyOf(q)]), P = fresh.length ? fresh : pool;   // 90 jours, sauf si tout est épuisé
+        const local = P.filter(q => q.school_id), other = P.filter(q => !q.school_id);
+        const R = local.length && (!other.length || Math.random() < 0.3) ? local : (other.length ? other : P);   // ~30 % de questions de l'école
         const q = R[Math.floor(Math.random() * R.length)], k = keyOf(q);
         G.seen.add(k); markSeen(k);
         const items = shuffle(q.choix.map((t, i) => ({ t, ok: i === Number(q.bonne_reponse) })));
@@ -260,50 +270,64 @@
         OV.querySelector('#fm-again').onclick = () => { close(); window.oreaFamille(); };
     }
 
-    /* ---------- Points d'entrée ---------- */
-    const CARD_TXT = ['Génie en Herbe · Famille', 'Solo ou en famille, même sans réseau'];
-    // Personnel (Menu de l'école)
+    /* ---------- Points d'entrée : en bas de l'Accueil de TOUS les utilisateurs ---------- */
+    const BLOCK = (id, school) => `<div id="${id}" class="card col" style="margin-top:14px"><b>🎮 Génie en Herbe</b><small>Le jeu de culture générale d’ORÉA</small><div class="row" style="flex-wrap:wrap">${school ? '<button onclick="openQuiz()">🏫 Version école</button>' : ''}<button class="ghost" onclick="oreaFamille()">👨‍👩‍👧 Famille / Solo</button></div></div>`;
+    // Personnel : Accueil (version école + Famille) ; retiré du Menu
+    const oAcc = window.vAccueil;
+    if (typeof oAcc === 'function' && !oAcc.__fm) {
+        window.vAccueil = async function () {
+            const r = await oAcc.apply(this, arguments);
+            try {
+                const main = document.getElementById('main');
+                if (main && typeof S !== 'undefined' && S.tab === 'accueil' && !main.querySelector('#fm-acc'))
+                    main.insertAdjacentHTML('beforeend', BLOCK('fm-acc', typeof openQuiz === 'function'));
+            } catch (_) { }
+            return r;
+        };
+        window.vAccueil.__fm = true;
+    }
     const oMenu = window.vMenu;
     if (typeof oMenu === 'function' && !oMenu.__fm) {
         window.vMenu = function () {
             const r = oMenu.apply(this, arguments);
             try {
-                const main = document.getElementById('main'), q = main && main.querySelector('[onclick*="openQuiz"]');
-                if (q && typeof menuCard === 'function' && !main.querySelector('[onclick*="oreaFamille"]')) {
-                    const d = document.createElement('div'); d.innerHTML = menuCard('alerte', CARD_TXT[0], CARD_TXT[1], 'oreaFamille()'); q.after(d.firstElementChild);
+                const main = document.getElementById('main');
+                if (main) {
+                    main.querySelectorAll('[onclick*="openQuiz"],[onclick*="oreaFamille"]').forEach(e => e.remove());
+                    main.querySelectorAll('.menu-title').forEach(t => { if (t.textContent.trim() === 'Jeux') t.remove(); });
                 }
             } catch (_) { }
             return r;
         };
         window.vMenu.__fm = true;
     }
-    // Administrateur : Famille + accès direct à la banque de questions
+    // Administrateur et ambassadeur : en bas, juste avant « Déconnexion »
+    const atBottom = (id, extra) => {
+        const main = document.getElementById('main');
+        if (!main || main.querySelector('#' + id)) return;
+        const html = `<div id="${id}" class="card col" style="margin-top:14px"><b>🎮 Génie en Herbe</b><small>Le jeu de culture générale d’ORÉA</small><div class="row" style="flex-wrap:wrap"><button class="ghost" onclick="oreaFamille()">👨‍👩‍👧 Famille / Solo</button>${extra || ''}</div></div>`;
+        const out = [...main.querySelectorAll('button')].filter(b => /out\(\)/.test(b.getAttribute('onclick') || '')).pop();
+        out ? out.insertAdjacentHTML('beforebegin', html) : main.insertAdjacentHTML('beforeend', html);
+    };
     const oAdm = window.admRender;
     if (typeof oAdm === 'function' && !oAdm.__fm) {
         window.admRender = function () {
             const r = oAdm.apply(this, arguments);
-            try {
-                const main = document.getElementById('main');
-                if (main && !main.querySelector('#fm-adm')) main.insertAdjacentHTML('afterbegin', `<div id="fm-adm" class="card col"><b>Génie en Herbe</b><div class="row"><button class="ghost" onclick="oreaFamille()">🎮 Famille / Solo</button>${window.OreaQuizUI ? '<button class="ghost" onclick="OreaQuizUI.openBank()">🗂 Banque de questions</button>' : ''}</div></div>`);
-            } catch (_) { }
+            try { atBottom('fm-adm', window.OreaQuizUI ? '<button class="ghost" onclick="OreaQuizUI.openBank()">🗂 Banque de questions</button>' : ''); } catch (_) { }
             return r;
         };
         window.admRender.__fm = true;
     }
-    // Ambassadeur
     const oAmb = window.ambDraw;
     if (typeof oAmb === 'function' && !oAmb.__fm) {
         window.ambDraw = async function () {
             const r = await oAmb.apply(this, arguments);
-            try {
-                const main = document.getElementById('main');
-                if (main && !main.querySelector('#fm-amb')) main.insertAdjacentHTML('afterbegin', `<div id="fm-amb" class="card col"><b>🎮 ${CARD_TXT[0]}</b><small>${CARD_TXT[1]}</small><button class="ghost" onclick="oreaFamille()">Jouer</button></div>`);
-            } catch (_) { }
+            try { atBottom('fm-amb'); } catch (_) { }
             return r;
         };
         window.ambDraw.__fm = true;
     }
-    // Parent (accueil de l'espace parent)
+    // Parent : en bas de l'accueil, juste au-dessus de la barre de navigation
     const oHome = window.homeView;
     if (typeof oHome === 'function' && !oHome.__fm) {
         window.homeView = function () {
@@ -311,9 +335,9 @@
             try {
                 const main = document.getElementById('pmain');
                 if (main && !main.querySelector('#fm-par')) {
-                    const html = `<div id="fm-par" class="p-card" onclick="oreaFamille()" style="cursor:pointer"><h3>🎮 ${CARD_TXT[0]}</h3><div class="p-line">${CARD_TXT[1]}</div></div>`;
-                    const a = main.querySelector('.p-actions');
-                    a ? a.insertAdjacentHTML('beforebegin', html) : main.insertAdjacentHTML('afterbegin', html);
+                    const html = `<div id="fm-par" class="p-card" onclick="oreaFamille()" style="cursor:pointer;margin-top:14px"><h3>🎮 Génie en Herbe · Famille</h3><div class="p-line">Solo ou en famille, même sans réseau</div></div>`;
+                    const nav = main.querySelector('.p-nav-grid');
+                    nav ? nav.insertAdjacentHTML('beforebegin', html) : main.insertAdjacentHTML('beforeend', html);
                 }
             } catch (_) { }
             return r;
