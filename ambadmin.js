@@ -8,7 +8,7 @@
          Alertes (essais en double, changements de chef signalés). */
 
 const ADM = { tab: 'ecoles', sch: [], pays: [], amb: [], pro: [], alerts: [] };
-if (!document.getElementById('adm-css')) document.head.insertAdjacentHTML('beforeend', '<style id="adm-css">.adm-tabs{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.adm-tabs button{width:100%;margin:0}@media (min-width:700px){.adm-tabs{grid-template-columns:repeat(4,minmax(0,1fr))}}</style>');
+if (!document.getElementById('adm-css')) document.head.insertAdjacentHTML('beforeend', '<style id="adm-css">.adm-tabs{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.adm-tabs button:last-child:nth-child(odd){grid-column:1/-1}.adm-tabs button{width:100%;margin:0}@media (min-width:700px){.adm-tabs{grid-template-columns:repeat(5,minmax(0,1fr))}.adm-tabs button:last-child:nth-child(odd){grid-column:auto}}</style>');
 
 async function adminDraw() {
     $('#nav').hidden = true;
@@ -21,7 +21,10 @@ async function adminDraw() {
         db.rpc('v88_admin_alerts')
     ]);
     r.slice(0, 4).forEach(x => { if (x.error) throw x.error; });
-    ADM.sch = r[0].data || []; ADM.pays = r[1].data || [];
+    const all = r[0].data || [];
+    ADM.sch = all.filter(x => !x.is_test); ADM.test = all.filter(x => x.is_test);   // v90 : écoles TEST à part
+    ADM.pays = r[1].data || [];
+    try { const t = localStorage.getItem('orea_adm_tab'); if (t) { ADM.tab = t; localStorage.removeItem('orea_adm_tab'); } } catch (_) { }
     ADM.amb = r[2].data || []; ADM.pro = r[3].data || [];
     ADM.alerts = r[4].error ? [] : (r[4].data || []);
     admRender();
@@ -33,9 +36,10 @@ function admRender() {
     const nPend = ADM.amb.filter(a => a.status === 'pending').length;
     const tb = (k, l) => '<button class="' + (ADM.tab === k ? '' : 'ghost') + '" onclick="admTab(\'' + k + '\')">' + l + '</button>';
     let h = '<h3>Espace ORÉA</h3><div class="row adm-tabs">'
-        + tb('ecoles', 'Écoles') + tb('alertes', 'Alertes' + (ADM.alerts.length ? ' 🔔' + ADM.alerts.length : '')) + tb('amb', 'Ambassadeurs' + (nPend ? ' 🔔' + nPend : '')) + tb('pro', 'Prospects') + '</div>';
-    h += ADM.tab === 'amb' ? admAmbSection() : ADM.tab === 'pro' ? admProSection() : ADM.tab === 'alertes' ? admAlertSection() : admSchoolSection();
+        + tb('ecoles', 'Écoles') + tb('alertes', 'Alertes' + (ADM.alerts.length ? ' 🔔' + ADM.alerts.length : '')) + tb('amb', 'Ambassadeurs' + (nPend ? ' 🔔' + nPend : '')) + tb('pro', 'Prospects') + (typeof oreaTestSection === 'function' ? tb('test', '🧪 Test') : '') + '</div>';
+    h += ADM.tab === 'amb' ? admAmbSection() : ADM.tab === 'pro' ? admProSection() : ADM.tab === 'alertes' ? admAlertSection() : ADM.tab === 'test' && typeof oreaTestSection === 'function' ? oreaTestSection(ADM.test) : admSchoolSection();
     $('#main').innerHTML = h + installCard() + '<button class=ghost onclick=out()>Déconnexion</button>';
+    if (ADM.tab === 'test' && typeof oreaTestBind === 'function') oreaTestBind(ADM.test);
 }
 
 /* ---------- Onglet Écoles ---------- */

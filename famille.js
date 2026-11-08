@@ -32,22 +32,39 @@
     function css() {
         if (document.getElementById('fm-css')) return;
         const s = document.createElement('style'); s.id = 'fm-css';
-        s.textContent = `.fm-ov{position:fixed;inset:0;z-index:400;background:var(--bg,#14110d);color:var(--tx,#f0eee6);overflow-y:auto;padding:calc(12px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));font-family:inherit}
-.fm-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}.fm-head b{font-size:18px;flex:1}
-.fm-x{width:42px;min-height:42px;border-radius:12px;border:1px solid var(--line,#444);background:transparent;color:inherit;font-size:18px}
-.fm-card{background:var(--card,#221d17);border:1px solid var(--line,#3a3328);border-radius:14px;padding:14px;margin:10px 0}
-.fm-ov label{display:block;font-size:13px;color:var(--mut,#a59e8c);margin:10px 0 4px;font-weight:600}
-.fm-ov input,.fm-ov textarea,.fm-ov select{width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid var(--line,#3a3328);background:var(--bg,#14110d);color:inherit;font:inherit}
+        // v90 : même habillage que la version école (fond nuit, or et violet, scores lumineux, réponses en tuiles)
+        s.textContent = `.fm-ov{--bg:#0a0a0f;--card:#15121f;--line:rgba(227,201,120,.28);--tx:#f6f1e3;--mut:#a89fbd;--gold:#E3C978;--ok:#3ddc84;--bad:#ff4d5e;--vio:#a78bfa;position:fixed;inset:0;z-index:400;background:radial-gradient(ellipse at 50% -10%,rgba(139,92,246,.28),transparent 60%),radial-gradient(ellipse at 50% 110%,rgba(227,201,120,.16),transparent 55%),var(--bg);color:var(--tx);overflow-y:auto;padding:calc(12px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+.fm-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}.fm-head b{font-size:12.5px;flex:1;text-align:center;font-family:var(--serif,Georgia,serif);letter-spacing:.2em;color:var(--gold);text-transform:uppercase}
+.fm-x{width:42px;min-height:42px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--tx);font-size:18px}
+.fm-card{background:linear-gradient(180deg,rgba(227,201,120,.07),rgba(139,92,246,.06));border:1px solid var(--line);border-radius:16px;padding:14px;margin:10px auto;max-width:640px}
+.fm-card h2{font-family:var(--serif,Georgia,serif);color:var(--gold);letter-spacing:.04em;text-shadow:0 0 18px rgba(227,201,120,.45)}
+.fm-ov label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px;font-weight:600}
+.fm-ov input,.fm-ov textarea,.fm-ov select{width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--tx);font:inherit}
 .fm-row{display:flex;gap:8px;flex-wrap:wrap}.fm-row>*{flex:1}
-.fm-ch{padding:12px;border-radius:12px;border:1px solid var(--line,#3a3328);background:transparent;color:inherit;font:inherit;min-height:46px}
-.fm-ch.on{border-color:var(--gold,#c7a34b);background:rgba(199,163,75,.18);color:var(--gold,#c7a34b);font-weight:700}
-.fm-go{width:100%;padding:14px;border-radius:12px;border:0;background:var(--gold,#c7a34b);color:#1a1710;font:inherit;font-weight:700;font-size:16px;margin-top:12px}
-.fm-ans{display:block;width:100%;text-align:left;padding:14px;margin:8px 0;border-radius:12px;border:1px solid var(--line,#3a3328);background:var(--card,#221d17);color:inherit;font:inherit;font-size:16px}
-.fm-ans.ok{border-color:var(--ok,#3fae6a);background:rgba(63,174,106,.18)}.fm-ans.ko{border-color:var(--bad,#d0574b);background:rgba(208,87,75,.18)}
-.fm-sc{display:flex;gap:10px;margin-bottom:10px}.fm-sc div{flex:1;text-align:center;padding:8px;border-radius:12px;border:1px solid var(--line,#3a3328)}
-.fm-sc div.on{border-color:var(--gold,#c7a34b)}.fm-sc b{display:block;font-size:22px}
-.fm-q{font-size:19px;font-weight:700;line-height:1.35;margin:10px 0}.fm-mut{color:var(--mut,#a59e8c);font-size:13px}
-.fm-bar{height:6px;border-radius:6px;background:var(--line,#3a3328);overflow:hidden;margin:8px 0}.fm-bar i{display:block;height:100%;background:var(--gold,#c7a34b);transition:width 1s linear}`;
+.fm-ch{padding:12px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--tx);font:inherit;min-height:46px}
+.fm-ch.on{border-color:var(--gold);background:rgba(227,201,120,.16);color:var(--gold);font-weight:800;box-shadow:0 0 14px rgba(227,201,120,.3)}
+.fm-go{display:block;width:100%;max-width:640px;margin:12px auto 0;padding:15px;border-radius:14px;border:0;font:inherit;font-size:16px;font-weight:800;letter-spacing:.06em;color:#1a1303;background:linear-gradient(180deg,#f3de93,#c7a34b);box-shadow:0 4px 16px rgba(199,163,75,.4)}
+.fm-ans{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px;margin:0;min-height:68px;border-radius:14px;border:2px solid var(--gold);background:linear-gradient(180deg,rgba(227,201,120,.14),rgba(227,201,120,.04));color:var(--tx);font:inherit;font-size:15px;font-weight:700}
+.fm-ans .fm-l{width:28px;height:28px;border-radius:50%;background:var(--gold);color:#1a1303;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0}
+.fm-ans.myst{border-color:var(--vio);background:rgba(139,92,246,.18)}
+.fm-ans.ok{background:rgba(61,220,132,.2);border-color:var(--ok);box-shadow:0 0 22px rgba(61,220,132,.6)}.fm-ans.ok .fm-l{background:var(--ok);color:#04210f}
+.fm-ans.ko{background:rgba(255,77,94,.18);border-color:var(--bad);box-shadow:0 0 22px rgba(255,77,94,.55)}.fm-ans.ko .fm-l{background:var(--bad);color:#fff}
+.fm-ans:disabled{opacity:1}
+.fm-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:640px;margin:10px auto}
+.fm-grid.one{grid-template-columns:1fr}
+@media (max-width:360px){.fm-grid{grid-template-columns:1fr}}
+.fm-sc{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:640px;margin:0 auto 10px}.fm-sc.solo{grid-template-columns:1fr}
+.fm-sc div{text-align:center;padding:8px 4px;border-radius:14px;border:1px solid transparent;transition:all .25s}
+.fm-sc div small{display:block;font-size:clamp(14px,4vw,18px);font-weight:900;letter-spacing:.04em;color:#60a5fa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fm-sc div:nth-child(2) small{color:#f87171}
+.fm-sc div.on{border-color:var(--gold);background:rgba(227,201,120,.06);box-shadow:0 0 18px rgba(227,201,120,.35)}
+.fm-sc b{display:block;font-family:var(--serif,Georgia,serif);font-weight:900;font-size:clamp(38px,11vw,52px);line-height:1;color:var(--gold);text-shadow:0 0 16px rgba(227,201,120,.45)}
+.fm-q{max-width:640px;margin:10px auto;border:2px solid var(--gold);border-radius:20px;padding:16px 14px;background:linear-gradient(180deg,rgba(227,201,120,.07),rgba(139,92,246,.06));box-shadow:0 0 24px rgba(227,201,120,.18);font-family:var(--serif,Georgia,serif);font-size:clamp(18px,5.2vw,24px);font-weight:700;line-height:1.3;text-align:center}
+.fm-mut{color:var(--mut);font-size:13px;text-align:center;max-width:640px;margin:0 auto}
+.fm-who{text-align:center;font-size:13px;letter-spacing:.1em;color:var(--mut);font-weight:700}.fm-who b{color:var(--gold);font-size:clamp(16px,4.6vw,20px);letter-spacing:.03em}
+.fm-bar{height:6px;border-radius:6px;background:rgba(227,201,120,.15);overflow:hidden;margin:8px auto;max-width:640px}.fm-bar i{display:block;height:100%;background:var(--gold);box-shadow:0 0 8px rgba(227,201,120,.7);transition:width 1s linear}
+.fm-ico{font-size:44px;filter:drop-shadow(0 0 12px rgba(227,201,120,.5))}
+@media (prefers-reduced-motion:reduce){.fm-bar i{transition:none}}`;
         document.head.appendChild(s);
     }
     function screen(html) {
@@ -93,7 +110,8 @@
     }
     function markSeen(k) { const m = seenMap(); m[k] = Date.now(); LS.set(SEEN_KEY, m); }
     function pick(diffs, mat) {
-        const pool = G.list.filter(q => diffs.includes(Number(q.niveau_difficulte)) && (!mat || q.matiere === mat) && !G.seen.has(keyOf(q)));
+        const by = G.thBy || 'matiere';
+        const pool = G.list.filter(q => diffs.includes(Number(q.niveau_difficulte)) && (!mat || q[by] === mat) && !G.seen.has(keyOf(q)));
         if (!pool.length) return null;
         const glob = seenMap();
         const fresh = pool.filter(q => !glob[keyOf(q)]), P = fresh.length ? fresh : pool;   // 90 jours, sauf si tout est épuisé
@@ -102,12 +120,14 @@
         const q = R[Math.floor(Math.random() * R.length)], k = keyOf(q);
         G.seen.add(k); markSeen(k);
         const items = shuffle(q.choix.map((t, i) => ({ t, ok: i === Number(q.bonne_reponse) })));
-        return { question: q.question, matiere: q.matiere, choix: items.map(x => x.t), good: items.findIndex(x => x.ok), explication: q.explication, local: !!q.school_id };
+        return { question: q.question, matiere: q.matiere, theme: q.theme, choix: items.map(x => x.t), good: items.findIndex(x => x.ok), explication: q.explication, local: !!q.school_id };
     }
+    // v90 : vrais thèmes (champ « theme ») s'il y en a assez, sinon les matières
     function themes(diffs, min) {
-        const n = {};
-        G.list.forEach(q => { if (diffs.includes(Number(q.niveau_difficulte)) && q.matiere && !G.seen.has(keyOf(q))) n[q.matiere] = (n[q.matiere] || 0) + 1; });
-        return shuffle(Object.keys(n).filter(m => n[m] >= min));
+        const count = by => { const n = {}; G.list.forEach(q => { if (diffs.includes(Number(q.niveau_difficulte)) && q[by] && !G.seen.has(keyOf(q))) n[q[by]] = (n[q[by]] || 0) + 1; }); return shuffle(Object.keys(n).filter(m => n[m] >= min)); };
+        let L = count('theme'); G.thBy = 'theme';
+        if (L.length < 2) { L = count('matiere'); G.thBy = 'matiere'; }
+        return L;
     }
 
     /* ---------- Configuration ---------- */
@@ -121,7 +141,7 @@
             <div class="fm-card" id="fm-teams" ${cfg.mode === 'teams' ? '' : 'hidden'}>
                 <label style="margin-top:0">Équipe 1</label><input id="fm-a" value="${E(cfg.A)}"><textarea id="fm-pa" rows="3" placeholder="Un joueur par ligne">${E(cfg.pa)}</textarea>
                 <label>Équipe 2</label><input id="fm-b" value="${E(cfg.B)}"><textarea id="fm-pb" rows="3" placeholder="Un joueur par ligne">${E(cfg.pb)}</textarea>
-                <p class="fm-mut">À partir de 5 joueurs dans chaque équipe, le niveau 3 devient une élimination directe. Sinon, c’est une série de questions bonus.</p></div>
+                <p class="fm-mut">À partir de 5 joueurs dans chaque équipe, le niveau 2 est une élimination directe. Sinon, c’est une série de questions bonus.</p></div>
             <div id="fm-msg" class="fm-mut"></div>
             <button class="fm-go" id="fm-start">▶ Commencer</button>`);
         const $ = s => OV.querySelector(s);
@@ -147,34 +167,39 @@
     };
 
     /* ---------- Déroulement ---------- */
+    // v90 : 1 Très facile · 2 Élimination directe (ou Série bonus) · 3 Série rapide · 4 Thématique · 5 Finale
     const LV = solo => solo
-        ? [{ n: 1, nom: 'Très facile', pts: 1, diffs: [1], count: 10 }, { n: 2, nom: 'Thématique', pts: 2, diffs: [1, 2], count: 7 }, { n: 3, nom: 'Série bonus', pts: 3, diffs: [2], count: 5 }, { n: 4, nom: 'Finale', pts: 5, diffs: [2, 3], count: 5 }]
-        : [{ n: 1, nom: 'Très facile', pts: 1, diffs: [1], count: 10 }, { n: 2, nom: 'Thématique', pts: 2, diffs: [1, 2], count: 14 }, { n: 3, nom: 'Élimination directe', pts: 2, diffs: [1, 2] }, { n: 4, nom: 'Finale', pts: 5, diffs: [2, 3], count: 10 }];
-    const lvl = () => { const L = LV(G.solo)[G.level - 1]; if (G.level === 3 && !G.solo && !G.elim) return { n: 3, nom: 'Série bonus', pts: 3, diffs: [2], count: 6 }; return L; };
+        ? [{ n: 1, nom: 'Très facile', pts: 1, diffs: [1], count: 10 }, { n: 2, nom: 'Série bonus', pts: 3, diffs: [2], count: 5 }, { n: 3, nom: 'Série rapide', pts: 1, diffs: [2], count: 8 }, { n: 4, nom: 'Thématique', pts: 2, diffs: [1, 2], count: 7 }, { n: 5, nom: 'Finale', pts: 5, diffs: [2, 3], count: 5 }]
+        : [{ n: 1, nom: 'Très facile', pts: 1, diffs: [1], count: 10 }, { n: 2, nom: 'Élimination directe', pts: 2, diffs: [1, 2] }, { n: 3, nom: 'Série rapide', pts: 1, diffs: [2], count: 10 }, { n: 4, nom: 'Thématique', pts: 2, diffs: [1, 2], count: 14 }, { n: 5, nom: 'Finale', pts: 5, diffs: [2, 3], count: 10 }];
+    const lvl = () => { const L = LV(G.solo)[G.level - 1]; if (G.level === 2 && !G.solo && !G.elim) return { n: 2, nom: 'Série bonus', pts: 3, diffs: [2], count: 6 }; return L; };
     const alive = t => G.teams[t].players.filter(p => !p.out);
     function nextPlayer(t, list) { const L = list || G.teams[t].players; const p = L[G.turn[t] % L.length]; G.turn[t]++; return p; }
 
     function nextLevel() {
         G.level++; G.idx = 0; G.queue = [];
-        if (G.level > 4) return endGame();
+        if (G.level > 5) return endGame();
         const L = lvl();
         const RULE = {
             1: G.solo ? '10 questions faciles · 1 point chacune.' : 'Les équipes répondent à tour de rôle · 1 point par bonne réponse.',
-            2: G.solo ? 'Choisis une matière : 7 questions · 2 points chacune.' : 'Chaque équipe choisit sa matière : 7 questions chacune · 2 points.',
-            3: L.nom === 'Élimination directe' ? 'Chaque joueur répond seul : une erreur et il est éliminé. Si une équipe n’a plus de joueur, l’autre gagne.' : `${L.count} questions bonus · ${L.pts} points chacune.`,
-            4: `${G.solo ? 5 : 10} questions plus difficiles · 5 points chacune.${G.solo ? '' : ' En cas d’égalité : tir au but !'}`
+            2: L.nom === 'Élimination directe' ? 'Chaque joueur répond seul : une erreur et il est éliminé. Si une équipe n’a plus de joueur, l’autre gagne.' : `${L.count} questions bonus · ${L.pts} points chacune.`,
+            3: `${L.count} questions · ${L.pts} point chacune${G.solo ? '' : ', à tour de rôle'}.`,
+            4: G.solo ? 'Tu reçois 3 thèmes + 1 thème mystère : choisis-en un · 7 questions · 2 points chacune.' : 'Chaque équipe reçoit ses 3 thèmes + 1 thème mystère et en choisit un : 7 questions chacune · 2 points.',
+            5: `${G.solo ? 5 : 10} questions plus difficiles · 5 points chacune.${G.solo ? '' : ' En cas d’égalité : tir au but !'}`
         }[G.level];
-        screen(head('Niveau ' + G.level + ' · ' + L.nom, true) + scores() + `<div class="fm-card" style="text-align:center"><div style="font-size:40px">${['🌱', '🎯', '⚔️', '🏆'][G.level - 1]}</div><h2 style="margin:8px 0">${E(L.nom)}</h2><p>${E(RULE)}</p></div><button class="fm-go" id="fm-n">C’est parti</button>`);
-        OV.querySelector('#fm-n').onclick = () => G.level === 2 ? chooseThemes() : buildQueue();
+        screen(head('Niveau ' + G.level + ' · ' + L.nom, true) + scores() + `<div class="fm-card" style="text-align:center"><div class="fm-ico">${['🌱', '⚔️', '⚡', '🎯', '🏆'][G.level - 1]}</div><h2 style="margin:8px 0">${E(L.nom)}</h2><p>${E(RULE)}</p></div><button class="fm-go" id="fm-n">C’est parti</button>`);
+        OV.querySelector('#fm-n').onclick = () => G.level === 4 ? chooseThemes() : buildQueue();
     }
 
+    // v90 : chaque équipe a SES 3 thèmes + 1 mystère, différents de ceux de l'autre équipe
     function chooseThemes() {
-        const L = lvl(), per = G.solo ? 7 : 7, pool = themes(L.diffs, per * (G.solo ? 1 : 2));
+        const L = lvl(), pool = themes(L.diffs, 7);
         if (pool.length < 2) { G.themes = G.solo ? [null] : [null, null]; return buildQueue(); }
-        const opts = pool.slice(0, 3);
+        const own = [[], []]; pool.slice(0, G.solo ? 3 : 6).forEach((t, i) => own[G.solo ? 0 : i % 2].push(t));
+        const shown = own[0].concat(own[1]);
+        const mystery = other => { let c = pool.filter(x => !shown.includes(x) && x !== other); if (!c.length) c = pool.filter(x => x !== other); if (!c.length) c = pool; return c[Math.floor(Math.random() * c.length)]; };
         const ask = (t, done) => {
-            screen(head('Niveau 2 · Thématique', true) + scores() + `<div class="fm-card"><b>${G.solo ? 'Choisis ta matière' : E(G.teams[t].name) + ', choisissez votre matière'}</b>${opts.map(m => `<button class="fm-ans" data-th="${E(m)}">📘 ${E(m)}</button>`).join('')}<button class="fm-ans" data-th="">❓ Thème mystère</button></div>`);
-            OV.querySelectorAll('[data-th]').forEach(b => b.onclick = () => done(b.dataset.th || pool[Math.floor(Math.random() * pool.length)]));
+            screen(head('Niveau 4 · Thématique', true) + scores() + `<div class="fm-who">${G.solo ? 'CHOISIS TON THÈME' : 'CHOIX DU THÈME · <b>' + E(G.teams[t].name) + '</b>'}</div><div class="fm-grid">${own[t].map(m => `<button class="fm-ans" data-th="${E(m)}"><span class="fm-l">★</span>${E(m)}</button>`).join('')}<button class="fm-ans myst" data-th=""><span class="fm-l">?</span>Thème mystère</button></div>`);
+            OV.querySelectorAll('[data-th]').forEach(b => b.onclick = () => done(b.dataset.th || mystery(t === 1 ? G.themes[0] : null)));
         };
         G.themes = [];
         ask(0, a => { G.themes[0] = a; if (G.solo) return buildQueue(); ask(1, b => { G.themes[1] = b; buildQueue(); }); });
@@ -182,16 +207,16 @@
 
     function buildQueue() {
         const L = lvl(), q = [];
-        if (G.solo) for (let i = 0; i < L.count; i++) q.push({ t: 0, mat: G.level === 2 ? G.themes[0] : null });
-        else if (G.level === 3 && G.elim) {
+        if (G.solo) for (let i = 0; i < L.count; i++) q.push({ t: 0, mat: G.level === 4 ? G.themes[0] : null });
+        else if (G.level === 2 && G.elim) {
             const a = shuffle(alive(0)), b = shuffle(alive(1));
             for (let i = 0; i < Math.max(a.length, b.length); i++) { if (a[i]) q.push({ t: 0, p: a[i] }); if (b[i]) q.push({ t: 1, p: b[i] }); }
-        } else for (let i = 0; i < L.count; i++) q.push({ t: i % 2, mat: G.level === 2 ? G.themes[i % 2] : null });
+        } else for (let i = 0; i < L.count; i++) q.push({ t: i % 2, mat: G.level === 4 ? G.themes[i % 2] : null });
         G.queue = q; G.idx = 0; ask();
     }
 
     function scores() {
-        return `<div class="fm-sc">${G.teams.map((t, i) => `<div class="${G.cur && G.cur.t === i ? 'on' : ''}"><small>${E(t.name)}</small><b>${t.score}</b></div>`).join('')}</div>`;
+        return `<div class="fm-sc${G.solo ? ' solo' : ''}">${G.teams.map((t, i) => `<div class="${G.cur && G.cur.t === i ? 'on' : ''}"><small>${E(t.name)}</small><b>${t.score}</b></div>`).join('')}</div>`;
     }
 
     function ask() {
@@ -202,15 +227,16 @@
         let q = pick(L.diffs, it.mat) || pick(L.diffs, null) || pick([1, 2, 3], null);
         if (!q) return endGame('Plus de questions disponibles sur ce téléphone.');
         const team = G.teams[it.t];
-        const player = it.p || (G.solo ? team.players[0] : nextPlayer(it.t, G.level === 4 && G.elim ? alive(it.t) : null));
+        const player = it.p || (G.solo ? team.players[0] : nextPlayer(it.t, G.level >= 3 && G.elim ? alive(it.t) : null));
         G.cur = { t: it.t, p: player, q, pts: L.pts };
         showQuestion(`Niveau ${G.level} · ${L.nom} · ${G.idx + 1}/${G.queue.length}`, q, player, team);
     }
 
     function showQuestion(title, q, player, team) {
-        screen(head(title, true) + scores() + `<div class="fm-mut">${G.solo ? '' : '👉 ' + E(team.name) + ' · <b>' + E(player.name) + '</b> · '}${E(q.matiere || '')}${q.local ? ' · ⭐ question de l’école' : ''}</div>`
+        screen(head(title, true) + scores() + (G.solo ? '' : `<div class="fm-who">À TOI · <b>${E(player.name)}</b> (${E(team.name)})</div>`)
+            + `<div class="fm-mut">${E([q.matiere, q.theme].filter((v, i, a) => v && a.indexOf(v) === i).join(' · '))}${q.local ? ' · ⭐ question de l’école' : ''}</div>`
             + (G.cfg.timer ? `<div class="fm-bar"><i id="fm-tb" style="width:100%"></i></div>` : '')
-            + `<div class="fm-q">${E(q.question)}</div>${q.choix.map((c, i) => `<button class="fm-ans" data-a="${i}">${'ABCD'[i]}. ${E(c)}</button>`).join('')}`);
+            + `<div class="fm-q">${E(q.question)}</div><div class="fm-grid">${q.choix.map((c, i) => `<button class="fm-ans" data-a="${i}"><span class="fm-l">${'ABCD'[i]}</span>${E(c)}</button>`).join('')}</div>`);
         OV.querySelectorAll('[data-a]').forEach(b => b.onclick = () => answer(+b.dataset.a));
         if (G.cfg.timer) {
             let left = G.cfg.timer; const bar = OV.querySelector('#fm-tb');
@@ -224,21 +250,21 @@
         OV.querySelectorAll('[data-a]').forEach(b => { b.disabled = true; const k = +b.dataset.a; if (k === c.q.good) b.classList.add('ok'); else if (k === i) b.classList.add('ko'); });
         if (G.tab) return tabAnswer(ok);
         if (ok) G.teams[c.t].score += c.pts;
-        if (!ok && G.level === 3 && G.elim && c.p) c.p.out = true;
+        if (!ok && G.level === 2 && G.elim && c.p) c.p.out = true;
         G.idx++;
-        OV.insertAdjacentHTML('beforeend', `<div class="fm-card" style="border-color:var(${ok ? '--ok' : '--bad'},#888)"><b>${ok ? '✅ Bonne réponse ! +' + c.pts : i < 0 ? '⏰ Temps écoulé' : '❌ Mauvaise réponse'}</b>${ok ? '' : `<div>La bonne réponse : <b>${E(c.q.choix[c.q.good])}</b></div>`}${!ok && G.level === 3 && G.elim && c.p ? `<div>${E(c.p.name)} est éliminé(e).</div>` : ''}${c.q.explication ? `<p style="margin:8px 0 0">💡 ${E(c.q.explication)}</p>` : ''}</div><button class="fm-go" id="fm-nx">Suivant</button>`);
+        OV.insertAdjacentHTML('beforeend', `<div class="fm-card" style="border-color:var(${ok ? '--ok' : '--bad'},#888)"><b>${ok ? '✅ Bonne réponse ! +' + c.pts : i < 0 ? '⏰ Temps écoulé' : '❌ Mauvaise réponse'}</b>${ok ? '' : `<div>La bonne réponse : <b>${E(c.q.choix[c.q.good])}</b></div>`}${!ok && G.level === 2 && G.elim && c.p ? `<div>${E(c.p.name)} est éliminé(e).</div>` : ''}${c.q.explication ? `<p style="margin:8px 0 0">💡 ${E(c.q.explication)}</p>` : ''}</div><button class="fm-go" id="fm-nx">Suivant</button>`);
         OV.querySelector('.fm-sc').outerHTML = scores();
         OV.querySelector('#fm-nx').onclick = () => {
-            if (G.level === 3 && G.elim) { const a = alive(0).length, b = alive(1).length; if (!a || !b) return endGame(null, !a ? 1 : 0, 'élimination'); }
+            if (G.level === 2 && G.elim) { const a = alive(0).length, b = alive(1).length; if (!a || !b) return endGame(null, !a ? 1 : 0, 'élimination'); }
             ask();
         };
         OV.querySelector('#fm-nx').scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
 
     function afterLevel() {
-        if (G.level === 4 && !G.solo && G.teams[0].score === G.teams[1].score) {
+        if (G.level === 5 && !G.solo && G.teams[0].score === G.teams[1].score) {
             G.tab = { round: 1, turn: 0, aOk: null };
-            screen(head('Tir au but', true) + scores() + `<div class="fm-card" style="text-align:center"><div style="font-size:40px">⚽</div><h2>Égalité !</h2><p>Une question par équipe à tour de rôle. Si une seule équipe répond juste, elle gagne.</p></div><button class="fm-go" id="fm-n">Commencer</button>`);
+            screen(head('Tir au but', true) + scores() + `<div class="fm-card" style="text-align:center"><div class="fm-ico">⚽</div><h2>Égalité !</h2><p>Une question par équipe à tour de rôle. Si une seule équipe répond juste, elle gagne.</p></div><button class="fm-go" id="fm-n">Commencer</button>`);
             OV.querySelector('#fm-n').onclick = ask;
             return;
         }

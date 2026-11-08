@@ -7,7 +7,7 @@
     'use strict';
 
     // ---- Réglages du jeu (modifiables ici) ----
-    const BY = 'matiere';            // champ utilisé pour les "thèmes" du niveau 2 ('matiere' ou 'theme')
+    const BY = 'theme';              // v90 : vrais thèmes (champ « theme ») ; repli sur les matières si la banque est trop petite
     const JOKERS_PER_TEAM = 3;       // jokers par équipe (Appel à un ami ou 50/50, au choix)
     const JOKER_FINAL_PTS = 3;       // points d'une question de finale si un joker est utilisé
     const MIN_PER_THEME = 10;        // questions minimum par matière pour être proposée au niveau 2
@@ -18,8 +18,13 @@
         { n: 2, nom: 'Thématique',          count: 14, pts: 2, diffs: [1, 2] },
         { n: 3, nom: 'Élimination directe', count: 10, pts: 2, diffs: [1, 2] },
         { n: 4, nom: 'Finale',              count: 10, pts: 5, diffs: [2, 3] },
-        { n: 5, nom: 'Tir au but',          count: 0,  pts: 0, diffs: [2, 3] }
+        { n: 5, nom: 'Tir au but',          count: 0,  pts: 0, diffs: [2, 3] },
+        { n: 6, nom: 'Série rapide',        count: 10, pts: 1, diffs: [2] }
     ];
+    // v90 : ordre de jeu (option A) — 1 Très facile · 2 Élimination directe · 3 Série rapide · 4 Thématique · 5 Finale · Tir au but
+    // (les numéros internes ne changent pas : n=2 reste le Thématique, n=3 l'Élimination, n=4 la Finale, n=5 le tir au but)
+    const ORDER = [1, 3, 6, 2, 4];
+    const pos = n => n === 5 ? 6 : ORDER.indexOf(n) + 1;   // numéro AFFICHÉ du niveau
 
     // ================= STORAGE =================
     const rpc = async (fn, args) => { const { data, error } = await db.rpc(fn, args); if (error) throw error; return data; };
@@ -89,10 +94,10 @@
     // 3e verrou (v76) : contrôle final sur le téléphone — jamais deux fois le même texte dans une partie
     const SEEN = new Map();
     const normQ = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
-    async function draw(game, asked, diffs, value, n) {
+    async function draw(game, asked, diffs, value, n, by) {
         n = n || 1;
         const seen = SEEN.get(game.id) || new Set(); SEEN.set(game.id, seen);
-        const rows = (await QuizStorage.draw(game.niveau_scolaire, diffs, BY, value, asked, n + 5)) || [];
+        const rows = (await QuizStorage.draw(game.niveau_scolaire, diffs, by || BY, value, asked, n + 5)) || [];
         const out = [];
         for (const r of rows) {
             const k = normQ(r.question);
@@ -147,30 +152,36 @@
         s.tab = { round: 1, turn: 'A', a_ok: null }; await saveState(ctx.game.id, s); return { tie: true };
     }
 
-    // Niveau 2 : propose 3 matières + 1 mystère.
+    // Niveau Thématique (v90) : CHAQUE équipe reçoit 3 thèmes + 1 mystère, différents de ceux de l'autre équipe.
+    // Seuls les thèmes qui ont assez de questions sont proposés ; sinon on passe aux matières.
     async function buildThemeOptions(ctx) {
         const { game, state } = ctx;
-        const rows = (await QuizStorage.themes(game.niveau_scolaire, lvl(2).diffs, BY, state.asked, MIN_PER_THEME)) || [];
+        let by = BY, rows = (await QuizStorage.themes(game.niveau_scolaire, lvl(2).diffs, by, state.asked, MIN_PER_THEME)) || [];
+        if (rows.length < 2) { by = 'matiere'; rows = (await QuizStorage.themes(game.niveau_scolaire, lvl(2).diffs, by, state.asked, MIN_PER_THEME)) || []; }
         const pool = shuffle(rows.map(r => r.label));
-        if (pool.length < 3) throw new Error(`Banque insuffisante pour le niveau Thématique : il faut au moins 3 matières avec ${MIN_PER_THEME} questions chacune (trouvé : ${pool.length}).`);
-        state.theme_pool = pool;
-        state.theme_options = pool.slice(0, 3).map((label, i) => ({ id: 't' + i, label, mystery: false })).concat([{ id: 'm', label: 'Thème mystère', mystery: true }]);
+        if (pool.length < 2) throw new Error(`Banque insuffisante pour le niveau Thématique : il faut au moins 2 thèmes avec ${MIN_PER_THEME} questions chacun (trouvé : ${pool.length}).`);
+        // Répartition en alternance : A reçoit 0, 2, 4 ; B reçoit 1, 3, 5 → jamais le même thème
+        const A = [], B = [];
+        pool.slice(0, 6).forEach((t, i) => (i % 2 ? B : A).push(t));
+        const mk = (L, team) => L.map((label, i) => ({ id: team + i, label, mystery: false })).concat([{ id: team + 'm', label: 'Thème mystère', mystery: true }]);
+        state.theme_by = by; state.theme_pool = pool;
+        state.theme_options = { A: mk(A, 'A'), B: mk(B, 'B') };
         await saveState(game.id, state);
     }
 
     // picks = { A: 'idOption', B: 'idOption' } → tire 7 questions par équipe, dans SON thème.
     async function setThemes(ctx, picks) {
-        const { game, state } = ctx, L = lvl(2), opts = state.theme_options || [];
-        const a = opts.find(o => o.id === picks.A), b = opts.find(o => o.id === picks.B);
-        if (!a || !b || a.id === b.id) throw new Error('Choix de thèmes invalide.');
-        const pool = state.theme_pool, shown = opts.filter(o => !o.mystery).map(o => o.label);
-        const hidden = pool.filter(x => !shown.includes(x));
-        const mystery = other => { let c = hidden.filter(x => x !== other); if (!c.length) c = pool.filter(x => x !== other); return c[Math.floor(Math.random() * c.length)]; };
+        const { game, state } = ctx, L = lvl(2), O = state.theme_options || {};
+        const a = (O.A || []).find(o => o.id === picks.A), b = (O.B || []).find(o => o.id === picks.B);
+        if (!a || !b) throw new Error('Choix de thèmes invalide.');
+        const pool = state.theme_pool, shown = (O.A || []).concat(O.B || []).filter(o => !o.mystery).map(o => o.label);
+        // Thème mystère : un thème que personne n'a vu, sinon un autre thème que celui de l'adversaire
+        const mystery = other => { let c = pool.filter(x => !shown.includes(x) && x !== other); if (!c.length) c = pool.filter(x => x !== other); if (!c.length) c = pool; return c[Math.floor(Math.random() * c.length)]; };
         let la = a.mystery ? null : a.label, lb = b.mystery ? null : b.label;
         if (a.mystery) la = mystery(lb);
         if (b.mystery) lb = mystery(la);
-        const qa = await draw(game, state.asked, L.diffs, la, 7);
-        const qb = await draw(game, state.asked.concat(qa.map(q => q.id)), L.diffs, lb, 7);
+        const qa = await draw(game, state.asked, L.diffs, la, 7, state.theme_by);
+        const qb = await draw(game, state.asked.concat(qa.map(q => q.id)), L.diffs, lb, 7, state.theme_by);
         const queue = [];
         for (let i = 0; i < 7; i++) { queue.push({ team: 'A', q: qa[i] }); queue.push({ team: 'B', q: qb[i] }); }
         state.asked = state.asked.concat(qa.map(q => q.id), qb.map(q => q.id));
@@ -192,14 +203,14 @@
         if (!state.intro_seen.includes(n)) { state.intro_seen.push(n); await saveState(game.id, state); return { intro: n }; }
 
         if (n === 1) {
-            if (state.idx >= L.count) return advance(ctx, 2);
+            if (state.idx >= L.count) return advance(ctx, 3);   // v90 : puis Élimination directe
             const t = state.idx % 2 === 0 ? 'A' : 'B', player = pickPlayer(players, t, Math.floor(state.idx / 2));
             const q = await drawOne(game, state, L.diffs); state.idx++;
             return serve(ctx, { q, player, team: t });
         }
         if (n === 2) {
             if (!state.themes) { if (!state.theme_options) await buildThemeOptions(ctx); return { needThemes: true, options: state.theme_options }; }
-            if (state.idx >= state.n2_queue.length) return advance(ctx, 3);
+            if (state.idx >= state.n2_queue.length) return advance(ctx, 4);   // v90 : puis Finale
             const it = state.n2_queue[state.idx], k = Math.floor(state.idx / 2); state.idx++;
             return serve(ctx, { q: it.q, team: it.team, player: pickPlayer(players, it.team, k), mystery: !!state.themes[it.team].mystery });
         }
@@ -216,11 +227,18 @@
                 const s = survivors(players);
                 if (!s.A.length && s.B.length) return finishBy(ctx, 'B', 'elimination');
                 if (!s.B.length && s.A.length) return finishBy(ctx, 'A', 'elimination');
-                return advance(ctx, 4);
+                return advance(ctx, 6);   // v90 : puis Série rapide
             }
             const cur = state.n3_queue[state.idx];
             const q = await drawOne(game, state, L.diffs); state.idx++;
             return serve(ctx, { q, player: cur, team: cur.team });
+        }
+        if (n === 6) {
+            // v90 : Série rapide — 10 questions, équipes en alternance, joueurs encore en jeu
+            if (state.idx >= L.count) return advance(ctx, 2);   // puis Thématique
+            const t = state.idx % 2 === 0 ? 'A' : 'B', player = pickPlayer(players, t, Math.floor(state.idx / 2));
+            const q = await drawOne(game, state, L.diffs); state.idx++;
+            return serve(ctx, { q, player, team: t });
         }
         if (n === 4) {
             if (state.idx === 0 && !state.n4_seq.length) {
@@ -305,5 +323,5 @@
         return out;
     }
 
-    window.QuizEngine = { LEVELS, JOKERS_PER_TEAM, JOKER_FINAL_PTS, createGame, saveState, pause, abort, finish, nextQuestion, setThemes, recordAnswer, survivors, allEliminated, awardEndTitles, shuffle };
+    window.QuizEngine = { LEVELS, ORDER, pos, JOKERS_PER_TEAM, JOKER_FINAL_PTS, createGame, saveState, pause, abort, finish, nextQuestion, setThemes, recordAnswer, survivors, allEliminated, awardEndTitles, shuffle };
 })();

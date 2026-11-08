@@ -907,7 +907,8 @@
         };
     }
 
-    const LEVEL_NAMES = { 1: 'Très facile', 2: 'Thématique', 3: 'Élimination directe', 4: 'Finale', 5: 'Tir au but' };
+    const LEVEL_NAMES = { 1: 'Très facile', 2: 'Thématique', 3: 'Élimination directe', 4: 'Finale', 5: 'Tir au but', 6: 'Série rapide' };
+    const LPOS = n => (window.QuizEngine && QuizEngine.pos) ? QuizEngine.pos(n) : n;   // v90 : numéro affiché du niveau
     const TEAM_COL = { A: '#60a5fa', B: '#f87171' };
     const sideHtml = (t, name) => `<div class="qz-side ${t}" id="qz-h-${t.toLowerCase()}"><div class="qz-tname">${esc(String(name).toUpperCase())}</div><div class="qz-score" id="qz-sc-${t.toLowerCase()}">0</div></div>`;
 
@@ -945,19 +946,21 @@
             el.textContent = v;
         });
         const n = QUIZ.state.level;
-        const l = $('#qz-h-lvl'); if (l) l.textContent = n === 5 ? 'TIR AU BUT' : 'NIVEAU ' + n;
+        const l = $('#qz-h-lvl'); if (l) l.textContent = n === 5 ? 'TIR AU BUT' : 'NIVEAU ' + LPOS(n);
         const nm = $('#qz-h-name'); if (nm) nm.textContent = n === 5 ? '' : (LEVEL_NAMES[n] || '');
     }
 
+    // v90 : ordre 1 Très facile · 2 Élimination directe · 3 Série rapide · 4 Thématique · 5 Finale (clés = numéros internes)
     const INTROS = {
-        1: ['NIVEAU 1', 'Très facile', ['10 questions · 1 point chacune', 'Les équipes répondent à tour de rôle : A, B, A, B…']],
-        2: ['NIVEAU 2', 'Thématique', ['Chaque équipe choisit son thème', '7 questions par équipe · 2 points chacune']],
-        3: ['NIVEAU 3', 'Élimination directe', ['10 questions · 2 points chacune', 'Un joueur à la fois', 'Une mauvaise réponse = joueur éliminé']],
-        4: ['NIVEAU 4', 'Finale', ['10 questions · 5 points chacune', 'Un joker utilisé ramène la question à 3 points']]
+        1: ['Très facile', ['10 questions · 1 point chacune', 'Les équipes répondent à tour de rôle : A, B, A, B…']],
+        3: ['Élimination directe', ['Un joueur à la fois · 2 points', 'Une mauvaise réponse = joueur éliminé']],
+        6: ['Série rapide', ['10 questions · 1 point chacune', 'Les joueurs encore en jeu répondent à tour de rôle']],
+        2: ['Thématique', ['Chaque équipe reçoit 3 thèmes + 1 thème mystère', 'Elle en choisit un : 7 questions · 2 points chacune']],
+        4: ['Finale', ['10 questions · 5 points chacune', 'Un joker utilisé ramène la question à 3 points']]
     };
 
     function showIntro(n) {
-        const it = INTROS[n] || ['NIVEAU ' + n, '', []];
+        const it0 = INTROS[n] || ['', []], it = ['NIVEAU ' + LPOS(n), it0[0], it0[1]];
         updateScores();
         ['#qz-h-a', '#qz-h-b'].forEach(s => $(s).classList.remove('act'));
         QUIZ.timeLeft = QUIZ.game.timer_seconds; paintTimer();
@@ -969,7 +972,7 @@
     function showThemePicker(options) {
         const picks = {}, main = $('#qz-main-area');
         const stepPick = team => {
-            const avail = options.filter(o => !Object.values(picks).includes(o.id));
+            const avail = Array.isArray(options) ? options.filter(o => !Object.values(picks).includes(o.id)) : (options[team] || []);   // v90 : options propres à chaque équipe
             const name = team === 'A' ? QUIZ.game.class_a_name : QUIZ.game.class_b_name;
             $('#qz-h-a').classList.toggle('act', team === 'A'); $('#qz-h-b').classList.toggle('act', team === 'B');
             main.innerHTML = `<div class="qz-qwrap"><div class="qz-turn" style="--tc:${TEAM_COL[team]}">CHOIX DU THÈME · ÉQUIPE <b>${esc(String(name).toUpperCase())}</b></div><div class="qz-opts">${avail.map(o => `<div class="qz-opt${o.mystery ? ' myst' : ''}" role="button" data-id="${o.id}">${o.mystery ? '🎁 THÈME MYSTÈRE' : esc(o.label)}</div>`).join('')}</div></div>`;

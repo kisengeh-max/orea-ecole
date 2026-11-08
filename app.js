@@ -398,12 +398,17 @@ async function boot() {
     if (!navigator.onLine && snap && snap.uid === session.user.id) return goOffline(snap);
     const { data: adm, error: ea } = await db.rpc('is_platform_admin');
     if (isNet(ea)) return snap && snap.uid === session.user.id ? goOffline(snap) : netView();
-    if (adm === true) { $('#hs').textContent = 'ORÉA'; return adminView(); }
+    // v90 : mode Test (ORÉA « voit comme » un rôle dans une école TEST)
+    const tst = adm === true && window.oreaTest ? oreaTest.read() : null;
+    if (adm === true && !tst) { $('#hs').textContent = 'ORÉA'; return adminView(); }
+    if (tst && tst.role === 'parent') { location.replace('parent.html'); return; }
+    if (tst && tst.role === 'ambassadeur') return typeof ambEntry === 'function' ? ambEntry() : adminView();
     const { data: p, error: ep } = await db.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
     if (isNet(ep)) return snap && snap.uid === session.user.id ? goOffline(snap) : netView();
     if (!p) return setupView();
     // v87 : un compte parent ouvert sur la page de l'école (application installée depuis l'espace parent) → espace parent
     if (p.role === 'parent') { location.replace('parent.html'); return; }
+    if (tst && p.active === false) { localStorage.removeItem('orea_test'); $('#hs').textContent = 'ORÉA'; return adminView(); }
     if (p.active === false) { $('#nav').hidden = true; $('#main').innerHTML = '<div class=auth><h2>Compte désactivé</h2><p>Contacte la direction de ton école.</p><button class=ghost onclick=out()>Déconnexion</button></div>'; return; }
     S.me = p;
     // v87 : « dernière connexion » enregistrée par la base (l'ancienne écriture directe était refusée)
@@ -2179,7 +2184,9 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 window.addEventListener('online', () => { S.offline ? boot() : qsync(); });
 window.addEventListener('offline', qui);
 setInterval(qsync, 30000);
-boot();
+// v90 : démarrage APRÈS le chargement de tous les modules (ambadmin.js, test.js, personnel.js…),
+// sinon un téléphone lent pouvait afficher l'ancien écran ORÉA ou ignorer un module.
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => boot()); else boot();
 
 /* ========================================================
    PAQUET K2 — Parents & Communication (admin côté école)
