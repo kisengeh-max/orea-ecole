@@ -236,7 +236,7 @@ function newYear() {
         if (!y) throw Error('Année obligatoire');
         if (yrs().includes(y)) throw Error('Cette année existe déjà');
         if (v.cp === '0') { setTimeout(() => addClass(y), 60); return; }
-        const rows = yc().map(c => ({ school_id: S.school.id, name: c.name, year: y, level: c.level || null, fee_t1: c.fee_t1, fee_t2: c.fee_t2, fee_t3: c.fee_t3, fee_currency: c.fee_currency }));
+        const rows = yc().map(c => ({ school_id: S.school.id, name: c.name, year: y, level: c.level || null, option: c.option || null, fee_t1: c.fee_t1, fee_t2: c.fee_t2, fee_t3: c.fee_t3, fee_currency: c.fee_currency }));
         if (!rows.length) throw Error('Aucune classe à copier');
         const { data: nc, error } = await db.from('classes').insert(rows).select();
         if (error) throw error;
@@ -812,13 +812,18 @@ async function classPng(c, l) {
 function addClass(yr) {
     // Complexe scolaire : on choisit le niveau. Sinon, la base le déduit du type d'école.
     // Les frais ne sont demandés qu'au chef d'établissement (le Directeur des études n'a pas accès à l'argent).
-    const F = [{ n: 'name', l: 'Nom (ex : 3e A)' }, { n: 'year', l: 'Année scolaire', v: yr || S.year || '' }];
+    // v93 : seuls le nom et l'année sont obligatoires ; l'année scolaire est proposée (bascule le 1er août) ;
+    // les frais se fixent plus tard ; « Option » pour le secondaire ; pas de frais pour le primaire public (gratuité)
+    const F = [{ n: 'name', l: 'Nom (ex : 3e A)' }, { n: 'year', l: 'Année scolaire', v: yr || S.year || schoolYearNow() }];
     if (schoolKind() === 'complexe') F.push({ n: 'level', l: 'Niveau', o: CLASS_LEVELS, v: 'secondaire' });
-    if (fin()) F.push({ n: 't1', l: 'Frais 1er trimestre', t: 'number' }, { n: 't2', l: 'Frais 2e trimestre', t: 'number' }, { n: 't3', l: 'Frais 3e trimestre', t: 'number' }, { n: 'cur', l: 'Devise des frais', o: CUR.map(c => [c, c]), v: S.cur });
+    if (['secondaire', 'complexe'].includes(schoolKind())) F.push({ n: 'opt', l: 'Option (secondaire, facultatif)', o: [['', '— aucune —']].concat(classOptions().map(o => [o, o])), v: '' });
+    const freeSchool = schoolFree() && schoolKind() === 'primaire';
+    if (fin() && !freeSchool) F.push({ n: 't1', l: 'Frais 1er trimestre (facultatif)', t: 'number', r: false }, { n: 't2', l: 'Frais 2e trimestre (facultatif)', t: 'number', r: false }, { n: 't3', l: 'Frais 3e trimestre (facultatif)', t: 'number', r: false }, { n: 'cur', l: 'Devise des frais', o: CUR.map(c => [c, c]), v: S.cur });
     ask('Nouvelle classe', F, async v => {
         const row = { school_id: S.school.id, name: v.name.trim(), year: v.year.trim() };
         if (v.level) row.level = v.level;
-        if (fin()) Object.assign(row, { fee_t1: +v.t1, fee_t2: +v.t2, fee_t3: +v.t3, fee_currency: v.cur });
+        if (v.opt) row.option = v.opt;
+        if (fin() && !freeSchool) Object.assign(row, { fee_t1: +v.t1 || 0, fee_t2: +v.t2 || 0, fee_t3: +v.t3 || 0, fee_currency: v.cur });
         const { data: nc, error } = await db.from('classes').insert(row).select('id');
         if (error) throw error;
  S.year = cy({ year: v.year.trim() }); S.cls = null; localStorage['orea_year_' + S.school.id] = S.year; await load(); render();
@@ -949,7 +954,9 @@ function editStudent(id) {
     const s = S.stu.find(x => x.id === id);
     ask('Modifier l’élève', [{ n: 'name', l: 'Nom complet', v: s.name }, { n: 'sexe', l: 'Sexe', o: SEXES, v: s.sexe || '' }, { n: 'dn', l: 'Date de naissance', t: 'date', r: false, v: s.date_naissance || '' }, { n: 'phone', l: 'WhatsApp du parent', t: 'tel', r: false, v: s.parent_phone }, { n: 'cls', l: 'Classe', o: yc().map(c => [c.id, esc(c.name)]), v: s.class_id }], async v => {
         if (v.dn && v.dn > tdy()) throw Error('La date de naissance est dans le futur.');
-        const { data, error } = await db.from('students').update({ name: v.name.trim(), parent_phone: v.phone.trim() || null, class_id: v.cls, sexe: v.sexe || null, date_naissance: v.dn || null }).eq('id', id).select();
+        // v93 : un changement de classe passe par l'historique (les cotes suivent l'élève)
+        if (v.cls && v.cls !== s.class_id) { const r = await db.rpc('v93_move_student', { p_student: id, p_to_class: v.cls, p_kind: 'changement_classe', p_note: null }); if (r.error) throw r.error; }
+        const { data, error } = await db.from('students').update({ name: v.name.trim(), parent_phone: v.phone.trim() || null, sexe: v.sexe || null, date_naissance: v.dn || null }).eq('id', id).select();
         if (error) throw error; if (!data.length) throw Error('Modification refusée'); S.cls = v.cls; await load(); render(); toast('Élève modifié');
     });
 }
@@ -1481,7 +1488,7 @@ function vReglages() {
     const sc = S.school;
     let h = `<div class=card><span>Devise d’affichage</span><select id=cu style=width:auto;margin:0>${CUR.map(c => `<option ${c === S.cur ? 'selected' : ''}>${c}</option>`).join('')}</select></div><div class=card><span>Thème</span><button class=ghost style=width:auto id=th>Clair / Sombre</button></div>` + installCard();
     if (fin()) h += `<div class="card col"><b>Taux de change (1 unité en FC)</b><label>USD<input id=r1 type=number step=any value="${sc.rates.USD}"></label><label>EUR<input id=r2 type=number step=any value="${sc.rates.EUR}"></label><label><input id=au type=checkbox style=width:auto ${sc.auto_rates ? 'checked' : ''}> Mise à jour automatique</label><button id=sr>Enregistrer les taux</button><small>Code d’invitation : <b>${esc(sc.code)}</b></small></div>`;
-    if (fin()) h += `<div class="card col"><b>Frais par trimestre</b>${yc().length ? yc().map(c => `<button class=ghost onclick="editFees('${c.id}')">${esc(c.name)} · T1: ${nf(c.fee_t1 || 0)} / T2: ${nf(c.fee_t2 || 0)} / T3: ${nf(c.fee_t3 || 0)} ${c.fee_currency}</button>`).join('') : '<small>Aucune classe.</small>'}<small>Touche une classe pour modifier T1, T2 et T3.</small></div>`;
+    if (fin()) h += `<div class="card col"><b>Frais par trimestre</b>${yc().length ? yc().map(c => classFree(c) ? `<button class=ghost disabled>${esc(cnm(c.id))} · <b class=ok>Gratuité</b> (primaire public)</button>` : `<button class=ghost onclick="editFees('${c.id}')">${classFeesUnset(c) ? '<b class=due>⚠ Frais à fixer</b> · ' : ''}${esc(cnm(c.id))} · T1: ${nf(c.fee_t1 || 0)} / T2: ${nf(c.fee_t2 || 0)} / T3: ${nf(c.fee_t3 || 0)} ${c.fee_currency}</button>`).join('') : '<small>Aucune classe.</small>'}<small>Touche une classe pour modifier T1, T2 et T3.</small></div>`;
     if (dir()) {
         const yf = S.fees.filter(f => cy(f) === S.year && !f.student_id), tm = S.terms[S.year] || {};
         if (fin()) h += `<div class="card col"><b>Autres frais · ${esc(S.year || '—')}</b>${yf.length ? yf.map(f => `<button class=ghost onclick="editFee('${f.id}')">${esc(f.name)} · ${nf(f.amount)} ${f.currency} · ${f.class_id ? esc((S.classes.find(c => c.id === f.class_id) || {}).name || '') : 'Toutes'}</button>`).join('') : '<small>Aucun frais supplémentaire.</small>'}<button class=ghost onclick=addFee()>+ Frais (inscription, uniforme…)</button></div>`;
@@ -1673,7 +1680,14 @@ function mkPdf(o) {
     return u;
 }
 async function ex(n) { const r = await pageAll(() => db.from(n).select('*')); if (r.error) throw new Error(r.error.message); return r.data; }
-const cnm = id => (S.classes.find(c => c.id === id) || {}).name || '';
+const cnm = id => { const c = S.classes.find(x => x.id === id); return c ? c.name + (c.option && !c.name.toLowerCase().includes(c.option.toLowerCase()) ? ' · ' + c.option : '') : ''; };
+// v93 : année scolaire en cours (du 1er août au 31 juillet pour le choix par défaut), gratuité, options
+function schoolYearNow(d = new Date()) { const y = d.getFullYear(); return d.getMonth() >= 7 ? y + '-' + (y + 1) : (y - 1) + '-' + y; }
+const schoolFree = () => !!(S.school && ['publique', 'conventionnee'].includes(S.school.statut));
+const classLevel = c => (c && c.level) || (schoolKind() === 'complexe' ? 'secondaire' : schoolKind());
+const classFree = c => schoolFree() && classLevel(c) === 'primaire';
+const classFeesUnset = c => !classFree(c) && !(+c.fee_t1 || +c.fee_t2 || +c.fee_t3);
+const classOptions = () => (S.school && Array.isArray(S.school.class_options)) ? S.school.class_options : [];
 const stamp = () => 'Année ' + (S.year || '—') + ' · édité le ' + new Date().toLocaleDateString('fr-FR');
 function exStu() {
     const l = ys().slice().sort(sorts.alpha), du = s => Number(s.due1_cdf || 0) + Number(s.due2_cdf || 0) + Number(s.due3_cdf || 0) + Number(s.fee_exp_cdf || 0);

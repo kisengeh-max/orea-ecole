@@ -351,7 +351,7 @@
     /* =====================================================================
        2. BUDGET (cœur de la finance)
        ===================================================================== */
-    const DEP = [['salaires', 'Salaires'], ['loyer', 'Loyer'], ['electricite', 'Électricité/Eau'], ['fournitures', 'Fournitures'], ['transport', 'Transport'], ['entretien', 'Entretien'], ['examens', 'Examens'], ['communication', 'Communication'], ['autre', 'Autre']];
+    const DEP = [['salaires', 'Salaires'], ['loyer', 'Loyer'], ['electricite', 'Électricité/Eau'], ['fournitures', 'Fournitures'], ['transport', 'Transport'], ['entretien', 'Entretien'], ['examens', 'Examens'], ['communication', 'Communication'], ['abonnement', 'Abonnement ORÉA'], ['autre', 'Autre']];
     const REV_MAN = [['dons', 'Dons'], ['subventions', 'Subventions'], ['locations', 'Locations'], ['ventes', 'Ventes'], ['autres', 'Autres']];
     const REC = [['scolarite', 'Scolarité'], ['frais', 'Autres frais'], ...REV_MAN];
     const lbl = (L, c) => (L.find(x => x[0] === c) || [c, c])[1];
