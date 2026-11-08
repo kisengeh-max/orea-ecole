@@ -405,6 +405,7 @@ async function boot() {
     if (adm === true && !tst) { $('#hs').textContent = 'ORÉA'; return adminView(); }
     if (tst && tst.role === 'parent') { location.replace('parent.html'); return; }
     if (tst && tst.role === 'ambassadeur') return typeof ambEntry === 'function' ? ambEntry() : adminView();
+    if (tst && tst.role === 'inspecteur') return typeof oreaInspView === 'function' ? oreaInspView() : adminView();
     const { data: p, error: ep } = await db.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
     if (isNet(ep)) return snap && snap.uid === session.user.id ? goOffline(snap) : netView();
     if (!p) return setupView();

@@ -55,6 +55,7 @@
         LAST = { year: S.year, tables: build(data || {}) };
         $('#main').innerHTML = back + `<h3>📊 Statistiques · ${E(S.year || '')}</h3><small>${E(S.school.name)} · calculées le ${new Date().toLocaleDateString('fr-FR')}</small>`
             + `<div class=row style="margin:10px 0"><button class=ghost onclick="statsCsv()">📊 Excel (CSV)</button><button class=ghost onclick="statsPrint()">🖨 Imprimer / PDF</button></div>`
+            + (typeof oreaReports === 'function' ? `<button onclick="oreaReports()" style="margin-bottom:10px">📄 Mes rapports statistiques (créer, modifier, imprimer)</button>` : '')
             + LAST.tables.map(tableHtml).join('');
     };
     window.statsCsv = function () {
@@ -68,14 +69,18 @@
         document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
         if (typeof toast === 'function') toast('Fichier enregistré dans Téléchargements');
     };
-    window.statsPrint = function () {
-        if (!LAST) return;
+    window.statsPrint = function () { if (LAST) printTables(S.school.name, 'Statistiques ' + (LAST.year || ''), LAST.tables, ''); };
+    // v92 : impression commune (statistiques, rapports de l'école, inspecteur)
+    function printTables(school, title, tables, comment) {
+        const LAST = { year: title, tables };
         const w = window.open('', '_blank'); if (!w) return toast('Autorise les fenêtres pour imprimer.');
-        w.document.write(`<!doctype html><html><head><meta charset=utf-8><title>Statistiques ${E(LAST.year)}</title><style>body{font-family:Arial,sans-serif;color:#111;margin:24px}h1{font-size:20px;margin:0}h2{font-size:15px;margin:22px 0 6px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #999;padding:4px 6px;text-align:left}th{background:#eee}tr.f td{font-weight:bold}small{color:#555}</style></head><body><h1>${E(S.school.name)}</h1><small>Statistiques de l’année ${E(LAST.year)} · éditées le ${new Date().toLocaleDateString('fr-FR')} · ORÉA École</small>`
+        w.document.write(`<!doctype html><html><head><meta charset=utf-8><title>${E(title)}</title><style>body{font-family:Arial,sans-serif;color:#111;margin:24px}h1{font-size:20px;margin:0}h2{font-size:15px;margin:22px 0 6px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #999;padding:4px 6px;text-align:left}th{background:#eee}tr.f td{font-weight:bold}small{color:#555}</style></head><body><h1>${E(school)}</h1><small>${E(title)} · édité le ${new Date().toLocaleDateString('fr-FR')} · ORÉA École</small>${comment ? `<p style="white-space:pre-wrap;border-left:3px solid #b08a30;padding:6px 10px;background:#faf6ea">${E(comment)}</p>` : ''}`
             + LAST.tables.map(t => `<h2>${E(t.title)}</h2><table><tr>${t.head.map(h => `<th>${E(h)}</th>`).join('')}</tr>${t.rows.map(r => `<tr>${r.map(c => `<td>${E(c)}</td>`).join('')}</tr>`).join('')}${t.foot ? `<tr class=f>${t.foot.map(c => `<td>${E(c)}</td>`).join('')}</tr>` : ''}</table>`).join('')
             + `<script>setTimeout(()=>print(),300)<\/script></body></html>`);
         w.document.close();
     };
+
+    window.OreaStats = { build, tableHtml, print: printTables };
 
     // Menu → Administration : « Statistiques » (direction)
     const oMenu = window.vMenu;
