@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v82 — ui.js : finitions visuelles communes (école + parent)
+   ORÉA École v87 — ui.js : finitions visuelles communes (école + parent)
    1) Icônes SVG à la place des emojis, PARTOUT dans l'interface
       (conversion automatique de l'affichage ; les messages écrits par les
        utilisateurs, les champs de saisie et les notifications du téléphone
@@ -8,6 +8,10 @@
    3) Bouton retour du téléphone dans l'espace parent + « ← Retour » en haut
       de la fiche d'un enfant.
    4) Génie en Herbe : boutons Pause / Son plus grands et sobres.
+   5) v87 : bouton clair / sombre dans l'en-tête, pour TOUS les comptes
+      (personnel, parents, ambassadeurs, ORÉA), même avant la connexion.
+   6) v87 : guide d'installation adapté à l'appareil (Android, iPhone,
+      ordinateur) : window.oreaInstall() et window.oreaInstallCard().
    À charger EN DERNIER dans index.html et parent.html.
    ===================================================================== */
 (function () {
@@ -96,6 +100,8 @@
         target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
         swords: '<path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2"/>',
         send: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+        sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+        share: '<path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>',
         hand: '<path d="M7 11V5a1.5 1.5 0 0 1 3 0v5M10 10V3.5a1.5 1.5 0 0 1 3 0V10M13 10V5a1.5 1.5 0 0 1 3 0v6M16 9a1.5 1.5 0 0 1 3 0v5a7 7 0 0 1-7 7h-1a7 7 0 0 1-5.6-2.8L3 15a1.5 1.5 0 0 1 2.3-1.9L7 15"/>'
     };
     const svg = (n, cls) => `<svg class="ic${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n] || ''}</svg>`;
@@ -231,4 +237,99 @@ dialog[open]::backdrop{animation:uiFade .22s ease}
             if (P.__detail || P.tab !== 'accueil') { P.tab = 'accueil'; render(); window.scrollTo(0, 0); }
         });
     }
+
+    /* ---------- 5) Thème clair / sombre (v87) : un bouton dans l'en-tête, pour tous ---------- */
+    const thCss = document.createElement('style');
+    thCss.textContent = `
+header #hs{flex:1 1 auto;min-width:0}
+#thBtn{width:40px!important;min-width:40px;height:40px;min-height:40px!important;padding:0!important;margin:0!important;flex:none;display:inline-flex;align-items:center;justify-content:center;background:transparent!important;border:0!important;box-shadow:none!important;color:var(--gold)!important;border-radius:10px}
+#thBtn:active{background:rgba(199,163,75,.14)!important}
+#thBtn .ic{width:22px;height:22px}
+#thBtn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.oi-ov{position:fixed;inset:0;z-index:650;background:var(--bg);color:var(--tx);overflow-y:auto;padding:calc(12px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));animation:uiPanel .26s cubic-bezier(.2,.7,.2,1)}
+.oi-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.oi-head b{flex:1;font-size:18px}
+.oi-x{width:42px!important;min-height:42px!important;padding:0!important;border-radius:12px;border:1px solid var(--line)!important;background:transparent!important;color:var(--tx)!important;box-shadow:none!important}
+.oi-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:12px 0}
+.oi-card h3{margin:0 0 8px;font-size:16px}
+.oi-card ol{margin:0;padding-left:22px;line-height:1.7}
+.oi-card p{margin:6px 0 0;color:var(--mut);font-size:14px;line-height:1.5}
+.oi-ov details summary{color:var(--gold);padding:10px 0;cursor:pointer}
+.oi-go{width:100%;margin-top:10px}
+.oi-ov .ic{width:1.15em;height:1.15em;vertical-align:-0.2em;flex:none}
+.oi-x .ic{width:22px;height:22px}
+@media (prefers-reduced-motion:reduce){.oi-ov{animation:none}}
+`;
+    document.head.appendChild(thCss);
+    const META = () => document.querySelector('meta[name="theme-color"]');
+    function paintTheme() {
+        const b = document.getElementById('thBtn'), light = document.documentElement.dataset.theme === 'light';
+        if (b) { b.innerHTML = svg(light ? 'moon' : 'sun'); b.setAttribute('aria-label', light ? 'Passer en mode sombre' : 'Passer en mode clair'); b.title = b.getAttribute('aria-label'); }
+        const m = META(); if (m) m.setAttribute('content', light ? '#F4EFE2' : '#111211');
+    }
+    window.oreaSetTheme = function (t) {
+        t = t === 'light' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = t;
+        try { localStorage.theme = t; } catch (_) { }
+        paintTheme();
+    };
+    window.oreaToggleTheme = () => window.oreaSetTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+    function ensureThemeBtn() {
+        const h = document.querySelector('body > header');
+        if (!h || document.getElementById('thBtn')) return;
+        const b = document.createElement('button');
+        b.type = 'button'; b.id = 'thBtn'; b.className = 'no-ico';
+        b.onclick = window.oreaToggleTheme;
+        h.appendChild(b); paintTheme();
+    }
+    // Le bouton « Thème » des Réglages de l'école reste utilisable : on suit ses changements
+    new MutationObserver(paintTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', ensureThemeBtn) : ensureThemeBtn();
+
+    /* ---------- 6) Installer l'application (v87) ---------- */
+    let deferred = null;
+    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; });
+    window.addEventListener('appinstalled', () => { deferred = null; document.querySelectorAll('.oi-card-inst').forEach(x => x.remove()); });
+    const UA = navigator.userAgent || '';
+    const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    const isIOS = () => /iphone|ipad|ipod/i.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isAndroid = () => /android/i.test(UA);
+    const device = () => isIOS() ? 'ios' : isAndroid() ? 'android' : 'pc';
+    const NAME = PARENT ? 'ORÉA Parents' : 'ORÉA École';
+    const STEPS = {
+        android: `<h3>Sur Android</h3><ol><li>Ouvrez cette page avec <b>Chrome</b>.</li><li>Touchez le menu <b>⋮</b> en haut à droite.</li><li>Touchez <b>Installer l’application</b> (ou <b>Ajouter à l’écran d’accueil</b>).</li><li>Confirmez : l’icône ${NAME} apparaît avec vos applications.</li></ol><p>L’application s’ouvre ensuite en plein écran, sans barre d’adresse, comme les autres applications du téléphone.</p>`,
+        ios: `<h3>Sur iPhone ou iPad</h3><ol><li>Ouvrez cette page avec <b>Safari</b> (obligatoire sur iPhone).</li><li>Touchez le bouton <b>Partager</b> ${svg('share')} en bas de l’écran.</li><li>Faites défiler et touchez <b>Sur l’écran d’accueil</b>.</li><li>Touchez <b>Ajouter</b> en haut à droite.</li></ol><p>Ouvrez ensuite ${NAME} depuis son icône. Sur iPhone, les notifications ne marchent qu’après cette installation.</p>`,
+        pc: `<h3>Sur ordinateur</h3><ol><li>Ouvrez cette page avec <b>Chrome</b> ou <b>Edge</b>.</li><li>Cliquez sur l’icône d’installation à droite de la barre d’adresse, ou ouvrez le menu <b>⋮</b> puis <b>Installer ${NAME}</b>.</li><li>Confirmez avec <b>Installer</b>.</li></ol><p>${NAME} s’ouvre alors dans sa propre fenêtre et se lance depuis le bureau ou la barre des tâches. Sur Mac avec Safari : menu Fichier, puis <b>Ajouter au Dock</b>.</p>`
+    };
+    let guideOpen = null;
+    function closeGuide() { if (guideOpen) { guideOpen.remove(); guideOpen = null; document.body.style.overflow = ''; } }
+    window.addEventListener('popstate', e => { if (!guideOpen) return; e.stopImmediatePropagation(); closeGuide(); }, true);
+    function guide() {
+        const d = device(), others = Object.keys(STEPS).filter(k => k !== d);
+        const notSafari = d === 'ios' && /crios|fxios|edgios|opios/i.test(UA);
+        const el = document.createElement('div');
+        el.className = 'oi-ov';
+        el.innerHTML = `<div class="oi-head"><button type="button" class="oi-x" aria-label="Fermer">${svg('x')}</button><b>Installer ${NAME}</b></div>`
+            + (isStandalone() ? `<div class="oi-card"><h3>C’est déjà fait</h3><p>Vous utilisez déjà l’application installée.</p></div>` : '')
+            + (notSafari ? `<div class="oi-card"><h3>Ouvrez d’abord Safari</h3><p>Sur iPhone, seule l’application Safari peut installer ${NAME}. Copiez l’adresse de cette page et ouvrez-la dans Safari.</p></div>` : '')
+            + `<div class="oi-card">${STEPS[d]}</div>`
+            + `<details><summary>Sur un autre appareil</summary>${others.map(k => `<div class="oi-card">${STEPS[k]}</div>`).join('')}</details>`;
+        document.body.appendChild(el); document.body.style.overflow = 'hidden';
+        guideOpen = el;
+        history.pushState({ oi: 1 }, '');
+        el.querySelector('.oi-x').onclick = () => history.back();
+    }
+    // Installe directement si le téléphone le permet (Android / ordinateur), sinon affiche le guide
+    window.oreaInstall = async function () {
+        if (deferred) {
+            const p = deferred; deferred = null;
+            try { p.prompt(); const r = await p.userChoice; if (r && r.outcome === 'accepted') return; } catch (_) { }
+        }
+        guide();
+    };
+    window.oreaInstallGuide = guide;
+    window.oreaInstallCard = function () {
+        if (isStandalone()) return '';
+        return `<div class="p-card oi-card-inst" style="cursor:default;margin-top:14px"><h3>Application ${NAME}</h3><div class="p-line"><small>Installez-la sur ce téléphone : elle s’ouvre comme une vraie application.</small></div><button type="button" class="p-btn oi-go" onclick="oreaInstall()">Installer l’application</button></div>`;
+    };
 })();

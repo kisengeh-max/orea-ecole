@@ -1,0 +1,22 @@
+{
+"id": "./parent.html?app=parent",
+"name": "ORÉA École — Parents",
+"short_name": "ORÉA Parents",
+"description": "Suivez la scolarité de vos enfants : paiements, cotes, présences et messages.",
+"lang": "fr",
+"dir": "ltr",
+"start_url": "./parent.html?source=app",
+"scope": "./",
+"display": "standalone",
+"display_override": ["standalone", "minimal-ui"],
+"orientation": "any",
+"background_color": "#0b0b0a",
+"theme_color": "#111211",
+"categories": ["education"],
+"icons": [
+{"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+{"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+{"src": "icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable"},
+{"src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+]
+}

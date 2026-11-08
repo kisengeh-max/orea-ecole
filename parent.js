@@ -151,7 +151,7 @@ function homeView() {
                 : due > 0 ? `<div class="p-bal p-due">Doit ${fmtCDF(due)}</div>` : `<div class="p-bal p-ok">✓ À jour</div>`;
             return `<div class=p-card onclick="childDetail('${s.id}')"><h3>👤 ${esc(s.name)}</h3>${tag}<div class=p-line>Total payé : ${fmtCDF(Number(s.paid_cdf || 0))}</div></div>`;
         }).join('');
-        h += `<div class=p-actions><button class=p-btn onclick=addChildView()>+ Ajouter un autre enfant</button><button class=ghost style="padding:12px;background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:10px" onclick=logout()>Se déconnecter</button></div>${pSupportCard()}${P.staff ? '' : `<p style="text-align:center;margin:16px 0 4px"><a href="#" onclick="deleteAccountP();return false" style="font-size:11px;color:var(--muted)">Supprimer mon compte</a></p>`}`;
+        h += `<div class=p-actions><button class=p-btn onclick=addChildView()>+ Ajouter un autre enfant</button><button class=ghost style="padding:12px;background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:10px" onclick=logout()>Se déconnecter</button></div>${typeof oreaInstallCard === 'function' ? oreaInstallCard() : ''}${pSupportCard()}${P.staff ? '' : `<p style="text-align:center;margin:16px 0 4px"><a href="#" onclick="deleteAccountP();return false" style="font-size:11px;color:var(--muted)">Supprimer mon compte</a></p>`}`;
     }
     $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
 }

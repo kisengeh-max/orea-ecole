@@ -138,6 +138,8 @@ async function installApp() {
         if (outcome === 'accepted') defPrompt = null;
         return;
     }
+    // v87 : guide adapté à l'appareil (Android, iPhone, ordinateur) — ui.js
+    if (typeof oreaInstall === 'function') return oreaInstall();
     show('<h3>Installer ORÉA École</h3><p>Dans Chrome, touche le menu <b>⋮</b> en haut à droite, puis <b>Ajouter à l’écran d’accueil</b>.</p><form method=dialog><button>OK</button></form>');
 }
 
@@ -354,13 +356,16 @@ async function boot() {
     if (!navigator.onLine && snap && snap.uid === session.user.id) return goOffline(snap);
     const { data: adm, error: ea } = await db.rpc('is_platform_admin');
     if (isNet(ea)) return snap && snap.uid === session.user.id ? goOffline(snap) : netView();
-    if (adm === true) { $('#hs').textContent = 'Administration'; return adminView(); }
+    if (adm === true) { $('#hs').textContent = 'ORÉA'; return adminView(); }
     const { data: p, error: ep } = await db.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
     if (isNet(ep)) return snap && snap.uid === session.user.id ? goOffline(snap) : netView();
     if (!p) return setupView();
+    // v87 : un compte parent ouvert sur la page de l'école (application installée depuis l'espace parent) → espace parent
+    if (p.role === 'parent') { location.replace('parent.html'); return; }
     if (p.active === false) { $('#nav').hidden = true; $('#main').innerHTML = '<div class=auth><h2>Compte désactivé</h2><p>Contacte la direction de ton école.</p><button class=ghost onclick=out()>Déconnexion</button></div>'; return; }
     S.me = p;
-    db.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', p.id).then(() => { }, () => { });
+    // v87 : « dernière connexion » enregistrée par la base (l'ancienne écriture directe était refusée)
+    db.rpc('v87_touch_seen').then(() => { }, () => { });
     const { data: s, error: es } = await db.from('schools').select('*').eq('id', p.school_id).single();
     if (!s) {
         if (isNet(es) && snap && snap.uid === p.id) return goOffline(snap);
@@ -372,6 +377,15 @@ async function boot() {
     S.school = s; $('#hs').textContent = s.name;
     if (s.sub_until) { const left = Math.ceil((new Date(s.sub_until) - Date.now()) / 864e5); if (left <= 0) return lockView(); }
     await autoRate(); await qsync(); await load(); render();
+    shortcutTab();
+}
+// v87 : raccourcis de l'icône de l'application (appui long) : ./?t=caisse ou ./?t=presences
+function shortcutTab() {
+    const t = new URLSearchParams(location.search).get('t');
+    if (!t || !['caisse', 'presences'].includes(t)) return;
+    try { history.replaceState(history.state, '', location.pathname); } catch (_) { }
+    if (t === 'caisse' && !money()) return;
+    menuGo(t);
 }
 
 /* ---------- Autres frais, trimestres, stats ---------- */
@@ -914,13 +928,13 @@ function bulkAdd() {
 const ADMIN_WA = '243825556492';
 function lockView() {
     $('#nav').hidden = true; $('#exb').hidden = true;
-    $('#main').innerHTML = `<div class=auth><h2>Abonnement expiré</h2><p>L’accès de ${esc(S.school.name)} est suspendu. Contacte l’administrateur.</p>${ADMIN_WA ? `<a class=btn style="text-align:center;text-decoration:none" href="https://wa.me/${ADMIN_WA}?text=${encodeURIComponent('Bonjour, je souhaite renouveler l’abonnement de ' + S.school.name)}">Contacter l’administrateur</a>` : ''}<button class=ghost onclick=out()>Déconnexion</button></div>`;
+    $('#main').innerHTML = `<div class=auth><h2>Abonnement expiré</h2><p>L’accès de ${esc(S.school.name)} est suspendu. Contacte ORÉA.</p>${ADMIN_WA ? `<a class=btn style="text-align:center;text-decoration:none" href="https://wa.me/${ADMIN_WA}?text=${encodeURIComponent('Bonjour, je souhaite renouveler l’abonnement de ' + S.school.name)}">Contacter ORÉA</a>` : ''}<button class=ghost onclick=out()>Déconnexion</button></div>`;
 }
 async function adminView() {
     try { await adminDraw(); }
     catch (e) {
         console.error('adminView', e);
-        $('#main').innerHTML = '<div class=auth><h2>Administration</h2><p>Impossible d’afficher la page : ' + esc(String((e && e.message) || e)) + '</p><button onclick=adminView()>Réessayer</button><button class=ghost onclick=out()>Déconnexion</button></div>';
+        $('#main').innerHTML = '<div class=auth><h2>ORÉA</h2><p>Impossible d’afficher la page : ' + esc(String((e && e.message) || e)) + '</p><button onclick=adminView()>Réessayer</button><button class=ghost onclick=out()>Déconnexion</button></div>';
     }
 }
 async function adminDraw() {
@@ -936,7 +950,7 @@ async function adminDraw() {
     const ms = []; for (let i = 5; i >= 0; i--) { const d = new Date(nd.getFullYear(), nd.getMonth() - i, 1); ms.push({ k: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), l: d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', ''), v: 0 }); }
     pays.forEach(p => { if (p.currency === 'USD') { const d = new Date(p.created_at), k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), m = ms.find(x => x.k === k); if (m) m.v += Number(p.amount); } });
     const mx = Math.max(...ms.map(x => x.v), 1);
-    let h = `<h3>Espace administrateur</h3><div class=card><span>Écoles actives / total</span><b>${act} / ${data.length}</b></div><div class=card><span>Revenus ce mois</span><b>${totCur(thisMonth)}</b></div>`;
+    let h = `<h3>Espace ORÉA</h3><div class=card><span>Écoles actives / total</span><b>${act} / ${data.length}</b></div><div class=card><span>Revenus ce mois</span><b>${totCur(thisMonth)}</b></div>`;
     h += `<div class="card col"><b>Revenus USD (6 derniers mois)</b><div class="admin-bar">${ms.map(x => `<div style="height:${Math.max(4, Math.round(x.v / mx * 80))}px" title="${nf(x.v)} $"><small>${x.l}</small></div>`).join('')}</div></div>`;
     h += `<div class=row><button onclick=adminHistory()>Historique des encaissements</button></div>`;
     h += '<h3>Écoles</h3>' + (data.length ? data.map(s => {
@@ -945,7 +959,7 @@ async function adminDraw() {
         const ok = left > 0;
         const waMsg = ok ? `Bonjour, l’abonnement de ${s.name} arrive à échéance dans ${left} jour(s).` : `Bonjour, l’abonnement de ${s.name} est arrivé à échéance.`;
         const waUrl = s.phone ? waLink(s.phone, waMsg) : null;
-        return `<div class="card col"><b>${esc(s.name)}</b><span>${esc(s.director_name || '—')} · ${esc(s.director_email || '')}</span><small>${s.students} élèves · ${s.members} compte(s) · code ${esc(s.code)}</small><span class="${ok && left > 7 ? 'ok' : 'due'}">${ok ? 'Actif jusqu’au ' + d.toLocaleDateString('fr-FR') + ' (' + left + ' j)' : '⛔ Expiré'}</span><div class=row>${waUrl ? `<a class="btn ghost" style="width:auto;text-decoration:none" href="${waUrl}" target="_blank">💬 Relance WhatsApp</a><a class="btn ghost" style="width:auto;text-decoration:none" href="${esc(smsLink(s.phone, waMsg))}">SMS</a>` : `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}')">📞 Ajouter WhatsApp</button>`}${s.phone ? `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}','${esc(s.phone)}')">✏</button>` : ''}</div><div class=row>${[1, 2, 3, 6].map(n => `<button class=ghost onclick="extModal('${s.id}',${n})">+${n} m</button>`).join('')}</div></div>`;
+        return `<div class="card col"><b>${esc(s.name)}</b><span>${esc(s.director_name || '—')} · ${esc(s.director_email || '')}</span><small>${s.students} élèves · ${s.members} compte(s) · code ${esc(s.code)}</small><span class="${ok && left > 7 ? 'ok' : 'due'}">${ok ? 'Actif jusqu’au ' + d.toLocaleDateString('fr-FR') + ' (' + left + ' j)' : '⛔ Expiré'}</span><div class=row>${waUrl ? `<a class="btn ghost" style="width:auto;text-decoration:none" href="${waUrl}" target="_blank">💬 Relance WhatsApp</a><a class="btn ghost" style="width:auto;text-decoration:none" href="${esc(smsLink(s.phone, waMsg))}">SMS</a>` : `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}')">📞 Ajouter WhatsApp</button>`}${s.phone ? `<button class=ghost style="width:auto" data-p="${esc(s.phone)}" onclick="setSchoolPhone('${s.id}',this.dataset.p)">✏</button>` : ''}</div><div class=row>${[1, 2, 3, 6].map(n => `<button class=ghost onclick="extModal('${s.id}',${n})">+${n} m</button>`).join('')}</div></div>`;
     }).join('') : '<p class=empty>Aucune école pour le moment.</p>') + installCard() + '<button class=ghost onclick=out()>Déconnexion</button>';
     $('#main').innerHTML = h;
 }
@@ -1021,7 +1035,8 @@ async function hist(id) {
     const st = S.stu.find(x => x.id === id), cc = canCollect() && (!st || colOK(st.class_id));
     const d = show(`<h3>Paiement${st ? ' · ' + esc(st.name) : ''}</h3>${st ? debtLines(st) : ''}${cc ? '<div class=col><button id=hp>Encaisser un paiement</button><button class=ghost id=hpl>Plan de paiement</button></div>' : ''}<p style="margin:14px 0 4px"><small>HISTORIQUE ET REÇUS</small></p>${data.length ? data.map((p, i) => {
         const isP = pe.has(p.id) || fpe.has(p.id);
-        return `<div class="card col"><span>${rno(p)} · ${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f ? esc(p.fee_name || 'Frais') : 'T' + p.term} · ${nf(p.amount)} ${p.currency}</span><div class=row><button class=ghost data-i=${i}>Reçu</button>${p._f ? (fin() ? `<button class=ghost data-x=${i}>Supprimer</button>` : '') : pe.has(p.id) ? '<small>⏳ demande en attente</small>' : `<button class=ghost data-c=${i}>${fin() ? 'Corriger' : 'Demander correction'}</button>`}</div></div>`;
+        const late = p.recu_le && (new Date(p.recu_le) - new Date(p.created_at)) > 36e5;
+        return `<div class="card col"><span>${rno(p)} · ${new Date(p.created_at).toLocaleDateString('fr-FR')} · ${p._f ? esc(p.fee_name || 'Frais') : 'T' + p.term} · ${nf(p.amount)} ${p.currency}</span>${late ? `<small class=due>📴 Encaissé hors connexion · arrivé le ${new Date(p.recu_le).toLocaleString('fr-FR')}</small>` : ''}<div class=row><button class=ghost data-i=${i}>Reçu</button>${p._f ? (fin() ? `<button class=ghost data-x=${i}>Supprimer</button>` : '') : pe.has(p.id) ? '<small>⏳ demande en attente</small>' : `<button class=ghost data-c=${i}>${fin() ? 'Corriger' : 'Demander correction'}</button>`}</div></div>`;
     }).join('') : '<p class=empty data-ic="🧾">Aucun paiement.</p>'}<button class=ghost id=hc>Fermer</button>`);
     d.querySelectorAll('[data-i]').forEach(b => b.onclick = () => receipt(data[b.dataset.i], id));
     d.querySelectorAll('[data-c]').forEach(b => b.onclick = () => fixPay(data[b.dataset.c], id));
@@ -1937,7 +1952,7 @@ function vDevoirs() {
     if (!yc().some(c => c.id === S.cls)) S.cls = yc()[0].id;
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Devoirs</h3>` + ybar();
     h += `<div class=bar><select id=dvc>${yc().map(c => `<option value="${c.id}" ${c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
-    if (R === 'directeur' || R === 'enseignant' || R === 'percepteur') h += `<button onclick=addAssignment()>+ Nouveau devoir</button>`;
+    if ((R === 'directeur' && !secr()) || R === 'enseignant' || R === 'percepteur') h += `<button onclick=addAssignment()>+ Nouveau devoir</button>`;
     h += `<div id=dvl><div class=sk></div><div class=sk></div><div class=sk></div></div>`;
     $('#main').innerHTML = h;
     $('#dvc').onchange = e => { S.cls = e.target.value; drawDevoirs(); };
@@ -1954,7 +1969,7 @@ async function drawDevoirs() {
     const today = tdy();
     el.innerHTML = l.map(a => {
         const late = String(a.due_date) < today;
-        const can = R === 'directeur' || R === 'enseignant' || R === 'percepteur';
+        const can = (R === 'directeur' && !secr()) || R === 'enseignant' || R === 'percepteur';
         return `<div class="card col" style="${late ? 'border-left:3px solid var(--bad)' : 'border-left:3px solid var(--gold)'}"><b>${esc(a.subject)}</b><small>${late ? '⚠ Rendu' : 'À rendre'} le ${fdate(a.due_date)}</small><span>${esc(a.description)}</span>${ak.__n && ak.__n[a.id] ? `<small class=ok>👁 Vu par ${ak.__n[a.id]} parent(s)</small>` : ''}${can ? `<div class=row><button class=ghost data-e="${a.id}">✏️ Modifier</button><button class=ghost data-x="${a.id}">🗑</button></div>` : ''}</div>`;
     }).join('');
     el.querySelectorAll('[data-e]').forEach(b => b.onclick = () => editAssignment(b.dataset.e));

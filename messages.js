@@ -27,7 +27,7 @@
         stack: [], chat: null, inbox: null, contacts: null, stuNames: {}, plist: null
     };
 
-    const ROLE_LBL = { ecole: 'École', parent: 'Parent', admin: 'Administration ORÉA', directeur: 'Direction', ambassadeur: 'Ambassadeur', enseignant: 'Enseignant', percepteur: 'Percepteur', equipe: 'Équipe' };
+    const ROLE_LBL = { ecole: 'École', parent: 'Parent', admin: 'ORÉA', directeur: 'Direction', ambassadeur: 'Ambassadeur', enseignant: 'Enseignant', percepteur: 'Percepteur', equipe: 'Équipe' };
 
     /* ---------------------------------------------------------------
        Contexte (qui suis-je ?)
@@ -43,7 +43,7 @@
             if (typeof S !== 'undefined' && S.me) return S.me.full_name || ROLE_LBL[S.me.role] || 'Équipe';
             if (OM.mode === 'amb' && typeof A !== 'undefined' && A.me) return A.me.full_name || 'Ambassadeur';
         } catch (_) { }
-        return 'Administration ORÉA';
+        return 'ORÉA';
     }
 
     /* ---------------------------------------------------------------
@@ -582,7 +582,7 @@
             const dirR = S.me.role === 'directeur', sid = S.school.id;
             const contacts = await getContacts();
             if (dirR) {
-                add('admin', 'admin_ecole', 'school:' + sid, 'Administration ORÉA', 'Support et assistance', '🛡️', { school_id: sid, canPin: true });
+                add('admin', 'admin_ecole', 'school:' + sid, 'ORÉA', 'Support et assistance', '🛡️', { school_id: sid, canPin: true });
                 add('equipe', 'directeur_equipe', 'team:all', 'Toute l’équipe', 'Envoi groupé', '📢', { school_id: sid, broadcast: true, canPin: true });
                 add('equipe', 'equipe', 'salle:' + sid, 'Salle des profs', 'Groupe de discussion de l’équipe', '👥', { school_id: sid });
                 getStaff();
@@ -620,7 +620,7 @@
         const ov = overlay('om-inbox');
         const dirR = k === 'staff' && S.me.role === 'directeur';
         const chips = k === 'admin' ? [['all', 'Tous'], ['ecoles', 'Écoles'], ['amb', 'Ambassadeurs']]
-            : dirR ? [['all', 'Tous'], ['parents', 'Parents'], ['equipe', 'Équipe'], ['admin', 'Admin']]
+            : dirR ? [['all', 'Tous'], ['parents', 'Parents'], ['equipe', 'Équipe'], ['admin', 'ORÉA']]
             : k === 'staff' ? [['all', 'Tous'], ['equipe', 'Direction'], ['collegues', 'Collègues']] : [];
         const I = OM.inbox = { ov, rows: [], filter: 'all', q: '' };
         ov.innerHTML =
@@ -692,7 +692,7 @@
         if (!OM.uid) { const { data } = await db.auth.getSession(); if (data.session) start(data.session.user.id); }
         const k = kind();
         if (k === 'amb') {
-            return openChat({ ch: 'admin_ambassadeur', tk: 'amb:' + OM.uid, title: 'Administration ORÉA', sub: 'Support ORÉA', icon: '🛡️', school_id: null, ambassador_id: OM.uid });
+            return openChat({ ch: 'admin_ambassadeur', tk: 'amb:' + OM.uid, title: 'ORÉA', sub: 'Support ORÉA', icon: '🛡️', school_id: null, ambassador_id: OM.uid });
         }
         if (k === 'staff' || k === 'admin') return inboxView();
     }

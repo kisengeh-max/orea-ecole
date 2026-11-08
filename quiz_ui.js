@@ -456,7 +456,7 @@
 
   // ----- 5) Génération par IA (administrateur seul) : Claude ou Gemini -> relecture -> banque ORÉA -----
   async function openAI() {
-      if (!(await bankAdmin())) return alert('Réservé à l’administrateur ORÉA.');
+      if (!(await bankAdmin())) return alert('Réservé à ORÉA.');
       showOverlay(`
           <div class="qz-head">${back()}<b>Générer avec l’IA</b></div>
           <div class="qz-body qz-form">
@@ -751,7 +751,7 @@
               if (!q) return '';
               const d = new Date(r.created_at).toLocaleDateString('fr-FR');
               return `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">
-                  <div style="font-size:11px;color:var(--mut);margin-bottom:6px">Signalé le ${d} (${r.motif})</div>
+                  <div style="font-size:11px;color:var(--mut);margin-bottom:6px">Signalé le ${d} (${esc(r.motif)})</div>
                   <div style="font-weight:bold;font-size:15px;margin-bottom:8px">${esc(q.question)}</div>
                   <div style="font-size:13px;color:var(--ok);margin-bottom:8px">Rép. : ${esc(Array.isArray(q.choix) ? q.choix[q.bonne_reponse] : '')}</div>
                   <div style="display:flex;gap:8px;margin-top:10px">

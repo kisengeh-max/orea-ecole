@@ -25,7 +25,7 @@ function admTab(t) { ADM.tab = t; admRender(); }
 function admRender() {
     const nPend = ADM.amb.filter(a => a.status === 'pending').length;
     const tb = (k, l) => '<button class="' + (ADM.tab === k ? '' : 'ghost') + '" onclick="admTab(\'' + k + '\')">' + l + '</button>';
-    let h = '<h3>Espace administrateur</h3><div class=row>'
+    let h = '<h3>Espace ORÉA</h3><div class=row>'
         + tb('ecoles', 'Écoles') + tb('amb', 'Ambassadeurs' + (nPend ? ' 🔔' + nPend : '')) + tb('pro', 'Prospects') + '</div>';
     h += ADM.tab === 'amb' ? admAmbSection() : ADM.tab === 'pro' ? admProSection() : admSchoolSection();
     $('#main').innerHTML = h + installCard() + '<button class=ghost onclick=out()>Déconnexion</button>';
@@ -56,7 +56,7 @@ function admSchoolSection() {
             ? 'Prix convenu / mois : <b>' + ambMoney(s.sub_price, s.sub_cur) + '</b>' + (byAmb ? ' · Commission ' + nf(Number(s.commission_pct), 0) + ' % : <b>' + ambMoney(Number(s.sub_price) * Number(s.commission_pct) / 100, s.sub_cur) + '</b>' : '')
             : 'Prix convenu / mois : <b>non défini</b>';
         return `<div class="card col"><b>${esc(s.name)}</b><span>${esc(s.director_name || '—')} · ${esc(s.director_email || '')}</span><small>${s.students} élèves · ${s.members} compte(s) · code ${esc(s.code)}</small><span class="${ok && left > 7 ? 'ok' : 'due'}">${ok ? 'Actif jusqu’au ' + d.toLocaleDateString('fr-FR') + ' (' + left + ' j)' : '⛔ Expiré'}</span><span>${sp}</span><span>${pr}</span>`
-            + `<div class=row>${waUrl ? `<a class="btn ghost" style="width:auto;text-decoration:none" href="${waUrl}" target="_blank">💬 Relance WhatsApp</a><a class="btn ghost" style="width:auto;text-decoration:none" href="${esc(smsLink(s.phone, waMsg))}">SMS</a>` : `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}')">📞 Ajouter WhatsApp</button>`}${s.phone ? `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}','${esc(s.phone)}')">✏</button>` : ''}</div>`
+            + `<div class=row>${waUrl ? `<a class="btn ghost" style="width:auto;text-decoration:none" href="${waUrl}" target="_blank">💬 Relance WhatsApp</a><a class="btn ghost" style="width:auto;text-decoration:none" href="${esc(smsLink(s.phone, waMsg))}">SMS</a>` : `<button class=ghost style="width:auto" onclick="setSchoolPhone('${s.id}')">📞 Ajouter WhatsApp</button>`}${s.phone ? `<button class=ghost style="width:auto" data-p="${esc(s.phone)}" onclick="setSchoolPhone('${s.id}',this.dataset.p)">✏</button>` : ''}</div>`
             + `<div class=row><button class=ghost onclick="admSponsor('${s.id}')">🤝 Parrain</button><button class=ghost onclick="admPrice('${s.id}')">💰 Prix</button></div>`
             + `<div class=row>${[1, 2, 3, 6].map(n => `<button class=ghost onclick="extModal('${s.id}',${n})">+${n} m</button>`).join('')}</div></div>`;
     }).join('') : '<p class=empty>Aucune école pour le moment.</p>');

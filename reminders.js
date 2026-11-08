@@ -19,7 +19,7 @@
     window.subRenew = function () {
         const n = subLeft(), u = subWa(n);
         if (u) window.open(u, '_blank');
-        else toast('Contacte l’administrateur.');
+        else toast('Contacte ORÉA.');
     };
 
     // Bannière du haut (#exb) : seulement si l'abonnement est expiré
@@ -27,7 +27,7 @@
         const b = document.getElementById('exb');
         if (!b) return;
         if (typeof S === 'undefined' || !S.me || S.me.role !== 'directeur' || S.me.etudes || !S.school || subLeft() > 0) { b.hidden = true; return; }
-        b.innerHTML = '<span>⛔ <b>Abonnement expiré</b> — Contacte l’administrateur</span><a href="javascript:void(0)" onclick="subRenew()">Renouveler</a>';
+        b.innerHTML = '<span>⛔ <b>Abonnement expiré</b> — Contacte ORÉA</span><a href="javascript:void(0)" onclick="subRenew()">Renouveler</a>';
         b.hidden = false;
     }
 
