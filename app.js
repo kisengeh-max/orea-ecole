@@ -17,6 +17,46 @@ const S = {
     absM: null, sanM: null
 };
 S.curTermFilter = null;
+S.ro = false; // v88 : lecture seule (abonnement expiré depuis plus de 7 jours)
+
+/* ---------- v88 : état de l'abonnement ----------
+   actif   : abonnement en cours
+   grace   : expiré depuis moins de 7 jours → tout fonctionne, bandeau rouge
+   lecture : expiré depuis 7 jours ou plus → consultation + encaissement seulement
+   bloquee : accès suspendu par ORÉA */
+const GRACE_J = 7;
+function subPhase(s = S.school) {
+    if (!s) return 'actif';
+    if (s.blocked) return 'bloquee';
+    if (!s.sub_until) return 'lecture';
+    const t = new Date(s.sub_until).getTime(), n = Date.now();
+    return n < t ? 'actif' : n < t + GRACE_J * 864e5 ? 'grace' : 'lecture';
+}
+// En lecture seule, l'application refuse tout de suite les modifications (la base les refuse aussi),
+// sauf l'encaissement et ce qui l'accompagne.
+const RO_OK = new Set(['payments', 'fee_payments', 'closures', 'change_requests', 'payment_plans', 'notifications', 'push_subs', 'parent_acks', 'announcement_views']);
+const RO_MSG = 'Lecture seule : l’abonnement de l’école a expiré. Vous pouvez consulter et encaisser, mais plus modifier. Le chef d’établissement peut renouveler auprès d’ORÉA.';
+(function () {
+    const from0 = db.from.bind(db);
+    const deny = () => {
+        const r = { data: null, error: { message: RO_MSG, code: 'ORO' } };
+        const p = new Proxy({}, { get(o, k) {
+            if (k === 'then') return (a, c) => Promise.resolve(r).then(a, c);
+            if (k === 'catch') return c => Promise.resolve(r).catch(c);
+            if (k === 'finally') return f => Promise.resolve(r).finally(f);
+            return () => p;
+        } });
+        return p;
+    };
+    db.from = function (t) {
+        const b = from0(t);
+        if (!S.ro || RO_OK.has(t)) return b;
+        return new Proxy(b, { get(o, k) {
+            if (k === 'insert' || k === 'update' || k === 'upsert' || k === 'delete') return deny;
+            const v = o[k]; return typeof v === 'function' ? v.bind(o) : v;
+        } });
+    };
+})();
 
 document.documentElement.dataset.theme = localStorage.theme || 'dark';
 
@@ -143,8 +183,10 @@ async function installApp() {
     show('<h3>Installer ORÉA École</h3><p>Dans Chrome, touche le menu <b>⋮</b> en haut à droite, puis <b>Ajouter à l’écran d’accueil</b>.</p><form method=dialog><button>OK</button></form>');
 }
 
+// v88 : texte d'une option de liste toujours protégé (accepte aussi un texte déjà protégé avec esc)
+const optEsc = v => esc(String(v ?? '').replace(/&(amp|lt|gt|quot|#39);/g, (m, k) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[k])));
 function ask(title, fields, ok) {
-    const d = show(`<form method=dialog><h3>${title}</h3>${fields.map(f => `<label>${f.l}${f.o ? `<select name=${f.n}>${f.o.map(o => `<option value="${o[0]}" ${o[0] === f.v ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>` : f.t === 'textarea' ? `<textarea name=${f.n} rows=4 style="width:100%" ${f.r === false ? '' : 'required'}>${esc(f.v)}</textarea>` : `<input name=${f.n} type=${f.t || 'text'} step=any value="${esc(f.v)}" ${f.r === false ? '' : 'required'}>`}</label>`).join('')}<div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Valider</button></div></form>`);
+    const d = show(`<form method=dialog><h3>${title}</h3>${fields.map(f => `<label>${f.l}${f.o ? `<select name=${f.n}>${f.o.map(o => `<option value="${optEsc(o[0])}" ${o[0] === f.v ? 'selected' : ''}>${optEsc(o[1])}</option>`).join('')}</select>` : f.t === 'textarea' ? `<textarea name=${f.n} rows=4 style="width:100%" ${f.r === false ? '' : 'required'}>${esc(f.v)}</textarea>` : `<input name=${f.n} type=${f.t || 'text'} step=any value="${esc(f.v)}" ${f.r === false ? '' : 'required'}>`}</label>`).join('')}<div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Valider</button></div></form>`);
     d.querySelector('form').onsubmit = async e => {
         if (e.submitter.value !== 'ok') return;
         const v = Object.fromEntries(new FormData(e.target));
@@ -276,7 +318,7 @@ function promote() {
 /* ---------- Hors connexion ---------- */
 function saveSnap() { try { localStorage.orea_snap = JSON.stringify({ uid: S.me.id, me: S.me, school: S.school, classes: S.classes, stu: S.stu, fees: S.fees, fpaid: S.fpaid, terms: S.terms, at: Date.now() }); } catch { } }
 function readSnap() { try { return JSON.parse(localStorage.orea_snap || 'null'); } catch { return null; } }
-function goOffline(sn) { S.me = sn.me; S.school = sn.school; S.classes = sn.classes; S.stu = sn.stu; S.fees = sn.fees || []; S.fpaid = sn.fpaid || {}; S.terms = sn.terms || {}; S.offline = true; $('#hs').textContent = sn.school.name; render(); toast('Mode hors connexion : tu peux encaisser et faire l’appel.'); }
+function goOffline(sn) { S.me = sn.me; S.school = sn.school; S.classes = sn.classes; S.stu = sn.stu; S.fees = sn.fees || []; S.fpaid = sn.fpaid || {}; S.terms = sn.terms || {}; S.offline = true; $('#hs').textContent = sn.school.name; if (subPhase() === 'bloquee') return lockView(); S.ro = subPhase() === 'lecture'; render(); toast('Mode hors connexion : tu peux encaisser et faire l’appel.'); }
 function netView() { $('#nav').hidden = true; $('#main').innerHTML = '<div class=auth><h2>Pas de connexion</h2><p>Connecte-toi à internet une première fois pour charger tes données.</p><button onclick=boot()>Réessayer</button></div>'; }
 const qkey = () => 'orea_q_' + (S.me && S.me.id);
 function qget() { if (!S.me) return []; try { return JSON.parse(localStorage[qkey()] || '[]'); } catch { return []; } }
@@ -375,7 +417,10 @@ async function boot() {
         return;
     }
     S.school = s; $('#hs').textContent = s.name;
-    if (s.sub_until) { const left = Math.ceil((new Date(s.sub_until) - Date.now()) / 864e5); if (left <= 0) return lockView(); }
+    // v88 : seul un blocage par ORÉA ferme l'application ; après 7 jours d'expiration → lecture seule
+    const ph = subPhase(s);
+    if (ph === 'bloquee') return lockView();
+    S.ro = ph === 'lecture';
     await autoRate(); await qsync(); await load(); render();
     shortcutTab();
 }
@@ -928,7 +973,7 @@ function bulkAdd() {
 const ADMIN_WA = '243825556492';
 function lockView() {
     $('#nav').hidden = true; $('#exb').hidden = true;
-    $('#main').innerHTML = `<div class=auth><h2>Abonnement expiré</h2><p>L’accès de ${esc(S.school.name)} est suspendu. Contacte ORÉA.</p>${ADMIN_WA ? `<a class=btn style="text-align:center;text-decoration:none" href="https://wa.me/${ADMIN_WA}?text=${encodeURIComponent('Bonjour, je souhaite renouveler l’abonnement de ' + S.school.name)}">Contacter ORÉA</a>` : ''}<button class=ghost onclick=out()>Déconnexion</button></div>`;
+    $('#main').innerHTML = `<div class=auth><h2>Accès suspendu</h2><p>ORÉA a suspendu l’accès de ${esc(S.school.name)}. Aucune donnée n’est effacée : tout revient dès la réactivation.</p>${ADMIN_WA ? `<a class=btn style="text-align:center;text-decoration:none" href="https://wa.me/${ADMIN_WA}?text=${encodeURIComponent('Bonjour ORÉA, l’accès de ' + S.school.name + ' est suspendu. Pouvez-vous m’aider ?')}">Contacter ORÉA</a>` : ''}<button class=ghost onclick=out()>Déconnexion</button></div>`;
 }
 async function adminView() {
     try { await adminDraw(); }
@@ -963,13 +1008,50 @@ async function adminDraw() {
     }).join('') : '<p class=empty>Aucune école pour le moment.</p>') + installCard() + '<button class=ghost onclick=out()>Déconnexion</button>';
     $('#main').innerHTML = h;
 }
+// v88 : renouvellement — durée 1 à 12 mois + point de départ si l'école est en retard
+//   a. à partir d'aujourd'hui (par défaut : les jours de retard sont offerts)
+//   b. à partir de l'ancienne date de fin (l'école « paie » son retard)
+//   c. rattraper un nombre de jours au choix
+// Une école encore active : les mois s'ajoutent toujours à sa date de fin.
+const EXT_MONTHS = [1, 2, 3, 6, 12];
 function extModal(sid, n) {
-    const sname = ((typeof ADM !== 'undefined' && ADM.sch ? ADM.sch.find(x => x.id === sid) : null) || {}).name || 'l’école';
-    ask('Prolonger ' + esc(sname) + ' (+' + n + ' mois)', [{ n: 'amount', l: 'Montant perçu', t: 'number', v: '0' }, { n: 'cur', l: 'Devise', o: CUR.map(c => [c, c]), v: 'USD' }, { n: 'note', l: 'Remarque', r: false }], async v => {
-        const { error } = await db.rpc('admin_extend', { sid, n: +n, pay_amount: +v.amount || 0, pay_cur: v.cur, pay_note: v.note.trim() || null });
+    const sc = (typeof ADM !== 'undefined' && ADM.sch ? ADM.sch.find(x => x.id === sid) : null) || {};
+    const sname = sc.name || 'l’école';
+    const end = sc.sub_until ? new Date(sc.sub_until) : null;
+    const late = end && end < Date.now() ? Math.floor((Date.now() - end) / 864e5) : 0;
+    const fd = d => d.toLocaleDateString('fr-FR');
+    const d = show(`<form method=dialog><h3>Prolonger ${esc(sname)}</h3>
+<label>Durée<select name=n>${EXT_MONTHS.map(m => `<option value=${m} ${m === +n ? 'selected' : ''}>${m} mois</option>`).join('')}</select></label>
+${late > 0 ? `<label>Point de départ<select name=mode><option value=today selected>a. À partir d’aujourd’hui (${late} jour${late > 1 ? 's' : ''} de retard offert${late > 1 ? 's' : ''})</option><option value=old_end>b. À partir de l’ancienne fin (${fd(end)})</option><option value=days>c. Rattraper un nombre de jours</option></select></label><label id=xdl hidden>Jours de retard à rattraper (0 à ${late})<input name=days type=number min=0 max=${late} step=1 value=${late}></label>` : `<p><small>${end ? 'L’école est encore active : les mois s’ajoutent à sa date de fin (' + fd(end) + ').' : 'Les mois partent d’aujourd’hui.'}</small></p>`}
+<div class="card col"><span>Nouvelle date de fin</span><b id=xpv>—</b></div>
+<label>Montant perçu<input name=amount type=number step=any value=0></label>
+<label>Devise<select name=cur>${CUR.map(c => `<option value=${c} ${c === 'USD' ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
+<label>Remarque<input name=note></label>
+<div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Valider</button></div></form>`);
+    const f = d.querySelector('form');
+    const calc = () => {
+        const m = +f.n.value, mode = f.mode ? f.mode.value : 'today';
+        if (f.mode) d.querySelector('#xdl').hidden = mode !== 'days';
+        let base;
+        if (!late) base = end ? new Date(end) : new Date();
+        else if (mode === 'old_end') base = new Date(end);
+        else if (mode === 'days') base = new Date(Date.now() - Math.min(late, Math.max(0, Math.floor(+f.days.value || 0))) * 864e5);
+        else base = new Date();
+        { const day = base.getDate(); base.setDate(1); base.setMonth(base.getMonth() + m); base.setDate(Math.min(day, new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate())); } // comme la base
+        const pv = d.querySelector('#xpv');
+        pv.textContent = fd(base) + (base <= Date.now() ? ' (déjà passée : choisissez plus de mois)' : '');
+        pv.className = base <= Date.now() ? 'due' : '';
+        return base;
+    };
+    f.oninput = calc; f.onchange = calc; calc();
+    f.onsubmit = async e => {
+        if (!e.submitter || e.submitter.value !== 'ok') return;
+        if (calc() <= Date.now()) { e.preventDefault(); return toast('La nouvelle date de fin serait déjà passée.'); }
+        const mode = !late ? 'today' : f.mode.value;
+        const { data, error } = await db.rpc('v88_admin_extend', { sid, p_months: +f.n.value, p_mode: mode, p_days: mode === 'days' ? Math.floor(+f.days.value || 0) : 0, pay_amount: +f.amount.value || 0, pay_cur: f.cur.value, pay_note: f.note.value.trim() || null });
         if (error) return toast(error.message);
-        toast('Abonnement prolongé de ' + n + ' mois'); adminView();
-    });
+        toast('Abonnement prolongé jusqu’au ' + (data ? fd(new Date(data)) : '…')); adminView();
+    };
 }
 function setSchoolPhone(sid, curr = '') {
     ask('Numéro WhatsApp', [{ n: 'phone', l: 'Numéro', t: 'tel', v: curr }], async v => {
@@ -1177,7 +1259,7 @@ async function vAccueil() {
     }
 
     const left = S.school.sub_until ? Math.ceil((new Date(S.school.sub_until) - Date.now()) / 864e5) : 99;
-    if (R === 'directeur' && left > 7 && left <= 14) h += `<div class="card col"><b class=due>⚠ Abonnement : ${left} jours restants</b><small>Pense à renouveler.</small>${subWa(left) ? `<a class=btn href="${subWa(left)}" target=_blank rel=noopener>Contacter l’administrateur</a>` : ''}</div>`;
+    if (R === 'directeur' && left > 3 && left <= 14) h += `<div class="card col"><b class=due>⚠ Abonnement : ${left} jours restants</b><small>Pense à renouveler.</small>${subWa(left) ? `<a class=btn href="${subWa(left)}" target=_blank rel=noopener>Contacter ORÉA</a>` : ''}</div>`;
     if (R === 'directeur') h += bkCard();
     if (pend) h += `<div class="menu-card" onclick="menuGo('caisse')"><div class=menu-ic>${svgI('alerte')}</div><div class=menu-label>Demandes à approuver<small>Corrections en attente</small></div><b class=due style="font-family:var(--serif);font-size:18px">${pend}</b><span class=menu-arrow>›</span></div>`;
     if (R !== 'enseignant') {
@@ -1398,6 +1480,7 @@ function vReglages() {
         h += `<div class="card col"><b>Dates des trimestres</b><small>${hasTerms() ? 'T1 dès le ' + fdate(tm.t1) + ' · T2 dès le ' + fdate(tm.t2) + ' · T3 dès le ' + fdate(tm.t3) : 'Non réglées : le statut « en retard » est désactivé.'}</small><button class=ghost onclick=setTerms()>Régler les dates · ${esc(S.year || '—')}</button></div>`;
         if (fin()) h += `<div class="card col"><b>Modèles de messages</b><small>Personnalise les messages WhatsApp (frais).</small><button class=ghost onclick=editTemplates()>✏️ Modifier les modèles</button></div>`;
     }
+    h += headChangeCard();
     h += supportCard();
     h += `<details><summary>Guide rapide</summary><p><b>Encaisser</b> : École → ouvre la classe → touche l’élève → Encaisser.<br><b>Reçu</b> : Élève → Historique et reçus → Envoyer le reçu.<br><b>Clôture</b> : Menu → Caisse → Clôturer.<br><b>Sans réseau</b> : tu peux encaisser et faire l’appel.<br><b>Correction</b> : Élève → Historique et reçus → Corriger.</p></details><button class=ghost id=lo>Déconnexion</button><div class=card><span>Code PIN de l’app</span><button class=ghost style=width:auto id=pinb>${pinGet() ? 'Modifier / retirer' : 'Activer'}</button></div><p style="text-align:center;margin:18px 0 6px"><a href="#" id=delacc style="font-size:11px;color:var(--mut)">Supprimer mon compte</a></p>`;
     $('#main').innerHTML = h;
@@ -1497,12 +1580,36 @@ document.querySelector('header').insertAdjacentHTML('afterend', '<div id=exb hid
     setTimeout(() => { const e = $('#sp'); if (e) { e.classList.add('out'); setTimeout(() => e.remove(), 500); } }, 1300);
 })();
 const subLeft = () => S.school && S.school.sub_until ? Math.ceil((new Date(S.school.sub_until) - Date.now()) / 864e5) : 99;
-const subWa = n => ADMIN_WA ? `https://wa.me/${ADMIN_WA}?text=${encodeURIComponent('Bonjour, je souhaite renouveler l’abonnement de ' + S.school.name + ' (il reste ' + n + ' jour' + (n > 1 ? 's' : '') + ').')}` : '';
+const subWa = n => ADMIN_WA ? `https://wa.me/${ADMIN_WA}?text=${encodeURIComponent('Bonjour ORÉA, je souhaite renouveler l’abonnement de ' + S.school.name + (n > 0 ? ' (il reste ' + n + ' jour' + (n > 1 ? 's' : '') + ').' : ' (abonnement expiré).'))}` : '';
+// v88 : bandeau du haut selon l'état de l'abonnement
+//  - 3 jours avant la fin : chef(s) d'établissement
+//  - expiré (7 jours de grâce) puis lecture seule : TOUTE l'équipe, en rouge
 function subBanner() {
-    const b = $('#exb'), n = subLeft();
+    const b = $('#exb');
     if (!b) return;
-    if (!S.me || !fin() || n > 7 || n <= 0) { b.hidden = true; return; }
-    b.innerHTML = `<span>⏳ Abonnement : il reste <b>${n} jour${n > 1 ? 's' : ''}</b></span>${subWa(n) ? `<a href="${subWa(n)}" target=_blank rel=noopener>Renouveler</a>` : ''}`; b.hidden = false;
+    if (!S.me || !S.school || !S.school.sub_until) { b.hidden = true; return; }
+    const ph = subPhase(), n = subLeft(), head = S.me.role === 'directeur';
+    const end = new Date(S.school.sub_until), ro = new Date(end.getTime() + GRACE_J * 864e5);
+    const fd = d => d.toLocaleDateString('fr-FR');
+    const warn = 'Sans renouvellement, ORÉA pourrait cesser de fonctionner.';
+    const renew = head && subWa(n) ? `<a href="${subWa(n)}" target=_blank rel=noopener>Renouveler</a>` : '';
+    let h = '', cls = '';
+    if (ph === 'actif' && n <= 3 && head) { h = `<span>⏳ Abonnement : il reste <b>${n} jour${n > 1 ? 's' : ''}</b> (fin le ${fd(end)}). Pensez à renouveler.</span>`; cls = 'warn'; }
+    else if (ph === 'grace') { const k = Math.max(1, Math.ceil((ro - Date.now()) / 864e5)); h = `<span>⛔ <b>Abonnement expiré</b> le ${fd(end)}. Tout fonctionne encore <b>${k} jour${k > 1 ? 's' : ''}</b>, puis lecture seule le ${fd(ro)}. ${warn}</span>`; }
+    else if (ph === 'lecture') h = `<span>🔒 <b>Lecture seule</b> depuis le ${fd(ro)} : consultation et encaissement uniquement. ${warn}</span>`;
+    if (!h) { b.hidden = true; return; }
+    b.className = cls; b.innerHTML = h + renew; b.hidden = false;
+}
+// v88 : signaler à ORÉA que le chef d'établissement a changé
+function headChangeCard() {
+    return `<div class="card col"><b>Changement de chef d’établissement</b><small>Le préfet ou le directeur a changé ? Signalez-le à ORÉA, qui nommera le nouveau chef dans l’équipe.</small><button class=ghost onclick=reportHeadChange()>Signaler à ORÉA</button></div>`;
+}
+function reportHeadChange() {
+    ask('Changement de chef d’établissement', [{ n: 'note', l: 'Nom du nouveau chef et remarque (facultatif)', t: 'textarea', v: '', r: false }], async v => {
+        const { error } = await db.rpc('v88_report_head_change', { p_note: (v.note || '').trim() || null });
+        if (error) return toast(error.message);
+        toast('Signalement envoyé à ORÉA ✓');
+    });
 }
 const bkAge = () => { const t = +localStorage['orea_bk_' + S.school.id] || 0; return t ? Math.floor((Date.now() - t) / 864e5) : null; };
 function bkCard() {

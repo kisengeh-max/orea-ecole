@@ -100,6 +100,7 @@
         target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
         swords: '<path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2"/>',
         send: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+        crown: '<path d="M3 7l4.5 4L12 4l4.5 7L21 7l-2 12H5z"/><path d="M5 19h14"/>',
         sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
         share: '<path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>',
         hand: '<path d="M7 11V5a1.5 1.5 0 0 1 3 0v5M10 10V3.5a1.5 1.5 0 0 1 3 0V10M13 10V5a1.5 1.5 0 0 1 3 0v6M16 9a1.5 1.5 0 0 1 3 0v5a7 7 0 0 1-7 7h-1a7 7 0 0 1-5.6-2.8L3 15a1.5 1.5 0 0 1 2.3-1.9L7 15"/>'
@@ -125,7 +126,7 @@
         '↻': 'refresh', '🔁': 'refresh', '↩': 'left', '➕': 'plus', '⚡': 'bolt', '🗂': 'folder', '🔊': 'vol', '🔇': 'mute',
         '😴': 'moon', '🚽': 'drop', '😊': 'smile', '🙂': 'calm', '😢': 'sad', '😣': 'upset', '📶': 'wifi', '📴': 'wifioff',
         '⚖': 'scale', '↔': 'swap', '⏸': 'pause', '❓': 'help', '🌱': 'leaf', '🍀': 'leaf', '🎯': 'target', '⚔': 'swords',
-        '🧤': 'shield', '👋': 'hand'
+        '🧤': 'shield', '👋': 'hand', '👑': 'crown', '🚫': 'ban'
     };
     const KEYS = Object.keys(E).sort((a, b) => b.length - a.length).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const RX = new RegExp('(' + KEYS.join('|') + ')\\uFE0F?', 'g');
