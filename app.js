@@ -145,7 +145,7 @@ window.addEventListener('popstate', () => {
     if (S.me && S.tab === 'eleves' && S.view === 'class') { S.view = 'grid'; S.q = ''; render(); return; }
     if (S.me && S.tab === 'bilan' && fin()) { S.tab = 'finance_home'; render(); return; }
     if (S.me && !['accueil', 'menu'].includes(S.tab)) {
-        if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'finance_home', 'programme_home', 'donnees_home', 'perception', 'stats', 'enafep'].includes(S.tab)) {
+        if (['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'cahier', 'emploi_temps', 'finance_home', 'programme_home', 'donnees_home', 'perception', 'stats', 'enafep'].includes(S.tab)) {
             S.tab = 'menu';
             render();
         } else {
@@ -395,7 +395,9 @@ async function boot() {
         if (!session && snap && (isNet(r.error) || !navigator.onLine)) return goOffline(snap);
     } catch (e) { if (snap) return goOffline(snap); }
     if (!session) return authView();
-    if (!navigator.onLine && snap && snap.uid === session.user.id) return goOffline(snap);
+    // v91 : avec la base locale (offline.js), l'application démarre normalement même en mode avion ;
+    // l'ancien mode réduit (caisse + appel) ne sert plus que si les données ne sont pas encore sur le téléphone.
+    if (!navigator.onLine && snap && snap.uid === session.user.id && !window.oreaOffline) return goOffline(snap);
     const { data: adm, error: ea } = await db.rpc('is_platform_admin');
     if (isNet(ea)) return snap && snap.uid === session.user.id ? goOffline(snap) : netView();
     // v90 : mode Test (ORÉA « voit comme » un rôle dans une école TEST)
@@ -610,7 +612,7 @@ async function load() {
     }
     S.classes = a.data; S.stu = b.data; S.fees = fees; S.fpaid = fpaid; S.terms = terms; S.events = e.error ? [] : e.data;
     if (isCol()) { const r = await db.from('collector_classes').select('class_id').eq('collector_id', S.me.id); S.myCls = new Set((r.data || []).map(x => x.class_id)); }
-    augment(); S.offline = false; overlayQ(); saveSnap();
+    augment(); S.offline = !!(window.oreaOffline && oreaOffline.isOff()); overlayQ(); saveSnap();
 }
 async function autoRate() {
     const s = S.school;
@@ -642,7 +644,7 @@ function setupView() {
 function render() {
     $('#nav').hidden = false; subBanner();
     const R = S.me.role, tabs = [['accueil', 'Accueil'], ['eleves', 'École'], ['menu', 'Menu'], ['reglages', 'Réglages']];
-    const SUB = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'emploi_temps', 'cotation', 'bulletins', 'finance_home', 'programme_home', 'donnees_home', 'perception', 'stats', 'enafep'];
+    const SUB = ['impayes', 'depenses', 'bilan', 'presences', 'caisse', 'absences', 'sanctions', 'calendrier', 'devoirs', 'cahier', 'emploi_temps', 'cotation', 'bulletins', 'finance_home', 'programme_home', 'donnees_home', 'perception', 'stats', 'enafep'];
     if (!tabs.some(x => x[0] === S.tab) && !SUB.includes(S.tab)) S.tab = 'accueil';
     let activeTab = ['cotation', 'bulletins'].includes(S.tab) ? 'eleves' : SUB.includes(S.tab) ? 'menu' : S.tab;
     $('#nav').innerHTML = tabs.map(x => `<button data-t=${x[0]}>${svgI(x[0])}<span>${x[1]}</span></button>`).join('');
@@ -655,7 +657,7 @@ function render() {
 
     if (!fin() && ['depenses', 'bilan', 'finance_home', 'donnees_home'].includes(S.tab)) S.tab = 'menu';
     if (!money() && ['caisse', 'impayes', 'perception'].includes(S.tab)) S.tab = 'menu';
-    ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier, devoirs: vDevoirs, emploi_temps: vEmploiTemps, finance_home: vFinanceHome, programme_home: vProgrammeHome, donnees_home: vDonneesHome, cotation: () => vCotation(), bulletins: () => vBulletins(), perception: vPerception, stats: () => window.vStats ? vStats() : vMenu(), enafep: () => window.vEnafep ? vEnafep() : vMenu() })[S.tab]();
+    ({ accueil: vAccueil, eleves: vEleves, menu: vMenu, reglages: vReglages, impayes: vImpayes, depenses: vDepenses, bilan: vBilan, presences: vPresences, caisse: vCaisse, absences: vAbsences, sanctions: vSanctions, calendrier: vCalendrier, devoirs: vDevoirs, cahier: () => window.vCahier ? vCahier() : vDevoirs(), emploi_temps: vEmploiTemps, finance_home: vFinanceHome, programme_home: vProgrammeHome, donnees_home: vDonneesHome, cotation: () => vCotation(), bulletins: () => vBulletins(), perception: vPerception, stats: () => window.vStats ? vStats() : vMenu(), enafep: () => window.vEnafep ? vEnafep() : vMenu() })[S.tab]();
     qui();
 }
 const sorts = {
@@ -1769,7 +1771,7 @@ function vMenu() {
     if (dir()) h += menuCard('absences', 'Suivi des absences', null, "menuGo('absences')");
     h += menuCard('sanctions', 'Sanctions', 'Avertissements · Sanctions', "menuGo('sanctions')");
     h += menuCard('calendrier', 'Programme', 'Calendrier · Horaires', "menuGo('programme_home')");
-    h += menuCard('devoirs', 'Devoirs', null, "menuGo('devoirs')");
+    h += menuCard('devoirs', 'Cahier de textes', 'Séances · Devoirs', "menuGo('cahier')");
     if (dir()) {
         h += `<div class=menu-title>Administration</div>`;
         h += menuCard('annees', 'Années scolaires', null, "yearMenu()");
@@ -1778,6 +1780,7 @@ function vMenu() {
         h += menuCard('messages', 'Messages des parents', null, "pAdminInbox()");
         h += menuCard('justificatifs', 'Justificatifs d’absence', null, "pAdminJustifs()");
         h += menuCard('annonces', 'Annonces', null, "pAdminAnnonce()");
+        h += menuCard('messages', 'SMS aux parents', 'Par lots de 10 numéros', "oreaSmsGroup()");
     }
     h += `<div class=menu-title>Personnel</div>`;
     h += menuCard('calendrier', 'Pointage', dir() ? 'Arrivées et départs de l’équipe' : 'Mon arrivée · mon départ', "pointage()");
@@ -2063,6 +2066,7 @@ function vDevoirs() {
     if (!yc().length) { $('#main').innerHTML = ybar() + `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><p class=empty>Crée d'abord une classe.</p>`; return; }
     if (!yc().some(c => c.id === S.cls)) S.cls = yc()[0].id;
     let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Devoirs</h3>` + ybar();
+    if (window.vCahier) h += `<div class=row style="margin-bottom:8px"><button type=button class=chip style="flex:1" onclick="menuGo('cahier')">Séances</button><button type=button class="chip on" style="flex:1">Devoirs</button></div>`;
     h += `<div class=bar><select id=dvc>${yc().map(c => `<option value="${c.id}" ${c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
     if ((R === 'directeur' && !secr()) || R === 'enseignant' || R === 'percepteur') h += `<button onclick=addAssignment()>+ Nouveau devoir</button>`;
     h += `<div id=dvl><div class=sk></div><div class=sk></div><div class=sk></div></div>`;

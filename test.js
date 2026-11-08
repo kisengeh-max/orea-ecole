@@ -1,5 +1,5 @@
 /* =====================================================================
-   ORÉA École v90 — test.js : espace Test d'ORÉA
+   ORÉA École v91 — test.js : espace Test d'ORÉA
    - Espace ORÉA → onglet « Test » : créer des écoles TEST (maternelle,
      primaire, secondaire, complexe) remplies de données fictives,
      puis « Voir comme… » un rôle : l'application s'ouvre exactement comme
@@ -17,8 +17,8 @@
     const headName = t => ['primaire', 'maternelle'].includes(t) ? 'Directeur' : 'Préfet';
     const ROLES = t => [['chef', headName(t)]]
         .concat(['secondaire', 'complexe'].includes(t) ? [['etudes', 'Directeur des études']] : [])
-        .concat([['secretariat', 'Secrétariat'], ['enseignant', 'Enseignant'], ['percepteur', 'Percepteur'], ['parent', 'Parent'], ['ambassadeur', 'Ambassadeur']]);
-    // Rôles prévus dans les prochains paquets : Gardien (paquet 5), Inspecteur (paquet 6)
+        .concat([['secretariat', 'Secrétariat'], ['enseignant', 'Enseignant'], ['percepteur', 'Percepteur'], ['gardien', 'Gardien'], ['parent', 'Parent'], ['ambassadeur', 'Ambassadeur']]);
+    // Rôle prévu au paquet 6 : Inspecteur
 
     window.oreaTest = { read, active: () => !!read() };
 

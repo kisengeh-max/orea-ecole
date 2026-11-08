@@ -372,6 +372,7 @@ function scolariteView() {
         if (past.length) h += `<details style="margin-top:8px"><summary style="color:var(--muted);cursor:pointer;font-size:12px">Devoirs passés (${past.length})</summary>${past.map(a => `<div class="p-assign late"><h5>${esc(a.subject)}</h5><div class="p-meta">Rendu le ${fdate(a.due_date)}</div></div>`).join('')}</details>`;
     }
     h += `</div>`;
+    h += `<div class=p-sec><h4>📖 Cahier de textes</h4><div id=p-ct><div class=p-empty>Chargement…</div></div></div>`;
     h += `<div class=p-sec><h4>📅 Emploi du temps</h4>`;
     if (!P.tt.length) h += `<div class=p-empty>Aucun emploi du temps.</div>`;
     else {
@@ -382,6 +383,18 @@ function scolariteView() {
     }
     h += `</div>`;
     $('#pmain').innerHTML = h + navView() + '<div style="height:90px"></div>';
+    pCahier(kid);
+}
+// v91 : cahier de textes de la classe de l'enfant (matière vue chaque jour)
+async function pCahier(kid) {
+    const box = document.getElementById('p-ct'); if (!box || !kid) return;
+    const cid = kid.class_id || (kid.student && kid.student.class_id);
+    let q = db.from('lesson_log').select('day,subject,title,content,assignment_id').order('day', { ascending: false }).limit(15);
+    if (cid) q = q.eq('class_id', cid);
+    const { data, error } = await q;
+    if (!document.getElementById('p-ct')) return;
+    if (error || !(data || []).length) { box.innerHTML = '<div class=p-empty>Rien de noté pour le moment.</div>'; return; }
+    box.innerHTML = data.map(x => `<div class="p-assign"><h5>${esc(x.subject)} · ${fdate(x.day)}</h5><div class="p-meta">${esc(x.title)}</div>${x.content ? `<div class="p-desc">${esc(x.content)}</div>` : ''}${x.assignment_id ? '<div class="p-meta">📝 Devoir donné (voir Devoirs)</div>' : ''}</div>`).join('');
 }
 
 function calView() {

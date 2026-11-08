@@ -66,7 +66,7 @@
                 return `<div class="card col" style="margin-bottom:10px;${isMe ? 'border-color:var(--gold)' : ''}">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start"><b>${esc(p.full_name)} ${isMe ? '(Moi)' : ''}</b>
                     <span class="chip ${p.active === false ? 'due' : 'ok'}" style="padding:2px 8px;min-height:0;font-size:11px">${p.active === false ? 'Désactivé' : 'Actif'}</span></div>
-                    <small>Fonction : <b style="color:var(--gold)">${esc(ttl(p))}${(isDE || isSec) && p.collector ? ' · Percepteur' : ''}</b></small>
+                    <small>Fonction : <b style="color:var(--gold)">${esc(ttl(p))}${(isDE || isSec) && p.collector ? ' · Percepteur' : ''}${p.gardien ? ' · Gardien' : ''}</b></small>
                     ${!isMe && !isHead ? `<div class="row" style="margin-top:8px;flex-wrap:wrap">
                         ${FIN && deOK && (isEnseignant || isPercepteur) ? `<button class="ghost" style="${bs}" onclick="setEtudes('${p.id}', true)">🎓 Nommer Directeur des études</button>` : ''}
                         ${FIN && (isEnseignant || isPercepteur) ? `<button class="ghost" style="${bs}" onclick="setSecr('${p.id}', true)">📋 Nommer Secrétariat</button>` : ''}
@@ -74,12 +74,20 @@
                         ${FIN && isSec ? `<button class="ghost" style="${bs}" onclick="setSecr('${p.id}', false)">❌ Retirer Secrétariat</button>` : ''}
                         ${FIN && (isDE || isSec) ? `<button class="ghost" style="${bs}" onclick="toggleCollector('${p.id}', ${!!p.collector})">${p.collector ? '❌ Retirer Percepteur' : '💰 Nommer aussi Percepteur'}</button>` : ''}
                         ${FIN && (isEnseignant || isPercepteur) ? `<button class="ghost" style="${bs}" onclick="toggleRole('${p.id}', '${p.role}')">${isPercepteur ? '❌ Retirer Percepteur' : '💰 Nommer Percepteur'}</button>` : ''}
+                        ${FIN && p.active !== false ? `<button class="ghost" style="${bs}" data-gd="${p.id}" data-on="${p.gardien ? 0 : 1}">${p.gardien ? '❌ Retirer Gardien' : '🛡 Nommer Gardien'}</button>` : ''}
                         ${!SEC && (isEnseignant || isPercepteur || isDE) ? `<button class="ghost" style="${bs}" data-mtc="${p.id}">📚 Gérer les cours</button>` : ''}
                         ${FIN && (isPercepteur || ((isDE || isSec) && p.collector)) ? `<button class="ghost" style="${bs}" data-pcl="${p.id}">🏫 Classes à percevoir</button>` : ''}
                         ${FIN || (!SEC && !isDE && !isSec) ? `<button class="ghost" style="width:auto;padding:6px 12px;min-height:36px;font-size:12px;color:${p.active === false ? 'var(--ok)' : 'var(--bad)'}" onclick="toggleActive('${p.id}', ${p.active})">${p.active === false ? 'Réactiver' : 'Désactiver'}</button>` : ''}
                     </div>` : ''}
                 </div>`;
             }).join('') : '<p class="empty">Aucun résultat.</p>';
+            box.querySelectorAll('[data-gd]').forEach(b => b.onclick = async () => {
+                const on = b.dataset.on === '1';
+                if (!confirm(on ? 'Nommer Gardien ? Il pourra scanner les cartes à l’entrée et à la sortie.' : 'Retirer la marque Gardien ?')) return;
+                const { error } = await db.rpc('v91_set_gardien', { p_uid: b.dataset.gd, p_on: on });
+                if (error) return toast(error.message);
+                toast(on ? 'Gardien nommé ✓' : 'Marque retirée'); team();
+            });
             box.querySelectorAll('[data-mtc]').forEach(b => b.onclick = () => { const p = staff.find(x => x.id === b.dataset.mtc); if (p) manageTeacherCourses(p.id, p.full_name); });
             box.querySelectorAll('[data-pcl]').forEach(b => b.onclick = () => { const p = staff.find(x => x.id === b.dataset.pcl); if (p) manageCollectorClasses(p.id, p.full_name); });
         }

@@ -33,7 +33,7 @@ function afterDlg(fn) {
 }
 function openCotation() {
     if (!['directeur', 'enseignant', 'percepteur'].includes(S.me.role)) return;
-    if (S.offline) return toast('Hors connexion : la cotation demande internet.');
+    // v91 : la cotation marche hors connexion (base locale + envoi au retour du réseau)
     S.cotScreen = 'home'; S.cotEval = null; S.cotTerm = S.cotTerm || cotCurTerm();
     history.pushState({ cot: 1 }, ''); S.tab = 'cotation'; render();
 }
@@ -445,7 +445,7 @@ async function bulAI() {
 // ---------- Dossier élève : bouton [ Cotes ] ----------
 async function openStuCotes(id) {
     const s = S.stu.find(x => x.id === id); if (!s) return;
-    if (S.offline) return toast('Hors connexion : les cotes demandent internet.');
+    // v91 : les cotes s'enregistrent hors connexion (envoyées au retour du réseau)
     show(`<h3>${esc(s.name)} · Cotes</h3>${SK}`);
     const r = await pageAll(() => db.from('grades').select('subject_id,term,kind,num,grade,max_grade,eval_date,subjects(name),status').eq('student_id', id).eq('class_id', s.class_id));
     if (r.error) { $('#dlg').innerHTML = `<h3>${esc(s.name)}</h3><p class=empty>${esc(r.error.message)}</p><button class=ghost onclick="this.closest('dialog').close()">Fermer</button>`; return; }

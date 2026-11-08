@@ -199,7 +199,7 @@
         renderFin();
     };
 
-    const GRID = [['budget', 'Budget'], ['dettes', 'Dettes'], ['revenus', 'Revenus'], ['impayes', 'Impayés'], ['depenses', 'Dépenses'], ['bilan', 'Bilan'], ['paie', 'Paie du personnel']];
+    const GRID = [['budget', 'Budget'], ['dettes', 'Dettes'], ['revenus', 'Revenus'], ['impayes', 'Impayés'], ['depenses', 'Dépenses'], ['bilan', 'Bilan'], ['services', 'Cantine / transport'], ['paie', 'Paie du personnel']];
     function renderFin() {
         const on = t => S.finTab === t;
         let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Finance</h3>`;
@@ -216,6 +216,7 @@
         else if (S.finTab === 'bilan') window.vBilan();
         else if (S.finTab === 'impayes') { if (typeof vImpayes === 'function') vImpayes(); else finErr('Erreur de chargement.'); }
         else if (S.finTab === 'depenses') { if (typeof vDepenses === 'function') vDepenses(); else finErr('Erreur de chargement.'); }
+        else if (S.finTab === 'services') { if (typeof oreaServices === 'function') oreaServices($('#fin-content')); else finErr('Module manquant (cahier.js).'); }
         else if (S.finTab === 'paie') { if (typeof oreaPaie === 'function') oreaPaie($('#fin-content')); else finErr('Module Paie manquant (personnel.js).'); }
     }
     // Recharge l'onglet affiché (Finance intégrée ou Bilan seul)
