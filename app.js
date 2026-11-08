@@ -401,7 +401,7 @@ async function boot() {
     const { data: adm, error: ea } = await db.rpc('is_platform_admin');
     if (isNet(ea)) return snap && snap.uid === session.user.id ? goOffline(snap) : netView();
     // v90 : mode Test (ORÉA « voit comme » un rôle dans une école TEST)
-    const tst = adm === true && window.oreaTest ? oreaTest.read() : null;
+    const tst = window.oreaTest ? oreaTest.read() : null;   // v94 : ORÉA ou un ambassadeur (écoles de démonstration)
     if (adm === true && !tst) { $('#hs').textContent = 'ORÉA'; return adminView(); }
     if (tst && tst.role === 'parent') { location.replace('parent.html'); return; }
     if (tst && tst.role === 'ambassadeur') return typeof ambEntry === 'function' ? ambEntry() : adminView();
@@ -411,7 +411,9 @@ async function boot() {
     if (!p) return setupView();
     // v87 : un compte parent ouvert sur la page de l'école (application installée depuis l'espace parent) → espace parent
     if (p.role === 'parent') { location.replace('parent.html'); return; }
-    if (tst && p.active === false) { localStorage.removeItem('orea_test'); $('#hs').textContent = 'ORÉA'; return adminView(); }
+    if (tst && p.active === false) { localStorage.removeItem('orea_test'); if (adm === true) { $('#hs').textContent = 'ORÉA'; return adminView(); } }
+    // v94 : un ambassadeur qui a utilisé une école de démonstration garde un profil inactif → espace ambassadeur
+    if (p.active === false && typeof ambEntry === 'function') { try { const { data: am } = await db.rpc('amb_me'); if (am && am[0]) return ambEntry(); } catch (_) { } }
     if (p.active === false) { $('#nav').hidden = true; $('#main').innerHTML = '<div class=auth><h2>Compte désactivé</h2><p>Contacte la direction de ton école.</p><button class=ghost onclick=out()>Déconnexion</button></div>'; return; }
     S.me = p;
     // v87 : « dernière connexion » enregistrée par la base (l'ancienne écriture directe était refusée)

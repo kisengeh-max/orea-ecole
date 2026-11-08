@@ -6,24 +6,24 @@
    ===================================================================== */
 (function () {
     'use strict';
-    const LIVRAISON = 'v93 · 08/11/2026';
+    const LIVRAISON = 'v94 · 08/11/2026';
     const FILES = {
-        "index.html": "52269e7e062c7d32f6e7033189d64cfad8fb9dca33d8bb99cb94634d0a6818ac",
-        "parent.html": "cdc99d6644cd18de33beab3cfb3ec09c2a81e6fa514111e6bb6daf4b724aa5ea",
-        "sw.js": "3d92d723185bcc6de408d611db437e0f8d468bfb78d90ed5bbcbf11383e9d027",
+        "index.html": "0cf9595c4ea8ba11e72021ccb9973e7bddd77eca45bdc3187b8d3a2d14e6431b",
+        "parent.html": "0665963f650ba29f6e4ead2c7f2364ae832bc8dba8d26ae26ef192a3c7bf86b8",
+        "sw.js": "8bb3fc96f7f902d8095d7839bccaa2ed5d61f2686aa0ee9697bfc74ef0f7d41e",
         "manifest.json": "388e6d6df3e4442301f70f10241f49cc3d8d858251cf7aee9c9c4fbd7a23e72d",
         "manifest-parent.json": "08111dd3164a7162a8d84f267d2a04016d64c127b2951dfbfdde67227e3453cb",
         "ambadmin.js": "c6e0ff9d8bcf401127e1e8eb140ce05d91c4120c536f5ebb1ce087ae77d23bc7",
         "ambassadeur.js": "713a86f600a64e98f5c1c397d29ca5aeedb521609db67cab22b4ca34b34a7845",
         "annee.js": "a942e3d93084d696a783f3ebaa73b153af89101d32d522b0c23daeb194a093c8",
         "announcements.js": "a4e26ad07be6866df9eb5a57638b0eca7c54a6eff6b9989c401bcdeb0184c062",
-        "app.js": "87a2521c60e519443267b3bf3a8301c675ca6c846e5b840d5d7f966a26fb4a0e",
+        "app.js": "885d59f94e3f690d1b5a0c4121f16ac61323d6ac93eee886770071cdd7446ff1",
         "auth_ui.js": "890281e1af24f1c0236d3f81ab17cfa9962c4a68c470154594d13a4b775fcd71",
         "bulletins.js": "f766566048aecfb1717e16b3406ab3ced64dbe5c18c1d56561378f62e09e017b",
         "bureau.css": "15d86119d3c3f0ff9cc3b1b7a543f3e30dd2c1b8fa913da1cb4529caf176fa7f",
         "bureau.js": "ac9aa4f60075e110f8b3e5bdeb0310c2f71b6c1244f7dd7d81ac7797b7aa7761",
         "cahier.js": "213a99c89d1a646cbac4a437417bc8b102faa99334a744a42dcd21b16ef355d2",
-        "config.js": "b285df1d7789fa57b667e821ab3ee416eec5065f8d868acc47d394ab80a92272",
+        "config.js": "17028e1f731c3210d1f9f32f3015a2e1d829193a753bdbbbd29e47e32f2c9702",
         "enafep.js": "6a10ee7d964bd61315ef88c8eb8921196e524f579161e85e1551be08d1030080",
         "equipe.js": "bd608393e81e943e40efc1de429dddf7a820754e803d6e3d39c40959aafb7849",
         "famille.js": "6e17aea98c14ebec660b64231c20aeb59e4eb75ec51294d8049f32cc4fba75f9",
@@ -45,14 +45,16 @@
         "quiz_ui.js": "e6c29eedfdb4142578c3d65e88b7ff33aadce4f3bceacd32fb9adbf4105dc2a4",
         "quotidien.js": "fe290fc42c48333a1b12815244e7ad9f7fe1f9f4af43936d1bd408af192361d0",
         "reminders.js": "c8292532abbb8adf56475b610de9cc29fcfd28b1223158e44c30aabf203e6e6a",
+        "risque.js": "707ce0f15a49fd50b2b188e6c9852cc7dd4766cbaab81f243846d0c89fc22dce",
         "scan.js": "e4e6f45dd2b972e02e8ef2215c0190ab0705bcf53d21457017c1f530df0348c8",
         "stats.js": "cfbc8e7cef5a87e5800a8a36736c951ebf5e2ecb4265af75daaf888f29ba6418",
         "style.css": "98cfafc2fed3f0551585ed8a1c82f84e5355bb318e424e046bee061c559951b7",
-        "test.js": "5cc83866b5d7d3f6fcce75530b64c52613f2a856e0eadbce274ef31e9c083d3b",
+        "test.js": "2c3160d9b41c16d93bb67ea9ac43dc24dd3716b153a36def880feb034e2b3685",
         "timetable.js": "9377fa445308a300b67ebed9be8576c04596908537c1c8ac075907880412775d",
         "ui.js": "e643f1f006731cf55ab61f8aaf757650db0646363559c3b40f27fdf9a72e00e3",
         "verif.html": "f0504b62cb4fd9109958a4249d8444d9c5c2609285548ab202c2a356a9ecf936",
         "villes.js": "e374caca1f8cb398cff2b08ee21596734b51e2d75a26354e3fead2d88f9f0876",
+        "voix.js": "02eeaa85369704c59fc5ac5ac1d81e5b469baa92d8dcf67669841b4d212f30fa",
         "icon-maskable-192.png": "7eb94d68f3773775e7cd584786cc5df35ebcbda5912f464d1fe1646969f562ef",
         "icon-maskable-512.png": "82d0c96a597324cfc67a0c1f5498a50a4037f65a9e764a9757a618d4d225a45b"
 };
