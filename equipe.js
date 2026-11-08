@@ -1,5 +1,6 @@
 /* =====================================================================
-   ORÉA École v83 — equipe.js (onglets Personnel / Parents, recherche, Secrétariat)
+   ORÉA École v89 — equipe.js (onglets Personnel / Dossiers / Parents, recherche, Secrétariat)
+   v89 : onglet « Dossiers » (personnel avec ou sans compte, non enseignants, paie) → personnel.js
    Module de gestion de l'équipe (direction).
    - Le chef d'établissement (Préfet / Directeur) nomme : percepteurs, Directeur des études.
    - Le Directeur des études gère les cours, mais pas les nominations ni l'argent.
@@ -24,10 +25,11 @@
     };
 
     // Équipe & Cours (v83) : deux onglets — Personnel / Parents — avec recherche
-    const TEAM = { tab: 'staff', q: '', pq: '', poff: 0, prows: [], ptotal: null, timer: null };
+    const TEAM = { tab: 'staff', q: '', dq: '', pq: '', poff: 0, prows: [], ptotal: null, timer: null };
     window.team = async function (tab) {
         if (S.me.role !== 'directeur') return toast('Accès réservé à la direction.');
         if (tab) TEAM.tab = tab;
+        if (TEAM.tab === 'dossiers' && (S.me.secretariat || typeof oreaDossiers !== 'function')) TEAM.tab = 'staff';
         const FIN = typeof fin === 'function' ? fin() : (!S.me.etudes && !S.me.secretariat);
         const SEC = !!S.me.secretariat;
         const ttl = p => typeof roleTitle === 'function' ? roleTitle(p) : p.role;
@@ -43,7 +45,8 @@
                 <small>Partagez ce code pour que le personnel rejoigne l'école.</small>
             </div>
             <div class="row" style="margin-bottom:8px">
-                <button type="button" class="chip ${TEAM.tab === 'staff' ? 'on' : ''}" data-tb="staff" style="flex:1">Personnel · ${staff.length}</button>
+                <button type="button" class="chip ${TEAM.tab === 'staff' ? 'on' : ''}" data-tb="staff" style="flex:1">Comptes · ${staff.length}</button>
+                ${!SEC && typeof oreaDossiers === 'function' ? `<button type="button" class="chip ${TEAM.tab === 'dossiers' ? 'on' : ''}" data-tb="dossiers" style="flex:1">Dossiers</button>` : ''}
                 <button type="button" class="chip ${TEAM.tab === 'parents' ? 'on' : ''}" data-tb="parents" style="flex:1">Parents · <span id="tm-pn">${TEAM.ptotal == null ? '…' : TEAM.ptotal}</span></button>
             </div>
             <input id="tm-q" type="search" autocomplete="off" style="margin-bottom:8px">
@@ -106,10 +109,15 @@
             });
         }
         function drawParents() { q.placeholder = '🔍 Rechercher : parent, téléphone ou élève'; loadParents(); }
-        const draw = () => { q.value = TEAM.tab === 'staff' ? TEAM.q : TEAM.pq; TEAM.tab === 'staff' ? drawStaff() : drawParents(); };
+        const draw = () => {
+            q.value = TEAM.tab === 'staff' ? TEAM.q : TEAM.tab === 'dossiers' ? TEAM.dq : TEAM.pq;
+            if (TEAM.tab === 'dossiers') { q.placeholder = '🔍 Rechercher : nom ou fonction'; return oreaDossiers(box, TEAM.dq); }
+            TEAM.tab === 'staff' ? drawStaff() : drawParents();
+        };
         d.querySelectorAll('[data-tb]').forEach(b => b.onclick = () => { TEAM.tab = b.dataset.tb; d.querySelectorAll('[data-tb]').forEach(x => x.classList.toggle('on', x === b)); draw(); });
         q.oninput = () => {
             if (TEAM.tab === 'staff') { TEAM.q = q.value.trim(); return drawStaff(); }
+            if (TEAM.tab === 'dossiers') { clearTimeout(TEAM.timer); TEAM.timer = setTimeout(() => { TEAM.dq = q.value.trim(); oreaDossiers(box, TEAM.dq); }, 250); return; }
             clearTimeout(TEAM.timer); TEAM.timer = setTimeout(() => { TEAM.pq = q.value.trim(); loadParents(); }, 350);
         };
         draw();

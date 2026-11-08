@@ -6,11 +6,11 @@
    ===================================================================== */
 (function () {
     'use strict';
-    const LIVRAISON = 'v88 · 08/11/2026';
+    const LIVRAISON = 'v89 · 08/11/2026';
     const FILES = {
-        "index.html": "eaf0e414e352f23759d7c8d0c590a97d0af546e97236e2f6ab008c23413f8206",
-        "parent.html": "a3a2000ecb6444f6bdc3cfacc794b3bec179bf9e7e9dbbb5960af342bda56c55",
-        "sw.js": "a4ea553818b1da7e89203a956c21055e44f479f2d5797d0a57b0ee868e9bb2b6",
+        "index.html": "903569b52bd9c77994eff75cf56370a92bf8c2182c41d7f45dc4c11057ce2d15",
+        "parent.html": "b6f68d00c5729804638ef51495560bbd4111448969da08022dba9d20e114e280",
+        "sw.js": "e66c081bb2b6205d2549c8c6ce59f428b488d08d381c1d1b3cb2bff6a7dc243b",
         "manifest.json": "388e6d6df3e4442301f70f10241f49cc3d8d858251cf7aee9c9c4fbd7a23e72d",
         "manifest-parent.json": "08111dd3164a7162a8d84f267d2a04016d64c127b2951dfbfdde67227e3453cb",
         "ambadmin.js": "bcf5f58bdc41fab854fa278fc145475dd5da070214691f4453e789a378669e9d",
@@ -21,11 +21,11 @@
         "bulletins.js": "f766566048aecfb1717e16b3406ab3ced64dbe5c18c1d56561378f62e09e017b",
         "bureau.css": "15d86119d3c3f0ff9cc3b1b7a543f3e30dd2c1b8fa913da1cb4529caf176fa7f",
         "bureau.js": "ac9aa4f60075e110f8b3e5bdeb0310c2f71b6c1244f7dd7d81ac7797b7aa7761",
-        "config.js": "ebc03fae16d6562ce367ffe01ab51777699f5fc56117571b0bbfdea67138900e",
+        "config.js": "ff08a8eb89a9369ac981d38e462eb4b243ff1a4197871e5c61f508fcfd08b397",
         "enafep.js": "6a10ee7d964bd61315ef88c8eb8921196e524f579161e85e1551be08d1030080",
-        "equipe.js": "67a2d76dca407a6f673122ede923b22f6bdf6faa43ce66f4e35f95ee143352fe",
+        "equipe.js": "c443a63104f77f1ad6919252b7ab397809d96f4e831ca0b8ecab704081f793c3",
         "famille.js": "addf6edf0428c4feaacbe20a889335cf69bcb938eed333417b94b3c8334474f4",
-        "finance.js": "fa9823a07d98229905c7ffa568999226800ae806e39f302ee363591eab2cb7b6",
+        "finance.js": "b9dfb24bd467220ab17263bb6a87e8d547717cd37e10590a28d3bf40c8aeee72",
         "messages.js": "bc9d79d90b93907768244926a394ef71a7b90d1e0d68da4e1b0d6a512ab9f506",
         "notes.js": "86c0909904e88af921acc18871b084685d9f8087c32b336ff397e523244cd427",
         "notifications.js": "1b080c37ac646a8a0c9bc7532c436b70b96d830f9fca0288cd11af24c20e13ca",
@@ -33,6 +33,7 @@
         "parent.js": "3d8b02f1d1d9f0650c970d271f29c10e74652244565f13001430c22ad21d054e",
         "parent_notes.js": "c7bd53e27af60ae6fa8c1a6f27b4c63e1573e80490ee96c98721af04785121e0",
         "parent_notifs.js": "61bfbfb772ac3382a924d5ab61d55737739284dd72de9ad6a5ec524f5cdb7f36",
+        "personnel.js": "f224408abc4c65a4e270c89362379c523817b709ca84319da9ee7ee5bb752f7a",
         "push.js": "a4669c1001524a568aef31cd349618849da7de2f7632e650b1dad30ed310081a",
         "quiz_engine.js": "590951f3a188f618743f73e9441e66fd50a9e31dba9cd1040925eb923d151fe0",
         "quiz_ui.js": "a9c15edc009d7ec278a6cb04d53157f33a7b5a66044c50935f0df2b39c7e0f1e",

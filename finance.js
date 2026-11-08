@@ -35,6 +35,7 @@
         st.textContent = `
 .fin-dash{margin:6px 0 8px;min-height:48px}
 .fin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.fin-grid button:last-child:nth-child(3n+1){grid-column:1/-1}
 .fin-grid button{min-height:44px;padding:10px 4px;font-size:13.5px}
 .fin-per{display:flex;align-items:center;gap:8px;margin:2px 0 10px}
 .fin-per button{width:auto;min-height:38px;padding:6px 14px}
@@ -198,7 +199,7 @@
         renderFin();
     };
 
-    const GRID = [['budget', 'Budget'], ['dettes', 'Dettes'], ['revenus', 'Revenus'], ['impayes', 'Impayés'], ['depenses', 'Dépenses'], ['bilan', 'Bilan']];
+    const GRID = [['budget', 'Budget'], ['dettes', 'Dettes'], ['revenus', 'Revenus'], ['impayes', 'Impayés'], ['depenses', 'Dépenses'], ['bilan', 'Bilan'], ['paie', 'Paie du personnel']];
     function renderFin() {
         const on = t => S.finTab === t;
         let h = `<div class=bar><button class=ghost onclick="S.tab='menu';render()">← Menu</button></div><h3>Finance</h3>`;
@@ -215,6 +216,7 @@
         else if (S.finTab === 'bilan') window.vBilan();
         else if (S.finTab === 'impayes') { if (typeof vImpayes === 'function') vImpayes(); else finErr('Erreur de chargement.'); }
         else if (S.finTab === 'depenses') { if (typeof vDepenses === 'function') vDepenses(); else finErr('Erreur de chargement.'); }
+        else if (S.finTab === 'paie') { if (typeof oreaPaie === 'function') oreaPaie($('#fin-content')); else finErr('Module Paie manquant (personnel.js).'); }
     }
     // Recharge l'onglet affiché (Finance intégrée ou Bilan seul)
     const reload = () => { if (S.tab === 'finance_home') renderFin(); else render(); };
