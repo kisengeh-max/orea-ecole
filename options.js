@@ -39,7 +39,7 @@
         const extra = classOptions().filter(o => !ALL.includes(o) && chosen());
         let list = sortFr([...new Set(ALL.concat(extra, [...used]))]);
         const sel = new Set([...cur, ...used]);
-        const head = first ? `<div class="card col" style="text-align:center"><b>Bienvenue !</b><span>Choisissez les options de votre école pour créer vos classes.</span><small>La 7e et la 8e (Éducation de base) sont créées automatiquement : vous pourrez les modifier ou les supprimer.</small></div>`
+        const head = first ? `<div class="card col" style="text-align:center"><b>Bienvenue !</b><span>Choisissez les options de votre école pour créer vos classes.</span><small>La 7e et la 8e (Éducation de base) sont créées automatiquement : vous pourrez les renommer (ex. « 7e A », « 7e EB ») ou les supprimer.</small></div>`
             : `<div class=bar><button class=ghost style="width:auto" id=op-back>← École</button><b class=ctitle>Options de l’école</b></div><small>Une option qui a déjà des classes ne peut pas être retirée.</small>`;
         $('#main').innerHTML = ybar() + head + `<div class=og id=op-g></div><button id=op-ok>Valider les options</button>`;
         const g = $('#op-g');
@@ -71,7 +71,7 @@
     // 7e et 8e par défaut (Éducation de base)
     async function createBase() {
         const have = new Set(yc().filter(isBase).map(c => (c.name.match(/[78]/) || [''])[0]));
-        const rows = ['7', '8'].filter(n => !have.has(n)).map(n => ({ school_id: S.school.id, name: n + 'e EB', year: S.year || schoolYearNow(), level: schoolKind() === 'complexe' ? 'secondaire' : null }));
+        const rows = ['7', '8'].filter(n => !have.has(n)).map(n => ({ school_id: S.school.id, name: n + 'e', year: S.year || schoolYearNow(), level: schoolKind() === 'complexe' ? 'secondaire' : null }));
         if (rows.length) { const { error } = await db.from('classes').insert(rows); if (error) toast(error.message); }
     }
 
@@ -90,14 +90,14 @@
     }
 
     /* ---------- 3) Classes d'un groupe ---------- */
-    const SETS = { '@mat': ['1ère maternelle', '2e maternelle', '3e maternelle'], '@pri': ['1ère primaire', '2e primaire', '3e primaire', '4e primaire', '5e primaire', '6e primaire'], '@base': ['7e EB', '8e EB'] };
+    const SETS = { '@mat': ['1ère maternelle', '2e maternelle', '3e maternelle'], '@pri': ['1ère primaire', '2e primaire', '3e primaire', '4e primaire', '5e primaire', '6e primaire'], '@base': ['7e', '8e'] };
     function groupScreen(g) {
         const cl = yc().filter(c => groupOf(c) === g), st = ys();
         const by = {}; st.forEach(s => { by[s.class_id] = (by[s.class_id] || 0) + 1; });
         const set = SETS[g] || ['1ère A', '2e A', '3e A', '4e A'];
         const missing = g === '@none' ? [] : set.filter(nm => !cl.some(c => c.name.toLowerCase() === nm.toLowerCase()));
         return `<div class=bar><button class=ghost style="width:auto" id=og-back>← Options</button><b class=ctitle>${E(lbl(g))}</b></div>`
-            + (cl.length ? `<div class=cgrid>${cl.map(c => `<div class=ccard style="position:relative" onclick="openClass('${c.id}')">${canEdit() ? `<button type=button class="ghost no-ico" data-ec="${c.id}" aria-label="Modifier la classe" style="position:absolute;top:4px;right:4px;width:30px;min-height:30px;padding:0;border:0;box-shadow:none;background:none">✏️</button>` : ''}<b>${E(c.name)}</b><small>${by[c.id] || 0} élève${(by[c.id] || 0) > 1 ? 's' : ''}</small>${classFeesUnset(c) && typeof fin === 'function' && fin() ? '<span class="cd due">Frais à fixer</span>' : classFree(c) ? '<span class="cd ok">Gratuité</span>' : ''}</div>`).join('')}</div>` : '<p class=empty>Aucune classe dans ce groupe.</p>')
+            + (cl.length ? `<div class=cgrid>${cl.map(c => `<div class=ccard style="position:relative" onclick="openClass('${c.id}')">${canEdit() ? `<button type=button class="ghost" data-ec="${c.id}" aria-label="Modifier la classe" style="position:absolute;top:4px;right:4px;width:30px;min-height:30px;padding:0;border:0;box-shadow:none;background:none">✏️</button>` : ''}<b>${E(c.name)}</b><small>${by[c.id] || 0} élève${(by[c.id] || 0) > 1 ? 's' : ''}</small>${classFeesUnset(c) && typeof fin === 'function' && fin() ? '<span class="cd due">Frais à fixer</span>' : classFree(c) ? '<span class="cd ok">Gratuité</span>' : ''}</div>`).join('')}</div>` : '<p class=empty>Aucune classe dans ce groupe.</p>')
             + (canEdit() ? `<div class=col>${missing.length ? `<button id=og-set>Créer ${missing.length === set.length ? (g.startsWith('@') ? missing.join(', ') : '1ère, 2e, 3e et 4e') : missing.join(', ')}</button>` : ''}<button class=ghost id=og-new>+ Nouvelle classe${g.startsWith('@') ? '' : ' (' + E(g) + ')'}</button>${cl.length ? '<small>✏️ sur une classe : la renommer (ex. « 1ère B »), changer son option ou la supprimer si elle est vide.</small>' : ''}</div>` : '');
     }
     async function createSet(g) {
@@ -109,24 +109,31 @@
         await load(); render(); toast(rows.length + ' classe(s) créée(s) · frais à fixer');
     }
 
-    // Renommer, changer d'option, supprimer une classe vide
+    // Renommer (ex. « 7e EB », « 1ère B »), changer d'option, supprimer une classe vide
     function editClass(id) {
         const c = S.classes.find(x => x.id === id); if (!c) return;
-        const nSt = S.stu.filter(s => s.class_id === id).length;
-        const F = [{ n: 'name', l: 'Nom de la classe', v: c.name }];
-        if (classLevel(c) === 'secondaire') F.push({ n: 'opt', l: 'Option', o: [['', '— aucune (ex. 7e, 8e) —']].concat(sortFr(classOptions()).map(o => [o, o])), v: c.option || '' });
-        F.push({ n: 'act', l: 'Action', o: [['save', 'Enregistrer les modifications']].concat(nSt ? [] : [['del', 'Supprimer cette classe (vide)']]), v: 'save' });
-        ask('Classe · ' + E(c.name) + (nSt ? ' (' + nSt + ' élève' + (nSt > 1 ? 's' : '') + ')' : ''), F, async v => {
-            if (v.act === 'del') {
-                if (!confirm('Supprimer la classe « ' + c.name + ' » ?')) return;
-                const { error } = await db.rpc('v95_delete_class', { p_class: id }); if (error) throw error;
-                await load(); render(); return toast('Classe supprimée');
-            }
-            const row = { name: v.name.trim() || c.name };
-            if ('opt' in v) row.option = v.opt || null;
-            const { error } = await db.from('classes').update(row).eq('id', id); if (error) throw error;
+        const nSt = S.stu.filter(s => s.class_id === id).length, sec = classLevel(c) === 'secondaire';
+        const d = show(`<form method=dialog><h3>Classe · ${E(c.name)}</h3>
+<label>Nom de la classe<input name=name required maxlength=40 value="${E(c.name)}"></label>
+${sec ? `<label>Option<select name=opt><option value="">— aucune (ex. 7e, 8e) —</option>${sortFr(classOptions()).map(o => `<option value="${E(o)}" ${o === c.option ? 'selected' : ''}>${E(o)}</option>`).join('')}</select></label>` : ''}
+<div class=row><button value=x class=ghost formnovalidate>Annuler</button><button value=ok>Enregistrer</button></div>
+${nSt ? `<small>${nSt} élève${nSt > 1 ? 's' : ''} : déplacez-les d’abord pour pouvoir supprimer la classe.</small>` : `<button type=button class=ghost id=ec-del style="color:var(--bad);border-color:var(--bad);margin-top:10px">🗑 Supprimer la classe</button>`}</form>`);
+        const f = d.querySelector('form');
+        f.onsubmit = async e => {
+            if (!e.submitter || e.submitter.value !== 'ok') return;
+            const row = { name: f.name.value.trim() || c.name };
+            if (f.opt) row.option = f.opt.value || null;
+            const { error } = await db.from('classes').update(row).eq('id', id); if (error) return toast(error.message);
             await load(); render(); toast('Classe modifiée ✓');
-        });
+        };
+        const del = d.querySelector('#ec-del');
+        if (del) del.onclick = async () => {
+            if (!confirm('Supprimer la classe « ' + c.name + ' » ?')) return;
+            del.disabled = true;
+            const { error } = await db.rpc('v95_delete_class', { p_class: id });
+            if (error) { del.disabled = false; return toast(error.message); }
+            d.close(); await load(); render(); toast('Classe supprimée');
+        };
     }
 
     /* ---------- Branchement sur l'onglet École (vue « grille », sans recherche) ---------- */

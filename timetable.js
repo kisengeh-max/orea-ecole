@@ -104,7 +104,7 @@
         TT.sel = null;
         if (!canEdit()) TT.model = false;
         let h = back + '<h3>Horaires des cours</h3>' + yb;
-        h += `<div class=bar><select id=ttc>${canEdit() ? `<option value="${MODEL}" ${TT.model ? 'selected' : ''}>★ Modèle par défaut (nouvelles classes)</option>` : ''}${yc().map(c => `<option value="${c.id}" ${!TT.model && c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
+        h += `<div class=bar><select id=ttc>${canEdit() ? `<option value="${MODEL}" ${TT.model ? 'selected' : ''}>Modèle par défaut (nouvelles classes)</option>` : ''}${yc().map(c => `<option value="${c.id}" ${!TT.model && c.id === S.cls ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>`;
         if (canEdit()) h += `<small class=tt-ro id=tt-mi style="display:${TT.model ? 'block' : 'none'}">Ce modèle est copié automatiquement dans chaque nouvelle classe. Les classes existantes ne changent pas, sauf si tu touches « Appliquer le modèle » dans une classe.</small><div class=row id=tt-cr style="display:${TT.model ? 'none' : 'flex'}"><button class=ghost id=tt-cp>Copier vers une classe</button><button class=ghost id=tt-cf>Copier depuis une classe</button></div>`;
         else h += `<small class=tt-ro>Seule la direction peut modifier les horaires.</small>`;
         h += `<div id=ttl><div class=sk></div><div class=sk></div><div class=sk></div></div>`;

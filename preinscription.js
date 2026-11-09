@@ -60,7 +60,7 @@
                 const { error } = await db.rpc('v92_preinscrire', { p_code: f.code.value.trim(), p_child: f.child.value.trim(), p_sexe: f.sexe.value, p_naissance: f.born.value || null, p_classe: f.cls.value.trim(), p_origine: f.orig.value.trim(), p_parent: f.pname.value.trim(), p_phone: f.phone.value.trim(), p_note: f.note.value.trim() });
                 b.disabled = false;
                 if (error) return alert(error.message);
-                f.reset(); alert('Demande envoyée ✓ L’école va l’étudier ; vous recevrez une notification.'); mine();
+                f.reset(); alert('Demande envoyée. L’école va l’étudier ; vous recevrez une notification.'); mine();
             };
             const mine = async () => {
                 const { data } = await db.from('preinscriptions').select('child_name,classe_demandee,status,answer,created_at,schools(name)').order('created_at', { ascending: false }).limit(10);

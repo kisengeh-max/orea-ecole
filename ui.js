@@ -100,6 +100,12 @@
         target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
         swords: '<path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2"/>',
         send: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+        bank: '<path d="M3 10l9-6 9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>',
+        flask: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7.5 15h9"/>',
+        link: '<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>',
+        card: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/>',
+        play: '<path d="M7 4l12 8-12 8z"/>',
+        stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
         crown: '<path d="M3 7l4.5 4L12 4l4.5 7L21 7l-2 12H5z"/><path d="M5 19h14"/>',
         sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
         share: '<path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>',
@@ -126,7 +132,8 @@
         '↻': 'refresh', '🔁': 'refresh', '↩': 'left', '➕': 'plus', '⚡': 'bolt', '🗂': 'folder', '🔊': 'vol', '🔇': 'mute',
         '😴': 'moon', '🚽': 'drop', '😊': 'smile', '🙂': 'calm', '😢': 'sad', '😣': 'upset', '📶': 'wifi', '📴': 'wifioff',
         '⚖': 'scale', '↔': 'swap', '⏸': 'pause', '❓': 'help', '🌱': 'leaf', '🍀': 'leaf', '🎯': 'target', '⚔': 'swords',
-        '🧤': 'shield', '👋': 'hand', '👑': 'crown', '🚫': 'ban'
+        '🧤': 'shield', '👋': 'hand', '👑': 'crown', '🚫': 'ban',
+        '🏛': 'bank', '📖': 'book', '🧪': 'flask', '👍': 'check', '🔗': 'link', '💳': 'card', '🃏': 'star', '▶': 'play', '⏹': 'stop', '🚀': 'bolt', '🔥': 'bolt', '❤': 'star', '🙏': 'hand'
     };
     const KEYS = Object.keys(E).sort((a, b) => b.length - a.length).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const RX = new RegExp('(' + KEYS.join('|') + ')\\uFE0F?', 'g');

@@ -36,7 +36,7 @@
         (root.querySelectorAll ? root.querySelectorAll(SEL) : []).forEach(el => {
             if (el.querySelector(':scope > .vx-b')) return;
             const b = document.createElement('button');
-            b.type = 'button'; b.className = 'vx-b no-ico'; b.textContent = '🔊'; b.setAttribute('aria-label', 'Écouter'); b.dataset.notr = '1';
+            b.type = 'button'; b.className = 'vx-b'; b.textContent = '🔊'; b.setAttribute('aria-label', 'Écouter'); b.dataset.notr = '1';
             b.onclick = e => { e.stopPropagation(); e.preventDefault(); speak(el, b); };
             el.prepend(b);
         });
