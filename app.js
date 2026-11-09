@@ -811,14 +811,14 @@ async function classPng(c, l) {
     d.querySelector('#pd').onclick = () => { files.forEach(f => dl(f.blob, f.fn)); toast('Image' + (N > 1 ? 's enregistrées' : ' enregistrée') + ' dans Téléchargements'); };
     d.querySelector('#ps').onclick = async () => { if (can) { try { await navigator.share({ files: fl, text: c.name + ' — ' + S.school.name }); } catch (e) { if (e.name !== 'AbortError') toast('Partage impossible.'); } } else { files.forEach(f => dl(f.blob, f.fn)); toast('Image enregistrée.'); } };
 }
-function addClass(yr) {
+function addClass(yr, grp) {   // v95 : grp = option choisie, ou '@mat' / '@pri' / '@base' (onglet École par options)
     // Complexe scolaire : on choisit le niveau. Sinon, la base le déduit du type d'école.
     // Les frais ne sont demandés qu'au chef d'établissement (le Directeur des études n'a pas accès à l'argent).
     // v93 : seuls le nom et l'année sont obligatoires ; l'année scolaire est proposée (bascule le 1er août) ;
     // les frais se fixent plus tard ; « Option » pour le secondaire ; pas de frais pour le primaire public (gratuité)
     const F = [{ n: 'name', l: 'Nom (ex : 3e A)' }, { n: 'year', l: 'Année scolaire', v: yr || S.year || schoolYearNow() }];
-    if (schoolKind() === 'complexe') F.push({ n: 'level', l: 'Niveau', o: CLASS_LEVELS, v: 'secondaire' });
-    if (['secondaire', 'complexe'].includes(schoolKind())) F.push({ n: 'opt', l: 'Option (secondaire, facultatif)', o: [['', '— aucune —']].concat(classOptions().map(o => [o, o])), v: '' });
+    if (schoolKind() === 'complexe') F.push({ n: 'level', l: 'Niveau', o: CLASS_LEVELS, v: grp === '@mat' ? 'maternelle' : grp === '@pri' ? 'primaire' : 'secondaire' });
+    if (['secondaire', 'complexe'].includes(schoolKind()) && !['@mat', '@pri'].includes(grp)) F.push({ n: 'opt', l: 'Option (secondaire, facultatif)', o: [['', '— aucune —']].concat(classOptions().map(o => [o, o])), v: grp && !String(grp).startsWith('@') ? grp : '' });
     const freeSchool = schoolFree() && schoolKind() === 'primaire';
     if (fin() && !freeSchool) F.push({ n: 't1', l: 'Frais 1er trimestre (facultatif)', t: 'number', r: false }, { n: 't2', l: 'Frais 2e trimestre (facultatif)', t: 'number', r: false }, { n: 't3', l: 'Frais 3e trimestre (facultatif)', t: 'number', r: false }, { n: 'cur', l: 'Devise des frais', o: CUR.map(c => [c, c]), v: S.cur });
     ask('Nouvelle classe', F, async v => {
