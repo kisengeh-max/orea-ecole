@@ -38,6 +38,9 @@
 .tt-s.now{background:rgba(199,163,75,.30);border-left-color:var(--gold,#c7a34b);box-shadow:0 0 0 1px var(--gold,#c7a34b);animation:ttPulse 2.4s ease-in-out infinite}
 .tt-s.now i::before{content:"▶ "}
 .tt-s.sel{outline:2px solid #3b82f6;outline-offset:1px}
+.tt-s{position:relative}
+.tt-pen{position:absolute;top:50%;right:6px;transform:translateY(-50%);width:36px!important;min-width:36px;height:36px;min-height:36px!important;margin:0!important;padding:0!important;border-radius:50%!important;border:0!important;background:#3b82f6!important;color:#fff!important;box-shadow:0 2px 8px rgba(0,0,0,.35)!important;display:inline-flex;align-items:center;justify-content:center;font-size:15px;line-height:1}
+.tt-pen .ic{width:18px;height:18px}
 .tt-edit .tt-s{cursor:pointer}
 @keyframes ttPulse{50%{box-shadow:0 0 0 3px rgba(199,163,75,.35)}}
 .tt-bar{display:flex;gap:8px;margin:12px 0}
@@ -168,6 +171,15 @@
     function syncBar() {
         const a = document.getElementById('tt-ed'), b = document.getElementById('tt-rm');
         if (a) a.disabled = !TT.sel; if (b) b.disabled = !TT.sel;
+        // v99 : petit crayon directement sur le cours touché (les boutons du bas restent)
+        document.querySelectorAll('.tt-pen').forEach(x => x.remove());
+        const c = TT.sel && document.querySelector(`#ttl .tt-s[data-id="${CSS.escape(TT.sel)}"]`);
+        if (c && canEdit()) {
+            const pen = document.createElement('button');
+            pen.type = 'button'; pen.className = 'tt-pen'; pen.setAttribute('aria-label', 'Modifier ce cours'); pen.textContent = '✏';
+            pen.onclick = e => { e.stopPropagation(); editSlot(); };
+            c.appendChild(pen);
+        }
     }
 
     function slotFields(t) {
