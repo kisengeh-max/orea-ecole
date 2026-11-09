@@ -45,12 +45,16 @@
     }
     // Date Excel (nombre de jours depuis 1900)
     const excelDate = n => { const d = new Date(Math.round((n - 25569) * 864e5)); return isNaN(d) ? null : check(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); };
-    const cleanName = s => String(s || '').replace(/^\s*\d{1,3}\s*[.)\-–:]\s+/, '').replace(/[;,|]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const cleanName = s => String(s || '').replace(/^\s*\d{1,3}\s*[.)\-–:]?\s+(?=[^\d\s])/, '').replace(/[;,|]+/g, ' ').replace(/\s+/g, ' ').trim();
 
     /* ---------- Une ligne de texte libre ---------- */
+    // Ligne de titres : tous ses mots sont des mots de titre (n°, nom, sexe, date, naissance, téléphone…)
+    const HW = new Set(['n', 'no', 'num', 'numero', 'nom', 'noms', 'postnom', 'post-nom', 'postnoms', 'prenom', 'prenoms', 'complet', 'complets', 'eleve', 'eleves', 'sexe', 'genre', 'date', 'de', 'du', 'des', 'la', 'le', 'naissance', 'ne', 'nee', 'age', 'ages', 'telephone', 'tel', 'phone', 'contact', 'contacts', 'parent', 'parents', 'tuteur', 'whatsapp', 'classe', 'et', 'identite', 'ddn', 'lieu', 'adresse']);
+    const isHeader = line => { const w = strip(line).replace(/[°º#:/()|;,.\t-]+/g, ' ').split(/\s+/).filter(Boolean); return w.length >= 2 && w.every(x => HW.has(x)) && w.some(x => ['nom', 'noms', 'eleve', 'eleves'].includes(x)); };
     function parseLine(line) {
+        if (isHeader(line)) return { name: '' };
         let s = ' ' + String(line || '').replace(/\t/g, ' ') + ' ';
-        s = s.replace(/^\s*\d{1,3}\s*[.)\-–:]\s+/, ' ');
+        s = s.replace(/^\s*(?:n[°o]\s*)?\d{1,3}\s*[.)\-–:]?\s+(?=[^\d\s])/i, ' ');   // v97b : numérotation « 1 », « 1. », « 1) »
         const r = { name: '', sexe: null, dn: null, age: null, phone: null };
         const pm = s.match(RX_PHONE); if (pm) { r.phone = phoneOf(pm[0]); if (r.phone) s = s.replace(pm[0], ' '); }
         const dm = s.match(/\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b|\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b/);

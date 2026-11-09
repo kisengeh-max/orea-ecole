@@ -6,11 +6,11 @@
    ===================================================================== */
 (function () {
     'use strict';
-    const LIVRAISON = 'v97 · 08/11/2026';
+    const LIVRAISON = 'v98 · 08/11/2026';
     const FILES = {
-        "index.html": "c6174dc3290517b968fad7f2a17046f0844a4371e693fd332086a08f07c5e622",
-        "parent.html": "ba7de21fed80e1e7887dab334ab56822b5d6f510af22bc8986c25615d3034658",
-        "sw.js": "ae17a2cb4258a01d3cc0643e2170dbaf8047efce4a24997cc6879a22fae62a06",
+        "index.html": "7828902b33a2f16a29653f4ebc9781b85c29e2a5ea3227aa879426fe063c3a72",
+        "parent.html": "e94d4e140d73f6d92588f33af8d5604ea84a17e429d362e92b0d4ef8fc15042c",
+        "sw.js": "cb1d1057d66b25ebdd5fb83716af19f6fef73472e88e0f67cc2ec6c50ccee9aa",
         "manifest.json": "388e6d6df3e4442301f70f10241f49cc3d8d858251cf7aee9c9c4fbd7a23e72d",
         "manifest-parent.json": "08111dd3164a7162a8d84f267d2a04016d64c127b2951dfbfdde67227e3453cb",
         "ambadmin.js": "c6e0ff9d8bcf401127e1e8eb140ce05d91c4120c536f5ebb1ce087ae77d23bc7",
@@ -23,14 +23,14 @@
         "bureau.css": "15d86119d3c3f0ff9cc3b1b7a543f3e30dd2c1b8fa913da1cb4529caf176fa7f",
         "bureau.js": "ac9aa4f60075e110f8b3e5bdeb0310c2f71b6c1244f7dd7d81ac7797b7aa7761",
         "cahier.js": "213a99c89d1a646cbac4a437417bc8b102faa99334a744a42dcd21b16ef355d2",
-        "config.js": "0d29b265327e7e03c14a421bb268fb89e5edafc08c02c9b255302e4811efeadb",
+        "config.js": "9eefe7d8e5ac88c931886f3bd1a3766ca11e2ed19c8141652bc8a364d3af5c92",
         "enafep.js": "6a10ee7d964bd61315ef88c8eb8921196e524f579161e85e1551be08d1030080",
         "equipe.js": "bd608393e81e943e40efc1de429dddf7a820754e803d6e3d39c40959aafb7849",
         "famille.js": "6e17aea98c14ebec660b64231c20aeb59e4eb75ec51294d8049f32cc4fba75f9",
         "finance.js": "f925e04fe9ae5103b38b2398717365dcfdf1b4d512b21528d642c6e7129a8d3d",
         "inspecteur.js": "9aa34624368af542265e96a2879982a25d5360590a87ee777d261a38b3c0f287",
         "langues.js": "4d4a443804cf47c110f9526cc4c2cf79b97609ca26549821c3fe447f23861991",
-        "listes.js": "1d10a724572fdde4f3a1acb8cdb41a43847505a57418a07b71caad0fcd2ef6e5",
+        "listes.js": "5c5f44cfe1a09bf8c7a52d42b71efaea3f2213a19a85cdb1a0d6cfdce595138e",
         "messages.js": "bc9d79d90b93907768244926a394ef71a7b90d1e0d68da4e1b0d6a512ab9f506",
         "notes.js": "9c366fc806ae511ca83b0453db8f339f99d627e37b51a5b827288b3aa7f26885",
         "notifications.js": "1b080c37ac646a8a0c9bc7532c436b70b96d830f9fca0288cd11af24c20e13ca",
