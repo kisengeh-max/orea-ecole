@@ -59,9 +59,10 @@
             if (!sel.size && !first) return toast('Choisissez au moins une option.');
             const L = sortFr([...sel]);
             const b = $('#op-ok'); b.disabled = true;
-            const { error } = await db.from('schools').update({ class_options: L.length ? L : ['Pédagogie générale'] }).eq('id', S.school.id);
+            // v96 : enregistrement par une fonction contrôlée (la modification directe était refusée par la base)
+            const { data: saved, error } = await db.rpc('v96_set_school_options', { p_options: L.length ? L : ['Pédagogie générale'] });
             if (error) { b.disabled = false; return toast(error.message); }
-            S.school.class_options = L.length ? L : ['Pédagogie générale'];
+            S.school.class_options = sortFr(saved || L);
             if (first) await createBase();
             S.optView = null; S.optPick = false; await load(); render();
             toast('Options enregistrées ✓');

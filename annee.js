@@ -175,7 +175,7 @@ ${P.length ? `<details><summary>Historique (${P.length})</summary>${P.map(p => `
             sc.innerHTML = `<b>Statut de l’école</b><small>Dans une école publique (conventionnée ou non), le primaire est gratuit : ORÉA ne demande pas de frais de scolarité pour ces classes.</small><select id=yr-st>${STATUTS.map(x => `<option value="${x[0]}" ${(S.school.statut || 'privee') === x[0] ? 'selected' : ''}>${x[1]}</option>`).join('')}</select>`;
             wrap.appendChild(sc);
             sc.querySelector('#yr-st').onchange = async e => {
-                const { error } = await db.from('schools').update({ statut: e.target.value }).eq('id', S.school.id);
+                const { error } = await db.rpc('v96_set_school_statut', { p_statut: e.target.value });
                 if (error) return toast(error.message);
                 S.school.statut = e.target.value; toast('Statut enregistré ✓'); render();
             };
@@ -185,8 +185,8 @@ ${P.length ? `<details><summary>Historique (${P.length})</summary>${P.map(p => `
             const op = document.createElement('div'); op.className = 'card col';
             const draw = () => {
                 const L = classOptions();
-                op.innerHTML = `<b>Options du secondaire</b><small>Proposées à la création d’une classe (ex. : 1ère Pédagogie générale).</small><div class=row style="flex-wrap:wrap;gap:6px">${L.map((o, i) => `<span class=chip style="display:inline-flex;gap:6px;align-items:center">${E(o)}${fin() ? ` <button type=button data-rm="${i}" aria-label="Retirer" style="width:auto;min-height:0;padding:0 6px;background:none;border:0;color:var(--bad);box-shadow:none">✕</button>` : ''}</span>`).join('')}</div>${fin() ? '<div class=row><input id=op-new placeholder="Nouvelle option" maxlength=60><button type=button id=op-add style="width:auto">Ajouter</button></div>' : ''}`;
-                const save = async L2 => { const { error } = await db.from('schools').update({ class_options: L2 }).eq('id', S.school.id); if (error) return toast(error.message); S.school.class_options = L2; draw(); };
+                op.innerHTML = `<b>Options du secondaire</b><small>Proposées à la création d’une classe (ex. : 1ère Pédagogie générale).</small><div class=row style="flex-wrap:wrap;gap:6px">${L.map((o, i) => `<span class=chip style="display:inline-flex;gap:6px;align-items:center">${E(o)}${pedago() ? ` <button type=button data-rm="${i}" aria-label="Retirer" style="width:auto;min-height:0;padding:0 6px;background:none;border:0;color:var(--bad);box-shadow:none">✕</button>` : ''}</span>`).join('')}</div>${pedago() ? '<div class=row><input id=op-new placeholder="Nouvelle option" maxlength=60><button type=button id=op-add style="width:auto">Ajouter</button></div>' : ''}`;
+                const save = async L2 => { const { data: sv, error } = await db.rpc('v96_set_school_options', { p_options: L2 }); if (error) return toast(error.message); S.school.class_options = sv || L2; draw(); };
                 op.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { const L2 = classOptions().slice(); L2.splice(+b.dataset.rm, 1); save(L2); });
                 const ad = op.querySelector('#op-add'); if (ad) ad.onclick = () => { const v = op.querySelector('#op-new').value.trim(); if (!v) return; if (classOptions().some(x => x.toLowerCase() === v.toLowerCase())) return toast('Cette option existe déjà.'); save(classOptions().concat([v])); };
             };

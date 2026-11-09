@@ -6,16 +6,16 @@
    ===================================================================== */
 (function () {
     'use strict';
-    const LIVRAISON = 'v95 · 08/11/2026';
+    const LIVRAISON = 'v96 · 08/11/2026';
     const FILES = {
-        "index.html": "9503b15caf01af4c5d7c9bf165af8f27f3d71da07511a2b0cdb81fd46b1e6131",
-        "parent.html": "a234d18522e5f37beb948a8e719c0d3de35b028b97c7aee3b3e3ddac5af63ce0",
-        "sw.js": "72283376a4ad7b40de096031332c3887a50bdb1e313d88cff07551b4b515fd63",
+        "index.html": "e5d93866ccd08d4b890110027129c9d136146c275542e359fb91227f2491e895",
+        "parent.html": "8756f05ab85e0dce7820991326fb944bd34e437de8c8326272f4bc57481f2931",
+        "sw.js": "56200178fdc167b1d5f01fc6b97c8ca5c6b530aaeb89eb551b492ce5e5aea8ef",
         "manifest.json": "388e6d6df3e4442301f70f10241f49cc3d8d858251cf7aee9c9c4fbd7a23e72d",
         "manifest-parent.json": "08111dd3164a7162a8d84f267d2a04016d64c127b2951dfbfdde67227e3453cb",
         "ambadmin.js": "c6e0ff9d8bcf401127e1e8eb140ce05d91c4120c536f5ebb1ce087ae77d23bc7",
         "ambassadeur.js": "713a86f600a64e98f5c1c397d29ca5aeedb521609db67cab22b4ca34b34a7845",
-        "annee.js": "a942e3d93084d696a783f3ebaa73b153af89101d32d522b0c23daeb194a093c8",
+        "annee.js": "09d6e07e258194a464a08e6dc36af9f74810f6de608a6ea1aca18f93365f6532",
         "announcements.js": "a4e26ad07be6866df9eb5a57638b0eca7c54a6eff6b9989c401bcdeb0184c062",
         "app.js": "6bcd933052f73fd9915680bb0018daf6ae6b1538e3bfe1a71a374d2743b99d7c",
         "auth_ui.js": "890281e1af24f1c0236d3f81ab17cfa9962c4a68c470154594d13a4b775fcd71",
@@ -23,7 +23,7 @@
         "bureau.css": "15d86119d3c3f0ff9cc3b1b7a543f3e30dd2c1b8fa913da1cb4529caf176fa7f",
         "bureau.js": "ac9aa4f60075e110f8b3e5bdeb0310c2f71b6c1244f7dd7d81ac7797b7aa7761",
         "cahier.js": "213a99c89d1a646cbac4a437417bc8b102faa99334a744a42dcd21b16ef355d2",
-        "config.js": "ab32bdf670a1e477829dc8a57b318344cddaa600fbfaac87a150011eb979c039",
+        "config.js": "83b004dd27fc25f980291a6353984983ff9ea6e6124138788529e41f5ca6effe",
         "enafep.js": "6a10ee7d964bd61315ef88c8eb8921196e524f579161e85e1551be08d1030080",
         "equipe.js": "bd608393e81e943e40efc1de429dddf7a820754e803d6e3d39c40959aafb7849",
         "famille.js": "6e17aea98c14ebec660b64231c20aeb59e4eb75ec51294d8049f32cc4fba75f9",
@@ -34,7 +34,7 @@
         "notes.js": "9c366fc806ae511ca83b0453db8f339f99d627e37b51a5b827288b3aa7f26885",
         "notifications.js": "1b080c37ac646a8a0c9bc7532c436b70b96d830f9fca0288cd11af24c20e13ca",
         "offline.js": "6854fafbdfc87aceb000502be1c43a4686338fc0a3137b8e69f089ea911456cd",
-        "options.js": "0090cb10970cf7326316ee50bda105bf1515800b98ae3b28b4a48a9431b48287",
+        "options.js": "15258b3e0538b32b42d85eaa8068bd3bb46e64c7690b3675cca0a96d2119bab6",
         "parent.css": "7acaae4680a3e9bceb3488d5c0a167dde74a01ac09784785c8c84911951ef175",
         "parent.js": "d9b81b190ab6e7be16fad4d6a810e00826b1a1d5cf5dd3d02e381ee7332dca44",
         "parent_notes.js": "c7bd53e27af60ae6fa8c1a6f27b4c63e1573e80490ee96c98721af04785121e0",
