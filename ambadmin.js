@@ -36,11 +36,12 @@ function admRender() {
     const nPend = ADM.amb.filter(a => a.status === 'pending').length;
     const tb = (k, l) => '<button class="' + (ADM.tab === k ? '' : 'ghost') + '" onclick="admTab(\'' + k + '\')">' + l + '</button>';
     let h = '<h3>Espace ORÉA</h3><div class="row adm-tabs">'
-        + tb('ecoles', 'Écoles') + tb('alertes', 'Alertes' + (ADM.alerts.length ? ' 🔔' + ADM.alerts.length : '')) + tb('amb', 'Ambassadeurs' + (nPend ? ' 🔔' + nPend : '')) + tb('pro', 'Prospects') + (typeof oreaInspAdminSection === 'function' ? tb('insp', '🏛 Inspecteurs') : '') + (typeof oreaTestSection === 'function' ? tb('test', '🧪 Test') : '') + '</div>';
-    h += ADM.tab === 'amb' ? admAmbSection() : ADM.tab === 'pro' ? admProSection() : ADM.tab === 'alertes' ? admAlertSection() : ADM.tab === 'test' && typeof oreaTestSection === 'function' ? oreaTestSection(ADM.test) : ADM.tab === 'insp' && typeof oreaInspAdminSection === 'function' ? oreaInspAdminSection() : admSchoolSection();
+        + tb('ecoles', 'Écoles') + tb('alertes', 'Alertes' + (ADM.alerts.length ? ' 🔔' + ADM.alerts.length : '')) + tb('amb', 'Ambassadeurs' + (nPend ? ' 🔔' + nPend : '')) + tb('pro', 'Prospects') + (typeof oreaInspAdminSection === 'function' ? tb('insp', '🏛 Inspecteurs') : '') + (typeof oreaTestSection === 'function' ? tb('test', '🧪 Test') : '') + (typeof oreaIaAdminSection === 'function' ? tb('ia', 'IA') : '') + '</div>';
+    h += ADM.tab === 'amb' ? admAmbSection() : ADM.tab === 'pro' ? admProSection() : ADM.tab === 'alertes' ? admAlertSection() : ADM.tab === 'test' && typeof oreaTestSection === 'function' ? oreaTestSection(ADM.test) : ADM.tab === 'insp' && typeof oreaInspAdminSection === 'function' ? oreaInspAdminSection() : ADM.tab === 'ia' && typeof oreaIaAdminSection === 'function' ? oreaIaAdminSection() : admSchoolSection();
     $('#main').innerHTML = h + installCard() + '<button class=ghost onclick=out()>Déconnexion</button>';
     if (ADM.tab === 'test' && typeof oreaTestBind === 'function') oreaTestBind(ADM.test);
     if (ADM.tab === 'insp' && typeof oreaInspAdminBind === 'function') oreaInspAdminBind();
+    if (ADM.tab === 'ia' && typeof oreaIaAdminBind === 'function') oreaIaAdminBind();   // v100 : onglet IA (ia.js)
 }
 
 /* ---------- Onglet Écoles ---------- */

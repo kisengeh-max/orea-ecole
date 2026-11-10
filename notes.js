@@ -384,7 +384,6 @@ function bulPreview() {
             + v.rows.map(r => `<div style="display:flex;justify-content:space-between;margin:3px 0"><span>${esc(r.name)}</span><span><small>${year ? r.cells[3] : r.cells[0] + ' / ' + r.cells[1]}</small> <b class="${r.pct != null && r.pct < 50 ? 'due' : ''}">${OB.pctTxt(r.pct)}</b></span></div>`).join('')
             + `<div style="display:flex;justify-content:space-between;margin-top:8px;border-top:1px solid var(--line);padding-top:8px"><b>Total : ${OB.num(v.tp)} / ${OB.num(v.tm)}</b><b class="${v.pct != null && v.pct < 50 ? 'due' : 'ok'}" style="font-size:18px">${OB.pctTxt(v.pct)}</b></div></div>`
             + `<label style="font-size:12px;color:var(--mut)">Appréciation (modifiable)</label><textarea id=b_rem rows=3>${esc(b.appr)}</textarea>`
-            + (window.OREA_CONFIG && OREA_CONFIG.GEMINI_KEY ? `<button id=btn_ia class=ghost onclick="bulAI()" style="margin-bottom:8px">✨ Générer avec l’IA</button>` : '')
             + `<button onclick="bulOne()">📄 Bulletin PDF de cet élève</button>`
             + `<button class=ghost onclick="bulOnePng(this)" style="margin-top:8px">🖼 Bulletin PNG de cet élève</button>`;
     }
@@ -429,17 +428,6 @@ function bulAll() {
         OB.save(OB.pdf(pages), 'bulletins-' + OB.slug((cotCls() || {}).name) + '-' + S.bulPeriod + '.pdf');
         toast(`✓ ${pages.length} bulletin(s) dans un seul PDF`);
     } catch (x) { toast('Erreur PDF : ' + x.message); }
-}
-async function bulAI() {
-    const key = window.OREA_CONFIG && OREA_CONFIG.GEMINI_KEY, s = S.stu.find(x => x.id === S.bulStu); if (!key || !s) return;
-    const v = OB.view(OB.agg(bulOf(s.id)), S.bulPeriod), btn = $('#btn_ia'), txt = $('#b_rem'), old = btn.innerHTML;
-    btn.innerHTML = '⏳ …'; btn.disabled = true;
-    const prompt = `Tu es enseignant en RDC. L'élève ${s.name} a obtenu : ${v.rows.map(r => r.name + ' ' + OB.pctTxt(r.pct)).join(', ')}. Pourcentage général : ${OB.pctTxt(v.pct)}. Rédige une appréciation bienveillante mais honnête en 2 phrases maximum, sans guillemets.`;
-    try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
-        const d = await res.json(); if (d.error) throw new Error(d.error.message);
-        txt.value = d.candidates[0].content.parts[0].text.trim();
-    } catch (x) { toast('Erreur IA : ' + x.message); } finally { btn.innerHTML = old; btn.disabled = false; }
 }
 
 // ---------- Dossier élève : bouton [ Cotes ] ----------
