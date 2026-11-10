@@ -1,5 +1,9 @@
 /* =====================================================================
-   ORÉA École v100 — ia.js : l'IA dans ORÉA (paquet IA 1)
+   ORÉA École v101 — ia.js : l'IA dans ORÉA
+   v101 : l'enseignant ne prépare que SES cours (attribués par la direction,
+          contrôle aussi dans la base) ; la direction prépare dans tous les
+          cours ; banque commune (fiche identique reprise sans IA) ;
+          nom de l'enseignant sur les fiches vues par la direction.
    1) « Préparer une leçon » dans la fenêtre de classe (enseignant,
       percepteur, Directeur des études, chef d'établissement).
       La fiche est écrite par Claude Haiku 5.5 via l'Edge Function
@@ -51,14 +55,20 @@
     }
 
     /* ---------- Cours de la classe ---------- */
+    // Direction (chef d'établissement, Directeur des études) : tous les cours de la classe, sinon ceux de l'école.
+    // Enseignant / percepteur : uniquement les cours que la direction lui a attribués dans CETTE classe.
+    const isDirection = () => !!(S.me && S.me.role === 'directeur' && !S.me.secretariat);
     async function subjectsFor(cid) {
         const map = r => (r.data || []).map(x => ({ id: x.subject_id, name: x.subjects && x.subjects.name })).filter(x => x.id && x.name);
         let l = [];
-        if (S.me.role !== 'directeur' || S.me.etudes) {
-            try { const r = await db.from('teacher_subjects').select('subject_id, subjects(name)').eq('teacher_id', S.me.id).eq('class_id', cid).eq('year', S.year || ''); if (!r.error) l = map(r); } catch (_) { }
+        if (!isDirection()) {
+            const r = await db.from('teacher_subjects').select('subject_id, subjects(name)').eq('teacher_id', S.me.id).eq('class_id', cid).eq('year', S.year || '');
+            if (r.error) throw r.error;
+            l = map(r);
+        } else {
+            try { const r = await db.from('class_subjects').select('subject_id, subjects(name)').eq('class_id', cid); if (!r.error) l = map(r); } catch (_) { }
+            if (!l.length) { try { const r = await db.from('subjects').select('id,name').eq('school_id', S.school.id).order('name'); if (!r.error) l = (r.data || []).map(x => ({ id: x.id, name: x.name })); } catch (_) { } }
         }
-        if (!l.length) { try { const r = await db.from('class_subjects').select('subject_id, subjects(name)').eq('class_id', cid); if (!r.error) l = map(r); } catch (_) { } }
-        if (!l.length) { try { const r = await db.from('subjects').select('id,name').eq('school_id', S.school.id).order('name'); if (!r.error) l = (r.data || []).map(x => ({ id: x.id, name: x.name })); } catch (_) { } }
         const seen = new Set();
         return l.filter(x => !seen.has(x.id) && seen.add(x.id)).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
     }
@@ -68,13 +78,17 @@
     window.openPrepaLecon = async function () {
         const c = (S.classes || []).find(x => x.id === S.cls); if (!c) return;
         show('<h3>Préparer une leçon</h3><small>' + esc(c.name) + '</small>' + SK);
-        const [subs] = await Promise.all([subjectsFor(c.id), refresh()]);
+        const close = '<button class=ghost onclick="this.closest(\'dialog\').close()">Fermer</button>';
+        let subs;
+        try { [subs] = await Promise.all([subjectsFor(c.id), refresh()]); }
+        catch (e) { if ($('#dlg').open) show('<h3>Préparer une leçon</h3><p class=empty>' + (isNet(e) ? 'Pas de connexion internet.' : 'Impossible de charger vos cours.') + '</p>' + close); return; }
         const d = $('#dlg'); if (!d.open) return;
         if (!S.ia || !S.ia.on) { show('<h3>Préparer une leçon</h3><p class=empty>L’IA n’est pas activée pour votre école.</p><button class=ghost onclick="this.closest(\'dialog\').close()">Fermer</button>'); return; }
-        if (!subs.length) { show('<h3>Préparer une leçon</h3><p class=empty>Aucun cours dans cette classe. Ajoutez d’abord les cours de la classe.</p><button class=ghost onclick="this.closest(\'dialog\').close()">Fermer</button>'); return; }
+        if (!subs.length) { show('<h3>Préparer une leçon</h3><p class=empty>' + (isDirection() ? 'Aucun cours n’existe encore dans l’école. Ajoutez d’abord les cours de cette classe.' : 'Aucun cours ne vous est attribué dans cette classe. Demandez à la direction.') + '</p>' + close); return; }
         const dur = FORM.dur || (['primaire', 'maternelle'].includes(c.level || '') ? 45 : 50);
         const full = (S.ia.mine || 0) >= (S.ia.max || 20);
-        show('<h3>Préparer une leçon</h3><small>Classe : ' + esc(c.name) + '</small><div class=col style="margin-top:8px">'
+        show('<h3>Préparer une leçon</h3><small>Classe : ' + esc(c.name) + '</small>'
+            + '<p style="font-size:13px;margin:8px 0;color:var(--mut)">Choisissez le cours et écrivez le titre de la leçon. L’IA prépare la fiche selon le niveau de la classe ; vous la relisez avant de l’utiliser.</p><div class=col>'
             + '<label>Cours<select id=ia_sub>' + subs.map(s => '<option value="' + esc(s.id) + '"' + (s.id === FORM.sub ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') + '</select></label>'
             + '<label>Titre de la leçon<input id=ia_tit maxlength=150 autocomplete=off placeholder="Ex. : L’addition des nombres décimaux" value="' + esc(FORM.tit || '') + '"></label>'
             + '<label>Durée (minutes)<input id=ia_dur type=number inputmode=numeric min=10 max=240 value="' + dur + '"></label>'
@@ -87,14 +101,14 @@
         const keep = () => { FORM = { sub: q('#ia_sub').value, tit: q('#ia_tit').value, note: q('#ia_note').value, dur: +q('#ia_dur').value || dur }; };
         q('#ia_x').onclick = () => d.close();
         q('#ia_list').onclick = () => { keep(); listLessons(c); };
-        if (q('#ia_go')) q('#ia_go').onclick = () => { keep(); generate(c, q('#ia_go')); };
+        if (q('#ia_go')) q('#ia_go').onclick = () => { keep(); generate(c, q('#ia_go'), false); };
     };
 
-    async function generate(c, btn) {
+    async function generate(c, btn, fresh) {
         const tit = (FORM.tit || '').trim(), dur = Math.round(FORM.dur || 0);
         if (tit.length < 3) { toast('Écrivez le titre de la leçon.'); return; }
         if (dur < 10 || dur > 240) { toast('La durée doit être entre 10 et 240 minutes.'); return; }
-        btn.disabled = true; btn.textContent = 'Préparation en cours (20 à 40 secondes)…';
+        const label = btn.textContent; btn.disabled = true; btn.textContent = 'Préparation en cours (20 à 40 secondes)…';
         let msg = '', res = null;
         // Appel direct (90 s) : le client « db » coupe toute requête après 15 s, trop court pour l'IA
         const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 90000);
@@ -104,7 +118,7 @@
             const r = await fetch(OREA_CONFIG.SUPABASE_URL + '/functions/v1/orea-ia', {
                 method: 'POST', signal: ctl.signal,
                 headers: { 'Content-Type': 'application/json', apikey: OREA_CONFIG.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + session.access_token },
-                body: JSON.stringify({ action: 'lecon', class_id: c.id, subject_id: FORM.sub, title: tit, note: (FORM.note || '').trim(), duration: dur })
+                body: JSON.stringify({ action: 'lecon', class_id: c.id, subject_id: FORM.sub, title: tit, note: (FORM.note || '').trim(), duration: dur, fresh: !!fresh })
             });
             const j = await r.json().catch(() => null);
             if (r.status === 401) msg = 'Session expirée : reconnectez-vous.'; else if (!j) msg = OFF; else if (!j.ok) msg = j.msg || OFF; else res = j;
@@ -113,37 +127,44 @@
         if (S.ia && res) { S.ia.mine = res.mine; S.ia.max = res.max || S.ia.max; }
         const d = $('#dlg');
         if (!d.open) { toast(res ? 'Fiche prête : retrouvez-la dans « Mes fiches ».' : msg); return; }
-        if (!res) { btn.disabled = false; btn.textContent = 'Préparer la fiche'; toast(msg); return; }
-        FORM.tit = ''; FORM.note = '';
-        const L = res.lesson; L.teacher_id = S.me.id; L.class_id = c.id;
+        if (!res) { btn.disabled = false; btn.textContent = label; toast(msg); return; }
+        const L = res.lesson; L.teacher_id = S.me.id; L.class_id = c.id; L.cached = !!res.cached;
         if (!L.id) toast('Fiche prête, mais non enregistrée. Copiez-la ou téléchargez-la.');
+        else if (res.cached) toast('Fiche trouvée dans la banque ORÉA : prête tout de suite.');
         viewLesson(L, c, true);
     }
 
     /* ---------- Liste des fiches ---------- */
     async function listLessons(c) {
-        show('<h3>' + (S.me.role === 'directeur' ? 'Fiches' : 'Mes fiches') + ' · ' + esc(c.name) + '</h3>' + SK);
-        let q = db.from('ia_lessons').select('id,title,subject_name,duration,content,created_at,teacher_id,class_id').eq('class_id', c.id).order('created_at', { ascending: false }).limit(60);
-        if (S.me.role !== 'directeur') q = q.eq('teacher_id', S.me.id);
-        let r; try { r = await q; } catch (e) { r = { error: e }; }
+        const T = (isDirection() ? 'Fiches' : 'Mes fiches') + ' · ' + esc(c.name);
+        show('<h3>' + T + '</h3>' + SK);
+        let r; try { r = await db.rpc('v101_ia_lessons', { p_class: c.id }); } catch (e) { r = { error: e }; }
         const d = $('#dlg'); if (!d.open) return;
         const L = r.error ? null : (r.data || []);
-        show('<h3>' + (S.me.role === 'directeur' ? 'Fiches' : 'Mes fiches') + ' · ' + esc(c.name) + '</h3>'
-            + (!L ? '<p class=empty>Impossible de charger les fiches.</p>' : L.length ? '<div style="max-height:60vh;overflow-y:auto">' + L.map((x, i) => '<div class="card col" data-i="' + i + '" style="cursor:pointer"><b>' + esc(x.title) + '</b><small>' + esc(x.subject_name || '') + ' · ' + day(x.created_at) + (x.teacher_id !== S.me.id ? ' · un collègue' : '') + '</small></div>').join('') + '</div>' : '<p class=empty>Aucune fiche pour cette classe.</p>')
+        show('<h3>' + T + '</h3>'
+            + (!L ? '<p class=empty>Impossible de charger les fiches.</p>' : L.length ? '<div style="max-height:60vh;overflow-y:auto">' + L.map((x, i) => '<div class="card col" data-i="' + i + '" style="cursor:pointer"><b>' + esc(x.title) + '</b><small>' + esc([x.subject_name, day(x.created_at), x.teacher_id !== S.me.id ? (x.teacher_name || 'un collègue') : ''].filter(Boolean).join(' · ')) + '</small></div>').join('') + '</div>' : '<p class=empty>Aucune fiche pour cette classe.</p>')
             + '<button class=ghost id=ia_back>Retour</button>');
-        d.querySelectorAll('[data-i]').forEach(e => e.onclick = () => viewLesson(L[+e.dataset.i], c, false));
+        d.querySelectorAll('[data-i]').forEach(e => e.onclick = () => openLesson(L[+e.dataset.i].id, c));
         d.querySelector('#ia_back').onclick = () => openPrepaLecon();
+    }
+    async function openLesson(id, c) {
+        show('<h3>Fiche</h3>' + SK);
+        let r; try { r = await db.rpc('v101_ia_lesson', { p_id: id }); } catch (e) { r = { error: e }; }
+        if (!$('#dlg').open) return;
+        if (r.error || !r.data) { toast(r.error && isNet(r.error) ? 'Pas de connexion internet.' : 'Fiche introuvable.'); return listLessons(c); }
+        viewLesson(r.data, c, false);
     }
 
     /* ---------- Une fiche ---------- */
     function viewLesson(L, c, fresh) {
         const own = !L.teacher_id || L.teacher_id === S.me.id;
-        const d = show('<h3>' + esc(L.title) + '</h3><small>' + esc([L.subject_name, c.name, L.duration ? L.duration + ' min' : '', day(L.created_at)].filter(Boolean).join(' · ')) + '</small>'
+        const d = show('<h3>' + esc(L.title) + '</h3><small>' + esc([L.subject_name, c.name, L.duration ? L.duration + ' min' : '', day(L.created_at), own ? '' : (L.teacher_name || 'un collègue')].filter(Boolean).join(' · ')) + '</small>'
             + '<p style="font-size:12.5px;margin:6px 0;color:var(--mut)">Proposition de l’IA : relisez-la et corrigez-la avant de l’utiliser.</p>'
             + '<textarea id=ia_txt' + (own ? '' : ' readonly') + ' style="width:100%;min-height:48vh;font-size:14px;line-height:1.45;white-space:pre-wrap">' + esc(L.content) + '</textarea>'
             + (own && L.id ? '<button id=ia_save hidden>Enregistrer les modifications</button>' : '')
             + '<div class=row style="margin-top:8px"><button class=ghost id=ia_cp>Copier</button><button class=ghost id=ia_pdf>PDF</button><button class=ghost id=ia_png>Image PNG</button></div>'
             + '<button class=ghost id=ia_sh>Partager</button>'
+            + (fresh && L.cached && S.ia && (S.ia.mine || 0) < (S.ia.max || 20) ? '<button class=ghost id=ia_new>Générer une autre version avec l’IA</button>' : '')
             + (own && L.id ? '<button class=ghost id=ia_del>Supprimer</button>' : '')
             + '<button class=ghost id=ia_back>' + (fresh ? 'Préparer une autre leçon' : 'Retour') + '</button>');
         const q = s => d.querySelector(s), txt = () => q('#ia_txt').value;
@@ -170,7 +191,8 @@
             try { const r = await db.from('ia_lessons').delete().eq('id', L.id); if (r.error) throw r.error; toast('Fiche supprimée.'); listLessons(c); }
             catch (e) { toast(isNet(e) ? 'Pas de connexion internet.' : 'Suppression impossible.'); }
         };
-        q('#ia_back').onclick = () => fresh ? openPrepaLecon() : listLessons(c);
+        if (q('#ia_new')) q('#ia_new').onclick = () => generate(c, q('#ia_new'), true);
+        q('#ia_back').onclick = () => { if (fresh) { FORM.tit = ''; FORM.note = ''; openPrepaLecon(); } else listLessons(c); };
     }
 
     async function run(b, fn) { const t = b.textContent; b.disabled = true; b.textContent = 'Préparation…'; try { await fn(); } catch (e) { toast('Export impossible.'); } finally { b.disabled = false; b.textContent = t; } }

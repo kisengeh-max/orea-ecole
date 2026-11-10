@@ -1,7 +1,7 @@
-// ORÉA École v100 — configuration publique.
+// ORÉA École v101 — configuration publique.
 // La clé "publishable" Supabase peut être publique. N'utilise JAMAIS la clé "secret" ni "service_role".
 window.OREA_CONFIG={
   SUPABASE_URL:"https://llmqzbomgkgayvhndubn.supabase.co",
   SUPABASE_ANON_KEY:"sb_publishable_lY1lrnM0Fu5TDhVRg-JrVQ_Fp8S4eIW",
-  APP_VERSION:"v100"
+  APP_VERSION:"v101"
 };
