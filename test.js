@@ -22,15 +22,47 @@
     window.oreaTest = { read, active: () => !!read() };
 
     /* ---------- Bandeau « MODE TEST » ---------- */
+    // v102 : petit bouton « TEST » dans la barre du haut, à côté du nom de l'école
+    // (l'ancien bandeau violet sur toute la largeur cachait des boutons). Un appui ouvre une petite carte :
+    // rôle, école, « Revenir à ORÉA ». Sans barre du haut visible : bouton flottant en haut au centre.
     function banner() {
         const t = read(); if (!t || document.getElementById('ts-bar')) return;
         const st = document.createElement('style');
-        st.textContent = '#ts-bar{position:sticky;top:0;z-index:950;display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;padding:calc(6px + env(safe-area-inset-top)) 10px 6px;background:repeating-linear-gradient(135deg,#6d28d9 0 14px,#5b21b6 14px 28px);color:#fff;font:600 13px/1.3 system-ui,sans-serif;text-align:center}#ts-bar button{width:auto;min-height:32px;padding:4px 12px;margin:0;border-radius:8px;border:1px solid rgba(255,255,255,.6);background:rgba(255,255,255,.15);color:#fff;font:700 12.5px system-ui,sans-serif;box-shadow:none}';
+        st.textContent = '#ts-bar{position:relative;flex:none;display:inline-flex;font:600 13px/1.3 system-ui,sans-serif;z-index:60}'
+            + '#ts-bar.fly{position:fixed;top:calc(8px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:950}'
+            + '#ts-pill{width:auto;min-height:28px;margin:0;padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.5);background:repeating-linear-gradient(135deg,#6d28d9 0 10px,#5b21b6 10px 20px);color:#fff;-webkit-text-fill-color:#fff;font:700 11.5px/1 system-ui,sans-serif;letter-spacing:.05em;box-shadow:0 3px 10px rgba(0,0,0,.3);cursor:pointer;white-space:nowrap}'
+            + '#ts-pill .ts-r{font-weight:600;letter-spacing:0}'
+            + '#ts-card{position:fixed;z-index:960;padding:12px 14px;border-radius:14px;background:#2e1065;color:#fff;-webkit-text-fill-color:#fff;border:1px solid rgba(255,255,255,.3);box-shadow:0 10px 30px rgba(0,0,0,.45);text-align:center;width:max-content;min-width:220px;max-width:80vw}'
+            + '#ts-card[hidden]{display:none}#ts-card b{display:block;background:none;-webkit-text-fill-color:#fff;color:#fff;font:700 14px/1.3 system-ui,sans-serif;letter-spacing:0}#ts-card small{display:block;opacity:.85;margin:2px 0 10px;font-weight:500}'
+            + '#ts-card button{width:100%;min-height:38px;margin:0;border-radius:10px;border:1px solid rgba(255,255,255,.6);background:rgba(255,255,255,.15);color:#fff;-webkit-text-fill-color:#fff;font:700 13px system-ui,sans-serif;box-shadow:none;cursor:pointer}'
+            + 'header #hs{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+            + '@media(max-width:600px){#ts-pill .ts-r{display:none}}';
         document.head.appendChild(st);
         const b = document.createElement('div'); b.id = 'ts-bar';
-        b.innerHTML = `<span>🧪 MODE TEST · <b>${E(t.label)}</b> · ${E(t.school)}</span><button type="button" id="ts-out">Revenir à ORÉA</button>`;
-        document.body.prepend(b);
-        b.querySelector('#ts-out').onclick = exit;
+        b.innerHTML = `<button type="button" id="ts-pill" class="no-ico" aria-expanded="false" title="Mode test">TEST<span class="ts-r"> · ${E(t.label)}</span></button>`;
+        const card = document.createElement('div'); card.id = 'ts-card'; card.hidden = true;
+        card.innerHTML = `<b>Mode test · ${E(t.label)}</b><small>${E(t.school)}</small><button type="button" id="ts-out">Revenir à ORÉA</button>`;
+        document.body.appendChild(card);
+        const place = () => {
+            const h = document.querySelector('body>header');
+            const vis = h && getComputedStyle(h).display !== 'none';
+            b.classList.toggle('fly', !vis);
+            if (vis) { const hs = h.querySelector('#hs'); const at = hs ? hs.nextSibling : null; if (b.parentNode !== h) h.insertBefore(b, at); }
+            else if (b.parentNode !== document.body) document.body.appendChild(b);
+        };
+        place(); addEventListener('resize', place);
+        const pill = b.querySelector('#ts-pill');
+        const tog = on => {
+            card.hidden = !on; pill.setAttribute('aria-expanded', on ? 'true' : 'false');
+            if (!on) return;
+            const r = pill.getBoundingClientRect(), w = card.offsetWidth;
+            card.style.top = (r.bottom + 8) + 'px';
+            card.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+        };
+        pill.onclick = e => { e.stopPropagation(); tog(card.hidden); };
+        document.addEventListener('click', e => { if (!card.hidden && !b.contains(e.target) && !card.contains(e.target)) tog(false); });
+        addEventListener('resize', () => tog(false));
+        card.querySelector('#ts-out').onclick = exit;
     }
     async function exit() {
         const b = document.getElementById('ts-out'); if (b) b.disabled = true;

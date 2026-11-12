@@ -44,6 +44,7 @@
                 <small>Code d'invitation de l'école : <b>${esc(S.school.code)}</b></small>
                 <small>Partagez ce code pour que le personnel rejoigne l'école.</small>
             </div>
+            ${!SEC ? `<button type="button" class="ghost" style="margin-bottom:10px" onclick="oreaCoursClasses()">📚 Cours des classes</button>` : ''}
             <div class="row" style="margin-bottom:8px">
                 <button type="button" class="chip ${TEAM.tab === 'staff' ? 'on' : ''}" data-tb="staff" style="flex:1">Comptes · ${staff.length}</button>
                 ${!SEC && typeof oreaDossiers === 'function' ? `<button type="button" class="chip ${TEAM.tab === 'dossiers' ? 'on' : ''}" data-tb="dossiers" style="flex:1">Dossiers</button>` : ''}
@@ -67,6 +68,7 @@
                     <div style="display:flex;justify-content:space-between;align-items:flex-start"><b>${esc(p.full_name)} ${isMe ? '(Moi)' : ''}</b>
                     <span class="chip ${p.active === false ? 'due' : 'ok'}" style="padding:2px 8px;min-height:0;font-size:11px">${p.active === false ? 'Désactivé' : 'Actif'}</span></div>
                     <small>Fonction : <b style="color:var(--gold)">${esc(ttl(p))}${(isDE || isSec) && p.collector ? ' · Percepteur' : ''}${p.gardien ? ' · Gardien' : ''}</b></small>
+                    ${(isMe || isHead) && !SEC && p.role === 'directeur' ? `<div class="row" style="margin-top:8px"><button class="ghost" style="${bs}" data-mtc="${p.id}">📚 ${isMe ? 'Gérer mes cours' : 'Gérer les cours'}</button></div>` : ''}
                     ${!isMe && !isHead ? `<div class="row" style="margin-top:8px;flex-wrap:wrap">
                         ${FIN && deOK && (isEnseignant || isPercepteur) ? `<button class="ghost" style="${bs}" onclick="setEtudes('${p.id}', true)">🎓 Nommer Directeur des études</button>` : ''}
                         ${FIN && (isEnseignant || isPercepteur) ? `<button class="ghost" style="${bs}" onclick="setSecr('${p.id}', true)">📋 Nommer Secrétariat</button>` : ''}
@@ -250,7 +252,7 @@
                     <input type="checkbox" id="sub_${sub.id}" ${assignedIds.has(sub.id) ? 'checked' : ''} style="width:auto;margin:0;transform:scale(1.5)" onchange="toggleCourse('${teacherId}', '${classId}', '${sub.id}', this.checked)">
                     <label for="sub_${sub.id}" style="margin:0;text-transform:none;font-size:14px;color:var(--tx);font-weight:500">${esc(sub.name)}</label>
                 </div>
-            `).join('') : '<p class="empty">Aucun cours créé dans cette école. Allez dans "Cotation" pour en créer.</p>';
+            `).join('') : '<p class="empty">Aucun cours créé dans cette école.</p><button class="ghost" onclick="oreaCoursClasses()">Créer les cours des classes</button>';
         };
 
         $('#course_class').onchange = drawCourses;

@@ -126,3 +126,21 @@ html.proj .qz-score,html.proj .fm-sc b{font-size:clamp(28px,3vw,56px)!important}
 html.proj .qz-validate,html.proj .fm-go{max-width:900px!important;font-size:28px!important;padding:22px!important}
 html.proj .fm-ans{font-size:clamp(22px,2.2vw,40px)!important;padding:24px!important}
 html.proj .fm-ov>*{max-width:1400px!important}
+
+/* =====================================================================
+   v102 — Écrans restants plus soignés sur ordinateur
+   ===================================================================== */
+/* Réglages : cartes sur 2 colonnes, comme l'accueil */
+body.desk.tab-reglages main{column-count:2;column-gap:24px}
+body.desk.tab-reglages main>*{break-inside:avoid;-webkit-column-break-inside:avoid}
+body.desk.tab-reglages main>h3,body.desk.tab-reglages main>.bar{column-span:all}
+body.desk.tab-reglages main>.card{margin-top:0;margin-bottom:14px}
+/* Vue d'une classe : boutons d'action sur 4 colonnes au lieu de 2 */
+body.desk main div[style*="grid-template-columns:1fr 1fr"]{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+/* Boutons d'une ligne : largeur naturelle, alignés, au lieu d'étirés sur tout l'écran */
+body.desk main>button,body.desk main>.card>button{max-width:560px}
+body.desk main>.row>button{flex:0 1 260px}
+/* Pages sans menu latéral (Espace ORÉA, ambassadeur, inspecteur) : colonne plus large et centrée */
+body:not(.desk) main#main{max-width:960px;padding:28px 32px 48px}
+body:not(.desk)>header{padding-left:32px;padding-right:32px}
+body:not(.desk) dialog{width:min(640px,86vw);padding:26px 28px}

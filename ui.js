@@ -340,4 +340,28 @@ header #hs{flex:1 1 auto;min-width:0}
         if (isStandalone()) return '';
         return `<div class="p-card oi-card-inst" style="cursor:default;margin-top:14px"><h3>Application ${NAME}</h3><div class="p-line"><small>Installez-la sur ce téléphone : elle s’ouvre comme une vraie application.</small></div><button type="button" class="p-btn oi-go" onclick="oreaInstall()">Installer l’application</button></div>`;
     };
+
+    /* ---------- 7) v102 : petit « × » en haut à droite de chaque fenêtre ----------
+       Le bouton « Fermer » en bas reste. Le × fait la même chose (comme la touche Échap). */
+    (function () {
+        const st = document.createElement('style');
+        st.textContent = '.dlg-x{position:sticky;top:0;float:right;z-index:3;width:36px!important;height:36px;min-height:36px!important;padding:0!important;margin:-8px -10px 4px 10px!important;border-radius:50%!important;display:flex;align-items:center;justify-content:center;border:1px solid var(--line)!important;background:var(--card)!important;color:var(--mut)!important;box-shadow:none!important;cursor:pointer;flex:none}'
+            + '.dlg-x:hover{color:var(--tx)!important;border-color:var(--gold)!important}.dlg-x svg{width:18px;height:18px}';
+        document.head.appendChild(st);
+        const X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+        const addX = d => {
+            if (!d.open || !d.firstElementChild || d.querySelector(':scope>.dlg-x')) return;
+            const b = document.createElement('button');
+            b.type = 'button'; b.className = 'dlg-x no-ico'; b.title = 'Fermer'; b.setAttribute('aria-label', 'Fermer'); b.innerHTML = X;
+            b.onclick = e => { e.preventDefault(); e.stopPropagation(); d.close(); };
+            d.prepend(b);
+        };
+        const watch = d => {
+            if (d.__dlgx) return; d.__dlgx = true;
+            new MutationObserver(() => addX(d)).observe(d, { childList: true, attributes: true, attributeFilter: ['open'] });
+            addX(d);
+        };
+        document.querySelectorAll('dialog').forEach(watch);
+        new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) { if (n.tagName === 'DIALOG') watch(n); else if (n.querySelectorAll) n.querySelectorAll('dialog').forEach(watch); } }))).observe(document.body, { childList: true, subtree: true });
+    })();
 })();

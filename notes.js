@@ -73,6 +73,28 @@ async function canEditSubject(subjectId) {
     return !!data;
 }
 
+// ---------- v102 : « Cours des classes » (Menu, Équipe & Cours, Préparer une leçon) ----------
+// Point d'entrée visible pour créer les cours : on choisit une classe, puis la même fenêtre que dans la Cotation.
+async function oreaCoursClasses() {
+    if (S.me.role !== 'directeur' || S.me.secretariat) return toast('Seule la direction pédagogique gère les cours des classes.');
+    const L = typeof yc === 'function' ? yc() : (S.classes || []);
+    const close = `<button class=ghost onclick="this.closest('dialog').close()">Fermer</button>`;
+    if (!L.length) { show(`<h3>Cours des classes</h3><p class=empty>Créez d’abord une classe dans l’onglet École.</p>${close}`); return; }
+    const d = show(`<h3>Cours des classes</h3>${SK}`);
+    const n = {};
+    try { const r = await db.from('class_subjects').select('class_id'); (r.data || []).forEach(x => { n[x.class_id] = (n[x.class_id] || 0) + 1; }); } catch (_) { }
+    if (!d.open) return;
+    show(`<h3>Cours des classes</h3><small>Touchez une classe pour ajouter ses cours (Mathématiques, Français…). Ensuite, attribuez-les aux enseignants dans « Équipe & Cours ».</small>
+        <div class=cc-list style="max-height:56vh;overflow-y:auto;margin:10px 0">${L.map(c => `<button type=button class="card cc-cls" data-c="${esc(c.id)}"><b>${esc(c.name)}</b><small>${n[c.id] ? n[c.id] + ' cours' : 'Aucun cours'}</small></button>`).join('')}</div>${close}`);
+    d.querySelectorAll('[data-c]').forEach(b => b.onclick = () => {
+        const prev = S.cls; S.cls = b.dataset.c;
+        d.addEventListener('close', () => { if (S.tab !== 'cotation') S.cls = prev; }, { once: true });
+        manageClassCourses();
+    });
+}
+window.oreaCoursClasses = oreaCoursClasses;
+document.head.insertAdjacentHTML('beforeend', '<style>.cc-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.cc-cls{margin:0;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;cursor:pointer;min-height:64px;width:100%;font:inherit;color:inherit}.cc-cls small{color:var(--mut)}</style>');
+
 // ---------- Gérer les cours d'une classe (création des cours + rattachement à la classe) ----------
 // NB : manageClassCourses() était appelée par les boutons « Gérer les cours de cette classe » mais n'était définie nulle part.
 async function manageClassCourses() {

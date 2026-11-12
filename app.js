@@ -554,6 +554,7 @@ const ICON = {
     calendrier: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
     devoirs: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h6M9 11h6"/>',
     emploi_temps: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+    cours: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/>',
     equipe: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     journal: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>',
     exports: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>',
@@ -1789,6 +1790,7 @@ function vMenu() {
     h += menuCard('sanctions', 'Sanctions', 'Avertissements · Sanctions', "menuGo('sanctions')");
     h += menuCard('calendrier', 'Programme', 'Calendrier · Horaires', "menuGo('programme_home')");
     h += menuCard('devoirs', 'Cahier de textes', 'Séances · Devoirs', "menuGo('cahier')");
+    if (dir() && !S.me.secretariat) h += menuCard('cours', 'Cours des classes', 'Créer les cours de chaque classe', "oreaCoursClasses()");
     if (dir()) {
         h += `<div class=menu-title>Administration</div>`;
         h += menuCard('annees', 'Années scolaires', null, "yearMenu()");

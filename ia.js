@@ -84,7 +84,7 @@
         catch (e) { if ($('#dlg').open) show('<h3>Préparer une leçon</h3><p class=empty>' + (isNet(e) ? 'Pas de connexion internet.' : 'Impossible de charger vos cours.') + '</p>' + close); return; }
         const d = $('#dlg'); if (!d.open) return;
         if (!S.ia || !S.ia.on) { show('<h3>Préparer une leçon</h3><p class=empty>L’IA n’est pas activée pour votre école.</p><button class=ghost onclick="this.closest(\'dialog\').close()">Fermer</button>'); return; }
-        if (!subs.length) { show('<h3>Préparer une leçon</h3><p class=empty>' + (isDirection() ? 'Aucun cours n’existe encore dans l’école. Ajoutez d’abord les cours de cette classe.' : 'Aucun cours ne vous est attribué dans cette classe. Demandez à la direction.') + '</p>' + close); return; }
+        if (!subs.length) { show('<h3>Préparer une leçon</h3><p class=empty>' + (isDirection() ? 'Cette classe n’a encore aucun cours. Ajoutez-les d’abord (Mathématiques, Français…).' : 'Aucun cours ne vous est attribué dans cette classe. Demandez à la direction.') + '</p>' + (isDirection() && typeof manageClassCourses === 'function' ? '<button onclick="manageClassCourses()">Ajouter les cours de cette classe</button>' : '') + close); return; }
         const dur = FORM.dur || (['primaire', 'maternelle'].includes(c.level || '') ? 45 : 50);
         const full = (S.ia.mine || 0) >= (S.ia.max || 20);
         show('<h3>Préparer une leçon</h3><small>Classe : ' + esc(c.name) + '</small>'

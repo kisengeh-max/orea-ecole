@@ -184,3 +184,30 @@
 .p-tt-row .p-tt-h { color: var(--muted, #a8a495); min-width: 96px; font-variant-numeric: tabular-nums; }
 .p-tt-row b { color: var(--text, #f2ecd6); }
 .p-tt-row small { color: var(--muted, #a8a495); margin-left: 6px; }
+
+
+/* =====================================================================
+   v102 — Espace parent sur ORDINATEUR (écrans ≥ 1024 px)
+   Menu à gauche (la barre du bas devient verticale), contenu centré,
+   cartes des enfants côte à côte. Aucun effet sur téléphone.
+   ===================================================================== */
+@media (min-width:1024px){
+  body>header{min-height:68px;box-sizing:border-box;padding:0 32px;position:sticky;top:0;z-index:40}
+  body .p-nav-grid{top:68px;bottom:0;left:0;right:auto;width:240px;box-sizing:border-box;grid-template-columns:1fr;align-content:start;gap:4px;padding:18px 14px;border-top:0;border-right:1px solid var(--line,#33342e);overflow-y:auto}
+  body .p-nav-btn{border:0;background:transparent;box-shadow:none;width:100%;margin:0;flex-direction:row;justify-content:flex-start;gap:14px;min-height:48px;padding:0 16px;border-radius:12px;position:relative}
+  body .p-nav-btn:hover{background:rgba(176,138,48,.07);color:var(--tx,#f2ecd6)}
+  body .p-nav-btn.on::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:var(--gold,#b08a30)}
+  body .p-nav-ic{width:21px;height:21px;margin:0}
+  body .p-nav-lbl{font-size:15px}
+  main#pmain{max-width:none;margin:0 0 0 240px;padding:30px max(40px,calc((100vw - 240px - 960px) / 2)) 48px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:18px;align-items:start}
+  main#pmain>*{grid-column:1/-1;min-width:0}
+  main#pmain>.p-card,main#pmain>.p-sec{grid-column:auto}
+  main#pmain>.p-card:only-of-type{grid-column:1/-1}
+  .p-card{cursor:pointer;transition:border-color .15s ease,transform .15s ease}
+  .p-card:hover{border-color:rgba(176,138,48,.45)}
+  .p-actions{flex-direction:row;flex-wrap:wrap}
+  .p-actions>*{flex:1 1 220px;width:auto}
+  body .p-chat-input-bar{left:240px;bottom:0}
+  #ptoast{left:calc(50% + 120px)}
+  dialog#pdlg{width:min(640px,86vw);padding:26px 28px}
+}

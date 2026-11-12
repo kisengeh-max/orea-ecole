@@ -179,7 +179,7 @@
         let b = document.getElementById('off-bar');
         const off = isOff();
         if (!off && !bad) { if (b) b.remove(); return; }
-        if (!b) { b = document.createElement('div'); b.id = 'off-bar'; const t = document.getElementById('ts-bar'); t ? t.after(b) : document.body.prepend(b); }
+        if (!b) { b = document.createElement('div'); b.id = 'off-bar'; document.body.prepend(b); }
         b.className = old && off ? 'red' : '';
         let h = '';
         if (off && old) h = '⚠️ Plus de 72 h sans connexion. Connectez-vous à internet pour enregistrer vos données et ne pas les perdre.';
