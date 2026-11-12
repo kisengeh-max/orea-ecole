@@ -259,7 +259,8 @@ async function vCotEval() {
     if (!st.length) { $('#main').innerHTML = h + '<p class=empty>Aucun élève dans cette classe.</p>'; return; }
     h += st.map((s, i) => {
         const r = S.cotRows[s.id], val = r ? r.grade : '', nx = i < st.length - 1 ? st[i + 1].id : '';
-        return `<div class=card style="padding:10px 14px;margin:5px 0"><b style="font-size:15px">${esc(s.name)}</b><div style="display:flex;align-items:center;gap:6px">${locked ? '🔒' : ''}<input class=cot-in id="cg_${s.id}" type=number step=any min=0 max="${e.base}" inputmode=decimal value="${val}" ${locked ? 'disabled' : ''} onkeydown="if(event.key==='Enter'){event.preventDefault();${nx ? `document.getElementById('cg_${nx}').focus()` : 'this.blur()'}}"><small>/ ${nf(e.base)}</small></div></div>`;
+        const pend = r && r.status === 'pending';
+        return `<div class=card style="padding:10px 14px;margin:5px 0${pend ? ';border-color:var(--gold)' : ''}"><b style="font-size:15px">${esc(s.name)}${pend ? ' <small style="color:var(--gold);font-weight:600">· modifiée par la direction</small>' : ''}</b><div style="display:flex;align-items:center;gap:6px">${locked ? '🔒' : ''}<input class=cot-in id="cg_${s.id}" type=number step=any min=0 max="${e.base}" inputmode=decimal value="${val}" ${locked ? 'disabled' : ''} onkeydown="if(event.key==='Enter'){event.preventDefault();${nx ? `document.getElementById('cg_${nx}').focus()` : 'this.blur()'}}"><small>/ ${nf(e.base)}</small></div></div>`;
     }).join('');
     
     if (!locked) {
@@ -270,14 +271,14 @@ async function vCotEval() {
 }
 async function cotSave() {
     const e = S.cotEval; if (!e) return;
-    const up = [], del = []; let bad = null;
+    const up = [], del = []; let bad = null, delOther = 0;
     const isDir = S.me.role === 'directeur';
     
     cotStudents().forEach(s => {
         const el = document.getElementById('cg_' + s.id); if (!el || el.disabled) return;
         const raw = String(el.value).trim().replace(',', '.'), old = S.cotRows[s.id];
         el.classList.remove('bad');
-        if (raw === '') { if (old) del.push(old.id); return; }
+        if (raw === '') { if (old) { if (isDir && old.created_by !== S.me.id) { delOther++; el.value = old.grade; return; } del.push(old.id); } return; }
         const v = parseFloat(raw);
         if (isNaN(v) || v < 0 || v > e.base) { el.classList.add('bad'); if (!bad) bad = s; return; }
         
@@ -306,12 +307,18 @@ async function cotSave() {
     if (bad) { toast(`Note invalide pour ${bad.name} (de 0 à ${nf(e.base)})`); document.getElementById('cg_' + bad.id).focus(); return; }
     if (!up.length && !del.length) return toast('Aucune note à enregistrer.');
     const btn = document.getElementById('cot_save'); if (btn) { btn.disabled = true; btn.textContent = '⏳ Enregistrement…'; }
+    if (delOther) toast('Une cote saisie par un enseignant ne peut pas être effacée par la direction : modifiez-la plutôt.');
+    let res = null;
     try {
-        if (up.length) { const { error } = await db.from('grades').upsert(up, { onConflict: 'student_id,class_id,subject_id,term,kind,num' }); if (error) throw error; }
+        if (up.length && isDir) {
+            // v103 : la direction enregistre par une fonction contrôlée ; la cote d'un enseignant passe « en attente »
+            const rows = up.map(u => ({ student_id: u.student_id, class_id: u.class_id, subject_id: u.subject_id, term: u.term, kind: u.kind, num: u.num, label: u.label, grade: u.grade, max_grade: u.max_grade, eval_date: u.eval_date || null }));
+            const { data, error } = await db.rpc('v103_grades_dir_save', { p_rows: rows }); if (error) throw error; res = data || null;
+        } else if (up.length) { const { error } = await db.from('grades').upsert(up, { onConflict: 'student_id,class_id,subject_id,term,kind,num' }); if (error) throw error; }
         if (del.length) { const { error } = await db.from('grades').delete().in('id', del); if (error) throw error; }
     } catch (x) {
         // v81 : pas de réseau pendant la saisie -> les cotes restent sur le téléphone et partent toutes seules
-        if (!navigator.onLine || (typeof isNet === 'function' && isNet(x))) {
+        if (!isDir && (!navigator.onLine || (typeof isNet === 'function' && isNet(x)))) {
             gqAdd({ up, del });
             S.avgKey = null; S.bulKey = null;
             toast(`📶 Pas de réseau : ${up.length} cote(s) gardée(s) sur le téléphone. Envoi automatique dès le retour du réseau.`);
@@ -321,7 +328,8 @@ async function cotSave() {
         return toast(x.message || 'Erreur d’enregistrement');
     }
     S.avgKey = null; S.bulKey = null;
-    toast(`✓ ${up.length} cote(s) enregistrée(s)${isDir && up.some(u => u.status === 'pending') ? ' · En attente d\'approbation' : ''}`);
+    if (isDir && res) toast(`✓ ${res.saved || 0} cote(s) enregistrée(s)${res.pending ? ` · ${res.pending} en attente de validation par l’enseignant` : ''}`);
+    else toast(`✓ ${up.length} cote(s) enregistrée(s)`);
     S.cotEval = null; cotBack();
 }
 async function cotDelete() {
