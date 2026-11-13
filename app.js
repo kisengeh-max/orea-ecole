@@ -1791,6 +1791,7 @@ function vMenu() {
     h += menuCard('calendrier', 'Programme', 'Calendrier · Horaires', "menuGo('programme_home')");
     h += menuCard('devoirs', 'Cahier de textes', 'Séances · Devoirs', "menuGo('cahier')");
     if (dir() && !S.me.secretariat) h += menuCard('cours', 'Cours des classes', 'Créer les cours de chaque classe', "oreaCoursClasses()");
+    if (typeof oreaRelevesMenu === 'function' && (dir() || (S.classes || []).some(c => c.titulaire_id === S.me.id))) h += menuCard('devoirs', 'Relevés de notes', 'Périodes · Examens · Place', "oreaRelevesMenu()");
     if (dir()) {
         h += `<div class=menu-title>Administration</div>`;
         h += menuCard('annees', 'Années scolaires', null, "yearMenu()");

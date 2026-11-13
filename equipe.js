@@ -78,6 +78,7 @@
                         ${FIN && (isEnseignant || isPercepteur) ? `<button class="ghost" style="${bs}" onclick="toggleRole('${p.id}', '${p.role}')">${isPercepteur ? '❌ Retirer Percepteur' : '💰 Nommer Percepteur'}</button>` : ''}
                         ${FIN && p.active !== false ? `<button class="ghost" style="${bs}" data-gd="${p.id}" data-on="${p.gardien ? 0 : 1}">${p.gardien ? '❌ Retirer Gardien' : '🛡 Nommer Gardien'}</button>` : ''}
                         ${!SEC && (isEnseignant || isPercepteur || isDE) ? `<button class="ghost" style="${bs}" data-mtc="${p.id}">📚 Gérer les cours</button>` : ''}
+                        ${!SEC && S.me.role === 'directeur' && p.active !== false && (isEnseignant || isPercepteur || isDE) ? `<button class="ghost" style="${bs}" data-tit="${p.id}">🏫 Titulaire${(S.classes || []).filter(c => c.titulaire_id === p.id).length ? ' : ' + esc((S.classes || []).filter(c => c.titulaire_id === p.id).map(c => c.name).join(', ')) : ' de…'}</button>` : ''}
                         ${FIN && (isPercepteur || ((isDE || isSec) && p.collector)) ? `<button class="ghost" style="${bs}" data-pcl="${p.id}">🏫 Classes à percevoir</button>` : ''}
                         ${FIN || (!SEC && !isDE && !isSec) ? `<button class="ghost" style="width:auto;padding:6px 12px;min-height:36px;font-size:12px;color:${p.active === false ? 'var(--ok)' : 'var(--bad)'}" onclick="toggleActive('${p.id}', ${p.active})">${p.active === false ? 'Réactiver' : 'Désactiver'}</button>` : ''}
                     </div>` : ''}
@@ -91,6 +92,7 @@
                 toast(on ? 'Gardien nommé ✓' : 'Marque retirée'); team();
             });
             box.querySelectorAll('[data-mtc]').forEach(b => b.onclick = () => { const p = staff.find(x => x.id === b.dataset.mtc); if (p) manageTeacherCourses(p.id, p.full_name); });
+            box.querySelectorAll('[data-tit]').forEach(b => b.onclick = () => { const p = staff.find(x => x.id === b.dataset.tit); if (p) oreaSetTitulaire(p.id, p.full_name); });
             box.querySelectorAll('[data-pcl]').forEach(b => b.onclick = () => { const p = staff.find(x => x.id === b.dataset.pcl); if (p) manageCollectorClasses(p.id, p.full_name); });
         }
 
@@ -348,3 +350,21 @@
     // Accroche au menu pour le Directeur (ajout de la carte "Équipe & Cours" est déjà faite dans app.js)
     
 })();
+
+
+// ---------- v105 : titulaire de classe (un seul par classe ; il saisit l'application et la conduite, voit le relevé) ----------
+function oreaSetTitulaire(pid, name) {
+    const L = (typeof yc === 'function' ? yc() : S.classes || []);
+    if (!L.length) return toast('Créez d’abord une classe.');
+    const d = show(`<h3>Titulaire · ${esc(name)}</h3><small>Cochez les classes dont ${esc(name)} est titulaire. Une classe n’a qu’un titulaire : cocher ici remplace l’ancien.</small>
+        <div style="max-height:50vh;overflow-y:auto;margin:8px 0">${L.map(c => { const other = c.titulaire_id && c.titulaire_id !== pid; return `<label class=card style="flex-direction:row;align-items:center;justify-content:flex-start;gap:10px;padding:10px 14px;margin:5px 0;text-transform:none;font-size:14px;color:var(--tx)"><input type=checkbox data-tc="${esc(c.id)}" ${c.titulaire_id === pid ? 'checked' : ''} style="width:auto;margin:0;transform:scale(1.3)"><span>${esc(c.name)}${other ? ' <small style="color:var(--mut)">(a déjà un titulaire)</small>' : ''}</span></label>`; }).join('')}</div>
+        <button class=ghost onclick="this.closest('dialog').close()">Fermer</button>`);
+    d.querySelectorAll('[data-tc]').forEach(cb => cb.onchange = async () => {
+        const c = L.find(x => x.id === cb.dataset.tc); cb.disabled = true;
+        const { error } = await db.rpc('v105_set_titulaire', { p_class: c.id, p_teacher: cb.checked ? pid : null });
+        cb.disabled = false;
+        if (error) { cb.checked = !cb.checked; return toast(error.message); }
+        c.titulaire_id = cb.checked ? pid : null; toast('Enregistré ✓');
+    });
+}
+window.oreaSetTitulaire = oreaSetTitulaire;

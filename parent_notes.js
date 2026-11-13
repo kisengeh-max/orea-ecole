@@ -25,6 +25,7 @@ async function parentNotesView() {
     if (!P.noteTerm) P.noteTerm = '1';
     h += `<div class=p-row style="margin-bottom:10px"><button class=ghost style="width:auto;padding:6px 12px;min-height:36px" onclick="P.noteChild=null;render()">← Retour</button><b>${esc(kid.name)}</b></div>`
         + `<div class=p-row style="gap:6px;margin-bottom:15px">${['1', '2', '3', 'A'].map(t => `<button class="${P.noteTerm === t ? '' : 'ghost'}" style="flex:1;padding:8px 2px;min-height:36px" onclick="P.noteTerm='${t}';render()">${t === 'A' ? 'Année' : 'T' + t}</button>`).join('')}</div>`
+        + (typeof parentReleve === 'function' ? `<button style="margin-bottom:12px" onclick="parentReleve('${kid.id}')">📄 Relevé de notes</button>` : '')
         + `<div id=p_notes_list>${P_SK}</div>`;
     done(h);
     if (!P.grades) {

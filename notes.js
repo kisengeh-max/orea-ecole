@@ -26,7 +26,7 @@ const cotMK = c => ({ level: cotLv(c), grade: (String((c && c.name) || '').match
 const cotMKTxt = c => { const k = cotMK(c); return (k.grade ? (k.grade === 1 ? '1re' : k.grade + 'e') + ' ' : '') + k.level + (k.option ? ' · ' + k.option : ''); };
 async function cotMaxima(c) {
     const k = cotMK(c);
-    try { const r = await db.from('course_maxima').select('subject_id,maxima,with_exam').eq('school_id', S.school.id).eq('level', k.level).eq('grade', k.grade).eq('option', k.option); return r.error ? {} : Object.fromEntries((r.data || []).map(x => [x.subject_id, x])); }
+    try { const r = await db.from('course_maxima').select('subject_id,maxima,with_exam,grp').eq('school_id', S.school.id).eq('level', k.level).eq('grade', k.grade).eq('option', k.option); return r.error ? {} : Object.fromEntries((r.data || []).map(x => [x.subject_id, x])); }
     catch (_) { return {}; }
 }
 const COT_MAX = [10, 20, 30, 40, 50, 60, 100];
@@ -126,9 +126,9 @@ async function manageClassCourses() {
     ]);
     const mx = mx0 || {}, mk = cotMK(c);
     // v104 : maxima par période + « avec examen », communs à toutes les classes du même niveau / année / option
-    const saveMax = async (sid, maxima, withExam) => {
+    const saveMax = async (sid, maxima, withExam, grp) => {
         if (!maxima) { const r = await db.from('course_maxima').delete().eq('school_id', S.school.id).eq('level', mk.level).eq('grade', mk.grade).eq('option', mk.option).eq('subject_id', sid); if (!r.error) delete mx[sid]; return r; }
-        const row = { school_id: S.school.id, level: mk.level, grade: mk.grade, option: mk.option, subject_id: sid, maxima, with_exam: withExam };
+        const row = { school_id: S.school.id, level: mk.level, grade: mk.grade, option: mk.option, subject_id: sid, maxima, with_exam: withExam, grp: grp != null ? grp : ((mx[sid] && mx[sid].grp) || '') };
         const r = await db.from('course_maxima').upsert(row, { onConflict: 'school_id,level,grade,option,subject_id' });
         if (!r.error) mx[sid] = row; return r;
     };
@@ -150,7 +150,7 @@ async function manageClassCourses() {
         const row = s => {
             const m = mx[s.id], ck = on.has(s.id);
             return `<div class="card col" style="padding:10px 14px;margin:5px 0;gap:8px;align-items:stretch"><label style="display:flex;align-items:center;gap:10px;margin:0;text-transform:none;font-size:14.5px;color:var(--tx);font-weight:600;cursor:pointer"><input type=checkbox data-s="${esc(s.id)}" ${ck ? 'checked' : ''} style="width:auto;margin:0;transform:scale(1.4)"><span>${esc(s.name)}</span></label>`
-                + (ck ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-left:30px"><label style="display:flex;align-items:center;gap:6px;margin:0;text-transform:none;font-size:13px;color:${m ? 'var(--tx)' : 'var(--gold)'}">Maxima<select data-mx="${esc(s.id)}" style="width:auto;margin:0;min-height:36px;padding:4px 10px">${['<option value="">à régler</option>'].concat(COT_MAX.map(v => `<option value="${v}" ${m && Number(m.maxima) === v ? 'selected' : ''}>${v}</option>`)).join('')}</select></label><label style="display:flex;align-items:center;gap:6px;margin:0;text-transform:none;font-size:13px;color:var(--tx)"><input type=checkbox data-ex="${esc(s.id)}" ${!m || m.with_exam ? 'checked' : ''} ${m ? '' : 'disabled'} style="width:auto;margin:0">Avec examen</label></div>` : '')
+                + (ck ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-left:30px"><label style="display:flex;align-items:center;gap:6px;margin:0;text-transform:none;font-size:13px;color:${m ? 'var(--tx)' : 'var(--gold)'}">Maxima<select data-mx="${esc(s.id)}" style="width:auto;margin:0;min-height:36px;padding:4px 10px">${['<option value="">à régler</option>'].concat(COT_MAX.map(v => `<option value="${v}" ${m && Number(m.maxima) === v ? 'selected' : ''}>${v}</option>`)).join('')}</select></label><label style="display:flex;align-items:center;gap:6px;margin:0;text-transform:none;font-size:13px;color:var(--tx)"><input type=checkbox data-ex="${esc(s.id)}" ${!m || m.with_exam ? 'checked' : ''} ${m ? '' : 'disabled'} style="width:auto;margin:0">Avec examen</label>${mk.level !== 'secondaire' && m ? `<input data-gp="${esc(s.id)}" value="${esc(m.grp || '')}" maxlength=40 placeholder="Groupe (ex : Français, Mathématiques)" style="flex:1 1 180px;margin:0;min-height:36px">` : ''}</div>` : '')
                 + `</div>`;
         };
         d = show(`<h3>Cours · ${esc(c.name)}</h3><small>Coche les cours enseignés dans cette classe, puis règle leur maxima par période. Le maxima vaut pour toutes les classes de <b>${esc(cotMKTxt(c))}</b> ; l’examen vaut 2 fois le maxima.</small>
@@ -170,15 +170,21 @@ async function manageClassCourses() {
         d.querySelectorAll('select[data-mx]').forEach(sel => sel.onchange = async () => {
             const sid = sel.dataset.mx, v = Number(sel.value) || 0, m = mx[sid];
             sel.disabled = true;
-            const r = await saveMax(sid, v, m ? m.with_exam : true);
+            const r = await saveMax(sid, v, m ? m.with_exam : true, m ? (m.grp || '') : '');
             sel.disabled = false;
             if (r.error) return toast(r.error.message);
             toast(v ? 'Maxima enregistré ✓' : 'Maxima retiré'); draw();
         });
+        d.querySelectorAll('input[data-gp]').forEach(inp => inp.onchange = async () => {
+            const sid = inp.dataset.gp, m = mx[sid]; if (!m) return;
+            const r = await saveMax(sid, Number(m.maxima), m.with_exam, inp.value.trim());
+            if (r.error) return toast(r.error.message);
+            toast('Groupe enregistré ✓');
+        });
         d.querySelectorAll('input[data-ex]').forEach(cb => cb.onchange = async () => {
             const sid = cb.dataset.ex, m = mx[sid]; if (!m) return;
             cb.disabled = true;
-            const r = await saveMax(sid, Number(m.maxima), cb.checked);
+            const r = await saveMax(sid, Number(m.maxima), cb.checked, m.grp || '');
             cb.disabled = false;
             if (r.error) { cb.checked = !cb.checked; return toast(r.error.message); }
         });

@@ -123,7 +123,7 @@ async function ambDraw() {
     h += L.length ? L.map(ambSchoolCard).join('') : '<p class=empty>Aucune école parrainée pour le moment.</p>';
     h += '<h3>Prospects (' + A.prospects.length + ')</h3><div class=row><button onclick=ambProspect()>＋ Ajouter un prospect</button></div>';
     h += A.prospects.length ? A.prospects.map(ambProspectCard).join('') : '<p class=empty>Note ici les écoles que tu démarches.</p>';
-    h += '<div class=row><button class=ghost onclick=ambView()>↻ Actualiser</button></div>' + installCard() + '<button class=ghost onclick=out()>Déconnexion</button>';
+    h += '<div class=row><button class=ghost onclick=ambView()>↻ Actualiser</button></div>' + (typeof oreaReleveDemoBtn === 'function' ? oreaReleveDemoBtn() : '') + installCard() + '<button class=ghost onclick=out()>Déconnexion</button>';
     $('#main').innerHTML = h;
 
     const nr = $('#nr');
