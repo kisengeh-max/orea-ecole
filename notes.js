@@ -10,8 +10,26 @@ const COT_KINDS = ['Interrogation', 'Devoir', 'Examen'];
 const COT_BASES = [5, 10, 15, 20, 30, 40, 50];
 const cotCls = () => S.classes.find(c => c.id === S.cls);
 const cotStudents = () => S.stu.filter(s => s.class_id === S.cls).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
-const cotCurTerm = () => { const c = cotCls(), k = c ? curTerm(cy(c)) : null; return k > 0 ? k : 1; };
+const cotCurTerm = () => { const c = cotCls(), k = c ? curTerm(cy(c)) : null, t = k > 0 ? k : 1; return c && cotSec(c) ? (t >= 2 ? 2 : 1) : t; };
 const cotNorm = g => ({ ...g, subject_name: (g.subjects && g.subjects.name) || 'Cours' });
+// v104 : périodes. Secondaire : 2 semestres (P1-P2 + examen, P3-P4 + examen). Primaire / maternelle : 3 trimestres (2 périodes + examen).
+// grades.term = le semestre ou le trimestre ; grades.period = P1…P6 (vide pour un examen). Les frais restent sur 3 trimestres.
+const cotLv = c => (typeof classLevel === 'function' ? classLevel(c) : (c && c.level)) || 'secondaire';
+const cotSec = c => cotLv(c) === 'secondaire';
+const cotNT = c => cotSec(c) ? 2 : 3;
+const cotTN = (c, t) => cotSec(c) ? (t === 1 ? '1er semestre' : '2e semestre') : 'Trimestre ' + t;
+const cotTS = (c, t) => cotSec(c) ? 'S' + t : 'T' + t;
+const cotPers = t => [2 * t - 1, 2 * t];
+const cotEvName = e => (e.kind === 'Examen' ? '' : (e.period ? 'P' + e.period + ' · ' : '')) + e.kind + ' ' + e.num;
+// Clé des maxima : niveau + année d'études (1er nombre du nom de la classe) + option
+const cotMK = c => ({ level: cotLv(c), grade: (String((c && c.name) || '').match(/\d+/) || [0])[0] * 1 || 0, option: (c && c.option) || '' });
+const cotMKTxt = c => { const k = cotMK(c); return (k.grade ? (k.grade === 1 ? '1re' : k.grade + 'e') + ' ' : '') + k.level + (k.option ? ' · ' + k.option : ''); };
+async function cotMaxima(c) {
+    const k = cotMK(c);
+    try { const r = await db.from('course_maxima').select('subject_id,maxima,with_exam').eq('school_id', S.school.id).eq('level', k.level).eq('grade', k.grade).eq('option', k.option); return r.error ? {} : Object.fromEntries((r.data || []).map(x => [x.subject_id, x])); }
+    catch (_) { return {}; }
+}
+const COT_MAX = [10, 20, 30, 40, 50, 60, 100];
 
 document.head.insertAdjacentHTML('beforeend', '<style>'
     + '.avgp{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:10px;background:rgba(199,163,75,.16);color:var(--gold);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}'
@@ -101,10 +119,19 @@ async function manageClassCourses() {
     if (S.me.role !== 'directeur' || S.me.secretariat) return toast('Seule la direction pédagogique gère les cours de la classe.');
     const c = cotCls(); if (!c) return;
     let d = show(`<h3>Cours · ${esc(c.name)}</h3>${SK}`);
-    const [sj, cs] = await Promise.all([
+    const [sj, cs, mx0] = await Promise.all([
         db.from('subjects').select('id,name').order('name'),
-        db.from('class_subjects').select('subject_id').eq('class_id', S.cls)
+        db.from('class_subjects').select('subject_id').eq('class_id', S.cls),
+        cotMaxima(c)
     ]);
+    const mx = mx0 || {}, mk = cotMK(c);
+    // v104 : maxima par période + « avec examen », communs à toutes les classes du même niveau / année / option
+    const saveMax = async (sid, maxima, withExam) => {
+        if (!maxima) { const r = await db.from('course_maxima').delete().eq('school_id', S.school.id).eq('level', mk.level).eq('grade', mk.grade).eq('option', mk.option).eq('subject_id', sid); if (!r.error) delete mx[sid]; return r; }
+        const row = { school_id: S.school.id, level: mk.level, grade: mk.grade, option: mk.option, subject_id: sid, maxima, with_exam: withExam };
+        const r = await db.from('course_maxima').upsert(row, { onConflict: 'school_id,level,grade,option,subject_id' });
+        if (!r.error) mx[sid] = row; return r;
+    };
     if (sj.error || cs.error) {
         d.innerHTML = `<h3>Cours · ${esc(c.name)}</h3><p class=empty>${esc((sj.error || cs.error).message)}</p><button class=ghost onclick="this.closest('dialog').close()">Fermer</button>`;
         return;
@@ -119,10 +146,18 @@ async function manageClassCourses() {
         return r;
     };
     const draw = () => {
-        d = show(`<h3>Cours · ${esc(c.name)}</h3><small>Coche les cours enseignés dans cette classe.</small>
-            <div style="max-height:42vh;overflow-y:auto;margin:8px 0">${subs.length ? subs.map(s => `<label class=card style="flex-direction:row;align-items:center;justify-content:flex-start;gap:10px;padding:10px 14px;margin:5px 0"><input type=checkbox data-s="${esc(s.id)}" ${on.has(s.id) ? 'checked' : ''} style="width:auto;margin:0;transform:scale(1.4)"><span>${esc(s.name)}</span></label>`).join('') : '<p class=empty data-ic="📚">Aucun cours créé pour le moment. Ajoute le premier ci-dessous.</p>'}</div>
+        const box0 = d.querySelector('.cm-box'), top = box0 ? box0.scrollTop : 0;
+        const row = s => {
+            const m = mx[s.id], ck = on.has(s.id);
+            return `<div class="card col" style="padding:10px 14px;margin:5px 0;gap:8px;align-items:stretch"><label style="display:flex;align-items:center;gap:10px;margin:0;text-transform:none;font-size:14.5px;color:var(--tx);font-weight:600;cursor:pointer"><input type=checkbox data-s="${esc(s.id)}" ${ck ? 'checked' : ''} style="width:auto;margin:0;transform:scale(1.4)"><span>${esc(s.name)}</span></label>`
+                + (ck ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-left:30px"><label style="display:flex;align-items:center;gap:6px;margin:0;text-transform:none;font-size:13px;color:${m ? 'var(--tx)' : 'var(--gold)'}">Maxima<select data-mx="${esc(s.id)}" style="width:auto;margin:0;min-height:36px;padding:4px 10px">${['<option value="">à régler</option>'].concat(COT_MAX.map(v => `<option value="${v}" ${m && Number(m.maxima) === v ? 'selected' : ''}>${v}</option>`)).join('')}</select></label><label style="display:flex;align-items:center;gap:6px;margin:0;text-transform:none;font-size:13px;color:var(--tx)"><input type=checkbox data-ex="${esc(s.id)}" ${!m || m.with_exam ? 'checked' : ''} ${m ? '' : 'disabled'} style="width:auto;margin:0">Avec examen</label></div>` : '')
+                + `</div>`;
+        };
+        d = show(`<h3>Cours · ${esc(c.name)}</h3><small>Coche les cours enseignés dans cette classe, puis règle leur maxima par période. Le maxima vaut pour toutes les classes de <b>${esc(cotMKTxt(c))}</b> ; l’examen vaut 2 fois le maxima.</small>
+            <div class=cm-box style="max-height:46vh;overflow-y:auto;margin:8px 0">${subs.length ? subs.map(row).join('') : '<p class=empty data-ic="📚">Aucun cours créé pour le moment. Ajoute le premier ci-dessous.</p>'}</div>
             <div class=row style="margin:0"><input id=nsn placeholder="Nouveau cours (ex : Mathématiques)" maxlength=60 style="flex:1;margin:0"><button id=nsa style="width:auto">Ajouter</button></div>
             <button class=ghost id=nsc style="margin-top:10px">Fermer</button>`);
+        const box = d.querySelector('.cm-box'); if (box) box.scrollTop = top;
         d.querySelectorAll('input[data-s]').forEach(cb => cb.onchange = async () => {
             const sid = cb.dataset.s, yes = cb.checked;
             cb.disabled = true;
@@ -130,6 +165,22 @@ async function manageClassCourses() {
             cb.disabled = false;
             if (r.error) { cb.checked = !yes; return toast(r.error.message); }
             yes ? on.add(sid) : on.delete(sid);
+            draw();
+        });
+        d.querySelectorAll('select[data-mx]').forEach(sel => sel.onchange = async () => {
+            const sid = sel.dataset.mx, v = Number(sel.value) || 0, m = mx[sid];
+            sel.disabled = true;
+            const r = await saveMax(sid, v, m ? m.with_exam : true);
+            sel.disabled = false;
+            if (r.error) return toast(r.error.message);
+            toast(v ? 'Maxima enregistré ✓' : 'Maxima retiré'); draw();
+        });
+        d.querySelectorAll('input[data-ex]').forEach(cb => cb.onchange = async () => {
+            const sid = cb.dataset.ex, m = mx[sid]; if (!m) return;
+            cb.disabled = true;
+            const r = await saveMax(sid, Number(m.maxima), cb.checked);
+            cb.disabled = false;
+            if (r.error) { cb.checked = !cb.checked; return toast(r.error.message); }
         });
         d.querySelector('#nsc').onclick = () => d.close();
         d.querySelector('#nsa').onclick = async e => {
@@ -152,17 +203,18 @@ async function manageClassCourses() {
 async function vCotation() {
     if (S.cotScreen === 'eval') return vCotEval();
     const c = cotCls(); if (!c) { S.tab = 'eleves'; return render(); }
+    if ((S.cotTerm || 1) > cotNT(c)) S.cotTerm = cotNT(c);
     const term = S.cotTerm || 1, tok = ++cotTok;
     let h = `<div class=bar><button class=ghost style="width:auto" onclick="cotBack()">← ${esc(c.name)}</button><b class=ctitle>Cotation</b></div>`
-        + `<div class=chips>${[1, 2, 3].map(t => `<button class="chip ${t === term ? 'on' : ''}" onclick="cotSetTerm(${t})">Trimestre ${t}</button>`).join('')}</div>`;
+        + `<div class=chips>${Array.from({ length: cotNT(c) }, (_, i) => i + 1).map(t => `<button class="chip ${t === term ? 'on' : ''}" onclick="cotSetTerm(${t})">${cotTN(c, t)}</button>`).join('')}</div>`;
     $('#main').innerHTML = h + SK;
-    const [subs, gr] = await Promise.all([cotSubjects(), pageAll(() => db.from('grades').select('id,subject_id,kind,num,max_grade,eval_date,created_by,status').eq('class_id', S.cls).eq('term', term))]);
+    const [subs, gr, mx] = await Promise.all([cotSubjects(), pageAll(() => db.from('grades').select('id,subject_id,kind,num,max_grade,eval_date,created_by,status,period').eq('class_id', S.cls).eq('term', term)), cotMaxima(c)]);
     if (tok !== cotTok || S.tab !== 'cotation' || S.cotScreen !== 'home') return;
     if (gr.error) { $('#main').innerHTML = h + `<p class=empty>${esc(gr.error.message)}</p>`; return; }
     const total = cotStudents().length, ev = {};
     gr.data.forEach(g => {
         const k = g.subject_id + '|' + g.kind + '|' + g.num;
-        const o = ev[k] || (ev[k] = { sid: g.subject_id, kind: g.kind, num: g.num, base: Number(g.max_grade), date: g.eval_date, mine: true, n: 0, pending: false });
+        const o = ev[k] || (ev[k] = { sid: g.subject_id, kind: g.kind, num: g.num, period: g.period || null, base: Number(g.max_grade), date: g.eval_date, mine: true, n: 0, pending: false });
         o.n++; if (g.created_by !== S.me.id) o.mine = false;
         if (g.status === 'pending') o.pending = true;
     });
@@ -174,8 +226,10 @@ async function vCotation() {
     }
     h += `<button onclick="cotNew()">＋ Nouvelle évaluation</button>`;
     h += subs.map(s => {
-        const list = Object.values(ev).filter(e => e.sid === s.id).sort((a, b) => COT_KINDS.indexOf(a.kind) - COT_KINDS.indexOf(b.kind) || a.num - b.num);
-        return `<div class=cot-sub>${esc(s.name)}</div>` + (list.length ? list.map(e => `<div class=card style="padding:12px 14px" onclick="cotOpen('${s.id}','${e.kind}',${e.num})"><span><b>${e.kind} ${e.num}</b> <small>(Base ${nf(e.base)})${e.date ? ' · ' + fdate(e.date) : ''}</small><br><small>${e.n} / ${total} cotés ${e.pending ? '· ⏳ En attente' : ''}</small></span><span>${e.mine ? '›' : '🔒'}</span></div>`).join('') : '<small>Aucune évaluation ce trimestre.</small>');
+        const pk = e => e.kind === 'Examen' ? 9 : (e.period || 8);
+        const list = Object.values(ev).filter(e => e.sid === s.id).sort((a, b) => pk(a) - pk(b) || COT_KINDS.indexOf(a.kind) - COT_KINDS.indexOf(b.kind) || a.num - b.num);
+        const m = mx[s.id];
+        return `<div class=cot-sub>${esc(s.name)}${m ? ` <small style="font-family:inherit;font-size:12px;color:var(--mut)">· maxima ${nf(Number(m.maxima))} par période${m.with_exam ? '' : ' · sans examen'}</small>` : ''}</div>` + (list.length ? list.map(e => `<div class=card style="padding:12px 14px" onclick="cotOpen('${s.id}','${e.kind}',${e.num})"><span><b>${esc(cotEvName(e))}</b> <small>(Base ${nf(e.base)})${e.date ? ' · ' + fdate(e.date) : ''}</small><br><small>${e.n} / ${total} cotés ${e.pending ? '· ⏳ En attente' : ''}</small></span><span>${e.mine ? '›' : '🔒'}</span></div>`).join('') : '<small>Aucune évaluation pour le moment.</small>');
     }).join('');
     h += `<button class=ghost style="margin-top:18px" onclick="manageClassCourses()">⚙️ Gérer les cours de cette classe</button>`;
     $('#main').innerHTML = h;
@@ -196,7 +250,8 @@ async function cotNew() {
     const d = show(`<h3>Nouvelle évaluation</h3><div class=col>
         <label>Cours<select id=cn_sub>${allowedSubs.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
         <label>Type<select id=cn_kind>${COT_KINDS.map(k => `<option ${k === 'Devoir' ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
-        <label>Trimestre<select id=cn_term>${[1, 2, 3].map(t => `<option value="${t}" ${t === term ? 'selected' : ''}>Trimestre ${t}</option>`).join('')}</select></label>
+        <label>${cotSec(cotCls()) ? 'Semestre' : 'Trimestre'}<select id=cn_term>${Array.from({ length: cotNT(cotCls()) }, (_, i) => i + 1).map(t => `<option value="${t}" ${t === term ? 'selected' : ''}>${cotTN(cotCls(), t)}</option>`).join('')}</select></label>
+        <label id=cn_perl>Période<select id=cn_per></select></label>
         <label>Base</label>
         <div class=chips id=cn_bases style="flex-wrap:wrap">${COT_BASES.map(b => `<button class="chip ${b === 20 ? 'on' : ''}" data-b="${b}">Sur ${b}</button>`).join('')}<button class=chip data-b=custom>Personnalisé</button></div>
         <input id=cn_custom type=number step=any min=1 inputmode=decimal placeholder="Base personnalisée (ex : 25)" hidden>
@@ -204,6 +259,17 @@ async function cotNew() {
         <small>Le numéro (Devoir 1, Devoir 2…) est attribué automatiquement.</small>
         <div class=row><button class=ghost id=cn_x>Annuler</button><button id=cn_ok>Continuer →</button></div></div>`);
     let base = '20';
+    // v104 : la période suit le semestre / trimestre choisi ; un examen n'a pas de période
+    const perSel = d.querySelector('#cn_per'), perL = d.querySelector('#cn_perl');
+    const drawPer = () => {
+        const t = +d.querySelector('#cn_term').value, keep = +perSel.value || S.cotPer || 0;
+        const L = cotPers(t);
+        perSel.innerHTML = L.map(p => `<option value="${p}" ${p === keep ? 'selected' : ''}>Période ${p} (P${p})</option>`).join('');
+        perL.hidden = d.querySelector('#cn_kind').value === 'Examen';
+    };
+    d.querySelector('#cn_term').onchange = () => { perSel.value = ''; drawPer(); };
+    d.querySelector('#cn_kind').onchange = drawPer;
+    drawPer();
     d.querySelectorAll('#cn_bases .chip').forEach(b => b.onclick = () => {
         base = b.dataset.b;
         d.querySelectorAll('#cn_bases .chip').forEach(x => x.classList.toggle('on', x === b));
@@ -214,18 +280,21 @@ async function cotNew() {
         let bv = base === 'custom' ? parseFloat(String(d.querySelector('#cn_custom').value).replace(',', '.')) : Number(base);
         if (!(bv > 0)) return toast('Indique une base valide.');
         const sid = d.querySelector('#cn_sub').value, kind = d.querySelector('#cn_kind').value, tm = +d.querySelector('#cn_term').value, date = d.querySelector('#cn_date').value || tdy();
+        const per = kind === 'Examen' ? null : (+perSel.value || cotPers(tm)[0]);
+        if (kind === 'Examen') { const mx = await cotMaxima(cotCls()); if (mx[sid] && mx[sid].with_exam === false) return toast('Ce cours n’a pas d’examen (réglage dans « Cours des classes »).'); }
+        if (per) S.cotPer = per;
         const btn = d.querySelector('#cn_ok'); btn.disabled = true;
         const { data, error } = await db.from('grades').select('num').eq('class_id', S.cls).eq('subject_id', sid).eq('term', tm).eq('kind', kind).order('num', { ascending: false }).limit(1);
         if (error) { btn.disabled = false; return toast(error.message); }
         const sub = S.cotSubs.find(x => x.id === sid);
-        S.cotEval = { subject_id: sid, subject_name: sub ? sub.name : 'Cours', term: tm, kind, num: ((data && data[0] && data[0].num) || 0) + 1, base: bv, date, isNew: true };
+        S.cotEval = { subject_id: sid, subject_name: sub ? sub.name : 'Cours', term: tm, period: per, kind, num: ((data && data[0] && data[0].num) || 0) + 1, base: bv, date, isNew: true };
         S.cotTerm = tm; d.close();
         afterDlg(() => { S.cotScreen = 'eval'; history.pushState({ cot: 2 }, ''); render(); });
     };
 }
 function cotOpen(sid, kind, num) {
     const e = S.cotEvals[sid + '|' + kind + '|' + num], sub = S.cotSubs.find(x => x.id === sid);
-    S.cotEval = { subject_id: sid, subject_name: sub ? sub.name : 'Cours', term: S.cotTerm, kind, num, base: e ? e.base : 20, date: e ? e.date : tdy(), isNew: false };
+    S.cotEval = { subject_id: sid, subject_name: sub ? sub.name : 'Cours', term: S.cotTerm, period: e ? e.period : null, kind, num, base: e ? e.base : 20, date: e ? e.date : tdy(), isNew: false };
     S.cotScreen = 'eval'; history.pushState({ cot: 2 }, ''); render();
 }
 
@@ -233,11 +302,11 @@ function cotOpen(sid, kind, num) {
 async function vCotEval() {
     const e = S.cotEval, c = cotCls(); if (!e || !c) { S.cotScreen = 'home'; return render(); }
     $('#main').innerHTML = `<div class=bar><button class=ghost style="width:auto" onclick="cotBack()">← Retour</button><b class=ctitle>${esc(c.name)}</b></div>` + SK;
-    const { data, error } = await db.from('grades').select('id,student_id,grade,created_by,max_grade,eval_date,status').eq('class_id', S.cls).eq('subject_id', e.subject_id).eq('term', e.term).eq('kind', e.kind).eq('num', e.num);
+    const { data, error } = await db.from('grades').select('id,student_id,grade,created_by,max_grade,eval_date,status,period').eq('class_id', S.cls).eq('subject_id', e.subject_id).eq('term', e.term).eq('kind', e.kind).eq('num', e.num);
     if (S.cotEval !== e || S.tab !== 'cotation') return;
     if (error) { $('#main').innerHTML = `<p class=empty>${esc(error.message)}</p>`; return; }
     const rows = data || [];
-    if (rows.length) { e.base = Number(rows[0].max_grade); if (rows[0].eval_date) e.date = rows[0].eval_date; }
+    if (rows.length) { e.base = Number(rows[0].max_grade); if (rows[0].eval_date) e.date = rows[0].eval_date; if (e.kind !== 'Examen' && rows[0].period) e.period = rows[0].period; }
     
     // Vérifier si l'utilisateur a le droit de modifier cette évaluation
     const hasPermission = await canEditSubject(e.subject_id);
@@ -247,7 +316,7 @@ async function vCotEval() {
     const st = cotStudents();
     let h = `<div class=bar><button class=ghost style="width:auto" onclick="cotBack()">← Retour</button><b class=ctitle>${esc(c.name)}</b></div>`
         + `<div class=cot-sub style="font-size:24px;margin-top:8px">${esc(e.subject_name)}</div>`
-        + `<div class="card col" style="padding:10px 14px"><b>${e.kind} ${e.num} (Base ${nf(e.base)})</b><small>${fdate(e.date)} · Trimestre ${e.term}</small></div>`;
+        + `<div class="card col" style="padding:10px 14px"><b>${esc(cotEvName(e))} (Base ${nf(e.base)})</b><small>${fdate(e.date)} · ${cotTN(c, e.term)}</small></div>`;
         
     if (locked) {
         if (!hasPermission) h += `<div class="card" style="padding:10px 14px;border-color:var(--bad)">🔒 <small>Vous n'êtes pas l'enseignant de ce cours. Lecture seule.</small></div>`;
@@ -298,6 +367,7 @@ async function cotSave() {
             grade: v, 
             max_grade: e.base, 
             eval_date: e.date, 
+            period: e.kind === 'Examen' ? null : (e.period || null),
             created_by: old ? old.created_by : S.me.id, // On garde l'auteur original si on modifie
             status: status,
             modified_by: isDir && old ? S.me.id : null
@@ -312,7 +382,7 @@ async function cotSave() {
     try {
         if (up.length && isDir) {
             // v103 : la direction enregistre par une fonction contrôlée ; la cote d'un enseignant passe « en attente »
-            const rows = up.map(u => ({ student_id: u.student_id, class_id: u.class_id, subject_id: u.subject_id, term: u.term, kind: u.kind, num: u.num, label: u.label, grade: u.grade, max_grade: u.max_grade, eval_date: u.eval_date || null }));
+            const rows = up.map(u => ({ student_id: u.student_id, class_id: u.class_id, subject_id: u.subject_id, term: u.term, kind: u.kind, num: u.num, label: u.label, grade: u.grade, max_grade: u.max_grade, eval_date: u.eval_date || null, period: u.period || null }));
             const { data, error } = await db.rpc('v103_grades_dir_save', { p_rows: rows }); if (error) throw error; res = data || null;
         } else if (up.length) { const { error } = await db.from('grades').upsert(up, { onConflict: 'student_id,class_id,subject_id,term,kind,num' }); if (error) throw error; }
         if (del.length) { const { error } = await db.from('grades').delete().in('id', del); if (error) throw error; }
@@ -465,9 +535,9 @@ async function openStuCotes(id) {
     const s = S.stu.find(x => x.id === id); if (!s) return;
     // v91 : les cotes s'enregistrent hors connexion (envoyées au retour du réseau)
     show(`<h3>${esc(s.name)} · Cotes</h3>${SK}`);
-    const r = await pageAll(() => db.from('grades').select('subject_id,term,kind,num,grade,max_grade,eval_date,subjects(name),status').eq('student_id', id).eq('class_id', s.class_id));
+    const r = await pageAll(() => db.from('grades').select('subject_id,term,kind,num,grade,max_grade,eval_date,subjects(name),status,period').eq('student_id', id).eq('class_id', s.class_id));
     if (r.error) { $('#dlg').innerHTML = `<h3>${esc(s.name)}</h3><p class=empty>${esc(r.error.message)}</p><button class=ghost onclick="this.closest('dialog').close()">Fermer</button>`; return; }
-    S.stuG = { id, name: s.name, rows: r.data.map(cotNorm) };
+    S.stuG = { id, name: s.name, cls: S.classes.find(c => c.id === s.class_id) || null, rows: r.data.map(cotNorm) };
     stuCotesGrid();
 }
 function stuCotesGrid() {
@@ -480,12 +550,14 @@ function stuCotesGrid() {
 function stuCotesSubject(sid) {
     const g = S.stuG; if (!g) return;
     const rows = g.rows.filter(r => r.subject_id === sid), name = rows[0] ? rows[0].subject_name : '';
-    const body = [1, 2, 3].map(t => {
-        const l = rows.filter(r => r.term === t).sort((a, b) => COT_KINDS.indexOf(a.kind) - COT_KINDS.indexOf(b.kind) || a.num - b.num);
-        if (!l.length) return `<div class=cot-sub style="font-size:16px">Trimestre ${t}</div><small>Aucune cote.</small>`;
+    const gc = g.cls, pk = r => r.kind === 'Examen' ? 9 : (r.period || 8);
+    const body = Array.from({ length: gc ? cotNT(gc) : 3 }, (_, i) => i + 1).map(t => {
+        const tn = gc ? cotTN(gc, t) : 'Trimestre ' + t;
+        const l = rows.filter(r => r.term === t).sort((a, b) => pk(a) - pk(b) || COT_KINDS.indexOf(a.kind) - COT_KINDS.indexOf(b.kind) || a.num - b.num);
+        if (!l.length) return `<div class=cot-sub style="font-size:16px">${tn}</div><small>Aucune cote.</small>`;
         const p = l.reduce((a, r) => a + Number(r.grade), 0), m = l.reduce((a, r) => a + Number(r.max_grade), 0);
-        return `<div class=cot-sub style="font-size:16px">Trimestre ${t} · ${OB.num(p)} / ${OB.num(m)} (${OB.pctTxt(OB.pctOf(p, m))})</div>`
-            + l.map(r => `<div style="display:flex;justify-content:space-between;margin:3px 0"><span>${r.kind} ${r.num} <small>(Base ${nf(r.max_grade)})${r.eval_date ? ' · ' + fdate(r.eval_date) : ''} ${r.status === 'pending' ? '⏳' : ''}</small></span><b>${nf(r.grade)} / ${nf(r.max_grade)}</b></div>`).join('');
+        return `<div class=cot-sub style="font-size:16px">${tn} · ${OB.num(p)} / ${OB.num(m)} (${OB.pctTxt(OB.pctOf(p, m))})</div>`
+            + l.map(r => `<div style="display:flex;justify-content:space-between;margin:3px 0"><span>${esc(cotEvName(r))} <small>(Base ${nf(r.max_grade)})${r.eval_date ? ' · ' + fdate(r.eval_date) : ''} ${r.status === 'pending' ? '⏳' : ''}</small></span><b>${nf(r.grade)} / ${nf(r.max_grade)}</b></div>`).join('');
     }).join('');
     show(`<h3>${esc(name)}</h3><div style="max-height:55vh;overflow-y:auto">${body}</div><div class=row><button class=ghost onclick="stuCotesGrid()">← Cours</button><button class=ghost onclick="this.closest('dialog').close()">Fermer</button></div>`);
 }

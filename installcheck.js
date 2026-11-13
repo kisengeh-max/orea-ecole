@@ -6,11 +6,11 @@
    ===================================================================== */
 (function () {
     'use strict';
-    const LIVRAISON = 'v103 · 12/11/2026';
+    const LIVRAISON = 'v104 · 12/11/2026';
     const FILES = {
-        "index.html": "0fee65c8e8e2b62a2520a9990dafa199f4e05c48a73e1e5d228bbf0ce97730f9",
-        "parent.html": "ecaaa0efb2216e455da331309b7eb8b51a26bac972760d05906b9402561ffdc9",
-        "sw.js": "4809739f330a1b1eee624bdf15e65fd10b5c38f6bbe20306a8fc1c8ee97e232c",
+        "index.html": "431fc3ab6f8a06f586eb1133aae0db22cdd064ffeabf23dc6b0e38c541b4cf14",
+        "parent.html": "a3ee804d61d4789a06251b4181b32604b7ef8a1bc626a574b5ed6ce8a52b317b",
+        "sw.js": "7f7e57d1ecf9884164f8dcb2079aa1fa6f2b2280f9fd682f22392ec16c254176",
         "manifest.json": "388e6d6df3e4442301f70f10241f49cc3d8d858251cf7aee9c9c4fbd7a23e72d",
         "manifest-parent.json": "08111dd3164a7162a8d84f267d2a04016d64c127b2951dfbfdde67227e3453cb",
         "ambadmin.js": "0ae5d5cfb8f5be9304e623b22d11eb8694ee97d2e7ad7a75dcdbec826bfe90bf",
@@ -23,7 +23,7 @@
         "bureau.css": "0e5da3eff23bd80dda467f082ab88ea7ffb42179f922570decc2f86fccb6d6a9",
         "bureau.js": "ac9aa4f60075e110f8b3e5bdeb0310c2f71b6c1244f7dd7d81ac7797b7aa7761",
         "cahier.js": "213a99c89d1a646cbac4a437417bc8b102faa99334a744a42dcd21b16ef355d2",
-        "config.js": "7c503db0a64d817511c27f337252c81e8811f3562a7d4be045b86190644f27f3",
+        "config.js": "4586622a82b971ee8fd898d3924ad360f895a339899287a0151ea3e5fc6e7f5e",
         "enafep.js": "6a10ee7d964bd61315ef88c8eb8921196e524f579161e85e1551be08d1030080",
         "equipe.js": "5dbb34021b9ad41a1133ee959b94eb33f4fcd140ba85d341104d93089f59d97a",
         "famille.js": "6e17aea98c14ebec660b64231c20aeb59e4eb75ec51294d8049f32cc4fba75f9",
@@ -33,7 +33,7 @@
         "listes.js": "5c5f44cfe1a09bf8c7a52d42b71efaea3f2213a19a85cdb1a0d6cfdce595138e",
         "ia.js": "d99801fe1910a7746831bfc42cd4b3bc54757fd70ce1f1487121814c311b645b",
         "messages.js": "bc9d79d90b93907768244926a394ef71a7b90d1e0d68da4e1b0d6a512ab9f506",
-        "notes.js": "bd87dd04c98c50309124a0a3ac4136f16301285ca949a9e7639799d073e0dfd0",
+        "notes.js": "37abcc04a6f4045326b24250501e16866c3c9f6b77839c67ff169cd791f09faf",
         "notifications.js": "1b080c37ac646a8a0c9bc7532c436b70b96d830f9fca0288cd11af24c20e13ca",
         "offline.js": "5c32900b3daa413f918bb103c4f84d97aefbde1f23b48dcc55f2a68d4eccea6a",
         "options.js": "4e87574de18b7a54877a5b850b020af9a8aa09783d8d9cd6876a162cf6eee6c0",
