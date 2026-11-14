@@ -144,3 +144,6 @@ body.desk main>.row>button{flex:0 1 260px}
 body:not(.desk) main#main{max-width:960px;padding:28px 32px 48px}
 body:not(.desk)>header{padding-left:32px;padding-right:32px}
 body:not(.desk) dialog{width:min(640px,86vw);padding:26px 28px}
+
+/* v108 : bouton du guide sur l'accueil, sur toute la largeur */
+body.desk.tab-accueil main>.gd-home{column-span:all;display:flex!important;max-width:none}

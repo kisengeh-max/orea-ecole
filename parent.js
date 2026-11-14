@@ -143,6 +143,8 @@ function render() {
 // ---- Vues ----
 function homeView() {
     let h = (P.staff ? `<div style="margin:6px 0 10px"><a href="./" style="color:var(--gold);font-size:14px;text-decoration:none">← Retour à mon espace école</a></div>` : '') + `<div class=p-hello>👋 Bonjour <b>${esc(P.me?.full_name || 'Parent')}</b></div>`;
+    // v108 : guide bien visible sur l'accueil
+    if (typeof oreaGuide === 'function') h += `<button class=p-btn onclick="oreaGuide()" style="width:100%;margin:0 0 12px;background:transparent;color:var(--gold);border:1px solid var(--gold)">📖 Comment utiliser ORÉA ?</button>`;
     if (!P.children.length) {
         h += `<div class=p-empty><span class=p-ic>👨‍👩‍👧</span>Aucun enfant lié.<br><br><button class=p-btn onclick=addChildView()>+ Ajouter un enfant</button></div>`;
     } else {

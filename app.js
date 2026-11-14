@@ -1271,6 +1271,8 @@ async function vAccueil() {
     const tod = sum((pp.data || []).filter(p => R === 'directeur' || p.collector_id === S.me.id)) + qToday(), pend = (rq.data || []).length;
     const tt = getTermToShow(), tDue = sm('due' + tt + '_cdf'), tPaid = sm('p' + tt + '_cdf'), due = Math.max(0, tDue - tPaid);
     let h = termBar() + ybar() + `<h3>Bonjour ${esc(S.me.full_name)}</h3>`;
+    // v108 : guide bien visible sur l'accueil
+    if (typeof oreaGuide === 'function') h += `<button type=button class="ghost gd-home" onclick="oreaGuide()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:4px 0 12px;border-color:var(--gold)">📖 Comment utiliser ORÉA ? <small style="font-weight:500;opacity:.8">Guide · Recherche</small></button>`;
     if (isTeach()) h += `<div id=tday></div>`;
 
     if (S.events && S.events.length) {
@@ -1809,6 +1811,7 @@ function vMenu() {
     h += menuCard('eleves', 'Mon espace parent', 'Suivre mes propres enfants', "location.href='parent.html'");
     h += `<div class=menu-title>Jeux</div>`;
     h += menuCard('alerte', 'Génie en Herbe', 'Quiz', "openQuiz()");
+    if (typeof oreaGuide === 'function') h += menuCard('devoirs', 'Comment utiliser ORÉA ?', 'Guide complet · Recherche', "oreaGuide()");
     $('#main').innerHTML = h;
 }
 
