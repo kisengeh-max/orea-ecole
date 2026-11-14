@@ -417,6 +417,7 @@ function addChildView() {
                 ? await db.rpc('staff_link_child', { p_code: e.target.code.value.trim() })
                 : await db.rpc('verifier_code_parent', { p_code: e.target.code.value.trim(), p_name: null });
             if (error) throw error;
+            if (data && data.ok === false) throw new Error(data.msg || 'Code non reconnu.');
             d.close(); toast(data.already ? 'Déjà lié' : '✓ Ajouté');
             P.me = (await loadMe()) || P.me; await loadSchool(); await loadChildren(); await loadK2(); await loadK5(); render();
         } catch (x) { toast(x.message || 'Code invalide'); }

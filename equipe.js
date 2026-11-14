@@ -37,13 +37,17 @@
 
         const { data, error } = await db.from('profiles').select('*').eq('school_id', S.school.id).order('full_name');
         if (error) return toast(error.message);
-        const staff = (data || []).filter(p => p.role !== 'parent');
+        const HEADX = S.me.role === 'directeur' && !S.me.etudes && !S.me.secretariat;
+        const pend = (data || []).filter(p => p.role !== 'parent' && p.pending);
+        const staff = (data || []).filter(p => p.role !== 'parent' && !p.pending);
 
         const d = show(`<h3>Équipe & Cours</h3>
             <div class="card col" style="margin-bottom:10px">
                 <small>Code d'invitation de l'école : <b>${esc(S.school.code)}</b></small>
-                <small>Partagez ce code pour que le personnel rejoigne l'école.</small>
+                <small>Partagez ce code pour que le personnel rejoigne l'école. Chaque nouveau membre doit ensuite être accepté par le chef d’établissement.</small>
+                ${HEADX ? `<button type="button" class="ghost" id="tm-newcode" style="margin-top:6px;min-height:36px">Changer le code</button>` : ''}
             </div>
+            ${pend.length ? `<div class="card col" style="margin-bottom:10px;border-color:var(--gold);gap:8px"><b>Demandes en attente · ${pend.length}</b>${pend.map(p => `<div class="row" style="margin:0;align-items:center;flex-wrap:wrap;gap:6px"><span style="flex:1 1 140px">${esc(p.full_name || 'Sans nom')}</span>${HEADX ? `<button type="button" style="${'width:auto;padding:6px 12px;min-height:36px;font-size:13px'}" data-ok="${p.id}">Accepter</button><button type="button" class="ghost" style="${'width:auto;padding:6px 12px;min-height:36px;font-size:13px'}" data-no="${p.id}">Refuser</button>` : '<small>À accepter par le chef d’établissement</small>'}</div>`).join('')}</div>` : ''}
             ${!SEC ? `<button type="button" class="ghost" style="margin-bottom:10px" onclick="oreaCoursClasses()">📚 Cours des classes</button>` : ''}
             <div class="row" style="margin-bottom:8px">
                 <button type="button" class="chip ${TEAM.tab === 'staff' ? 'on' : ''}" data-tb="staff" style="flex:1">Comptes · ${staff.length}</button>
@@ -54,6 +58,26 @@
             <div id="tm-list" style="max-height:56vh;overflow-y:auto"></div>
             <button class="ghost" style="margin-top:12px" onclick="this.closest('dialog').close()">Fermer</button>`);
         const q = d.querySelector('#tm-q'), box = d.querySelector('#tm-list');
+        // v107 : demandes en attente et changement du code
+        const decide = async (id, yes, btn) => {
+            const p = pend.find(x => x.id === id);
+            if (!yes && !confirm('Refuser la demande de ' + ((p && p.full_name) || 'cette personne') + ' ?')) return;
+            btn.disabled = true;
+            const { error } = await db.rpc('v107_staff_decide', { p_profile: id, p_accept: yes });
+            if (error) { btn.disabled = false; return toast(error.message); }
+            toast(yes ? 'Accepté ✓ Pensez à lui attribuer ses cours.' : 'Demande refusée.'); team();
+        };
+        d.querySelectorAll('[data-ok]').forEach(b => b.onclick = () => decide(b.dataset.ok, true, b));
+        d.querySelectorAll('[data-no]').forEach(b => b.onclick = () => decide(b.dataset.no, false, b));
+        const nc = d.querySelector('#tm-newcode');
+        if (nc) nc.onclick = async () => {
+            if (!confirm('Créer un nouveau code ? L’ancien code ne marchera plus. Les comptes déjà acceptés ne changent pas.')) return;
+            nc.disabled = true;
+            const { data: c, error } = await db.rpc('v107_new_code');
+            nc.disabled = false;
+            if (error) return toast(error.message);
+            S.school.code = c; toast('Nouveau code : ' + c); team();
+        };
         const bs = 'width:auto;flex:1;padding:6px;min-height:36px;font-size:12px';
 
         function drawStaff() {

@@ -413,6 +413,8 @@ async function boot() {
     if (p.role === 'parent') { location.replace('parent.html'); return; }
     if (tst && p.active === false) { localStorage.removeItem('orea_test'); if (adm === true) { $('#hs').textContent = 'ORÉA'; return adminView(); } }
     // v94 : un ambassadeur qui a utilisé une école de démonstration garde un profil inactif → espace ambassadeur
+    // v107 : arrivé avec le code de l'école, en attente de la direction
+    if (p.pending) { $('#nav').hidden = true; $('#main').innerHTML = `<div class=auth><h2>Demande envoyée</h2><p>Bonjour ${esc(p.full_name || '')}. La direction de l’école doit accepter votre demande avant que vous puissiez utiliser ORÉA École.</p><button onclick=boot()>Vérifier à nouveau</button><button class=ghost onclick=out()>Déconnexion</button></div>`; return; }
     if (p.active === false && typeof ambEntry === 'function') { try { const { data: am } = await db.rpc('amb_me'); if (am && am[0]) return ambEntry(); } catch (_) { } }
     if (p.active === false) { $('#nav').hidden = true; $('#main').innerHTML = '<div class=auth><h2>Compte désactivé</h2><p>Contacte la direction de ton école.</p><button class=ghost onclick=out()>Déconnexion</button></div>'; return; }
     S.me = p;
@@ -641,7 +643,7 @@ function setupView() {
     $('#main').innerHTML = `<div class=auth><h2>Bienvenue</h2><button id=c1>Je crée mon école (chef d’établissement)</button><button class=ghost id=c2>Je rejoins une école avec un code</button><button class=ghost id=lo>Déconnexion</button></div>`;
     $('#lo').onclick = out;
     $('#c1').onclick = () => ask('Nouvelle école', [{ n: 'school', l: 'Nom de l’école' }, { n: 'type', l: 'Type d’école', o: SCHOOL_TYPES, v: 'secondaire' }, { n: 'me', l: 'Ton nom' }], async v => { const { error } = await db.rpc('create_school', { school_name: v.school, my_name: v.me, p_type: v.type }); if (error) throw error; boot(); });
-    $('#c2').onclick = () => ask('Rejoindre', [{ n: 'code', l: 'Code d’invitation' }, { n: 'me', l: 'Ton nom' }], async v => { const { error } = await db.rpc('join_school', { invite: v.code.trim(), my_name: v.me }); if (error) throw error; boot(); });
+    $('#c2').onclick = () => ask('Rejoindre', [{ n: 'code', l: 'Code d’invitation' }, { n: 'me', l: 'Ton nom' }], async v => { const { data, error } = await db.rpc('join_school', { invite: v.code.trim(), my_name: v.me }); if (error) throw error; if (data && data.ok === false) throw new Error(data.msg || 'Code invalide.'); if (data && data.pending) toast('Demande envoyée à la direction ✓'); boot(); });
 }
 
 /* ---------- Écrans ---------- */

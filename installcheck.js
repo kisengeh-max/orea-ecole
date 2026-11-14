@@ -6,26 +6,26 @@
    ===================================================================== */
 (function () {
     'use strict';
-    const LIVRAISON = 'v106 · 13/11/2026';
+    const LIVRAISON = 'v107 · 14/11/2026';
     const FILES = {
-        "index.html": "ba1452a2c2acced7b6fdb8c8a6750a66527e75c6d5f46c3d9f77b14c32429da9",
-        "parent.html": "e4bb790b498b693fff8d73ba3102e84daade709e29d8b0c27f45519c78477558",
-        "sw.js": "ff35de4cac359c54c43f873ebf4156e80304053969ec201c5ffb9188d03a0e74",
+        "index.html": "b11f2aea4a9909d3ff84d5ac13b89590b558920efb4c7505022836528d7076ec",
+        "parent.html": "220ff9646938f9e44b6bcd90d5408c2857a529fab2750fd29693d08694155679",
+        "sw.js": "057fab9b7e85b915e9c9cf5af544c4d78a3d00a234a22e9c1f5b067eb2be575a",
         "manifest.json": "388e6d6df3e4442301f70f10241f49cc3d8d858251cf7aee9c9c4fbd7a23e72d",
         "manifest-parent.json": "08111dd3164a7162a8d84f267d2a04016d64c127b2951dfbfdde67227e3453cb",
         "ambadmin.js": "2cf5526c333fe6d96bdd776491754e2d481ba783e6d07ab7b14d921b695a1b7e",
-        "ambassadeur.js": "0e14ee13cf1f0c3abaa31b74ed375e057ed4b730fe647b1993cb0afdc55be7e0",
+        "ambassadeur.js": "f1fa1330f185d2c3a11e29c48085ffb532d5557244d9e27a6d67b1c32fdfd880",
         "annee.js": "09d6e07e258194a464a08e6dc36af9f74810f6de608a6ea1aca18f93365f6532",
         "announcements.js": "a4e26ad07be6866df9eb5a57638b0eca7c54a6eff6b9989c401bcdeb0184c062",
-        "app.js": "68b56a0be76d5f07a2a9dd1ae3cda1cee7a57336761f80f48e172b42afbb4e83",
+        "app.js": "622aab3c8275770ced7a68b617d502bfbd94b3d53e1b74a9c638a1a44be6c20c",
         "auth_ui.js": "890281e1af24f1c0236d3f81ab17cfa9962c4a68c470154594d13a4b775fcd71",
         "bulletins.js": "f766566048aecfb1717e16b3406ab3ced64dbe5c18c1d56561378f62e09e017b",
         "bureau.css": "0e5da3eff23bd80dda467f082ab88ea7ffb42179f922570decc2f86fccb6d6a9",
         "bureau.js": "ac9aa4f60075e110f8b3e5bdeb0310c2f71b6c1244f7dd7d81ac7797b7aa7761",
         "cahier.js": "213a99c89d1a646cbac4a437417bc8b102faa99334a744a42dcd21b16ef355d2",
-        "config.js": "679289c8a08211123a0bd57756ea7faaa7de1dd8b086c60e30cad013403ed94c",
+        "config.js": "5ac18ecc4cd8323bb18a707ef70c1a5c9a13bc1a08b40220d4ae1b9a05581e9c",
         "enafep.js": "6a10ee7d964bd61315ef88c8eb8921196e524f579161e85e1551be08d1030080",
-        "equipe.js": "bb158269da207dbba0e82d080e0ba1f39675467f2f9728b4aa59606aa1dff6a2",
+        "equipe.js": "fbab24355f6fcf028a2c72f83db25c966e1c76615d4d3bf23c47d948166274b0",
         "famille.js": "6e17aea98c14ebec660b64231c20aeb59e4eb75ec51294d8049f32cc4fba75f9",
         "finance.js": "f925e04fe9ae5103b38b2398717365dcfdf1b4d512b21528d642c6e7129a8d3d",
         "inspecteur.js": "9aa34624368af542265e96a2879982a25d5360590a87ee777d261a38b3c0f287",
@@ -39,7 +39,7 @@
         "offline.js": "5c32900b3daa413f918bb103c4f84d97aefbde1f23b48dcc55f2a68d4eccea6a",
         "options.js": "4e87574de18b7a54877a5b850b020af9a8aa09783d8d9cd6876a162cf6eee6c0",
         "parent.css": "9ba34fa4d47c51b909a2f16496c02aed2ae8763f2ad6b674d7773605725b12ca",
-        "parent.js": "3b4b09ed605fca2a3555c53bee12ac75bfa090ef56342daa9b6f2fe7f1265dda",
+        "parent.js": "45af4a739db3e9c957ce188d9f8627200b3ea929fedb98c55e0ac6c244d77414",
         "parent_notes.js": "879560633dabb63677fda7f1b8d71b1448955c78a969882e20da443b2de600b9",
         "parent_notifs.js": "61bfbfb772ac3382a924d5ab61d55737739284dd72de9ad6a5ec524f5cdb7f36",
         "personnel.js": "f224408abc4c65a4e270c89362379c523817b709ca84319da9ee7ee5bb752f7a",

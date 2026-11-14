@@ -65,8 +65,9 @@ function ambChoice() {
         { n: 'code', l: 'Code d’invitation' },
         { n: 'me', l: 'Ton nom' }
     ], async v => {
-        const { error } = await db.rpc('join_school', { invite: v.code.trim(), my_name: v.me.trim() });
+        const { data, error } = await db.rpc('join_school', { invite: v.code.trim(), my_name: v.me.trim() });
         if (error) throw error;
+        if (data && data.ok === false) throw new Error(data.msg || 'Code invalide.');
         boot();
     });
     $('#k3').onclick = () => { location.href = 'parent.html'; };
